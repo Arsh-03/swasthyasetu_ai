@@ -1,0 +1,8 @@
+{
+  "name": "spec-forge",
+  "version": "1.0.0",
+  "description": "Autonomous multi-agent architecture, security threat audit, and UI/UX design suite with graph-based context preservation",
+  "skills": [
+    "skills/forge"
+  ]
+}

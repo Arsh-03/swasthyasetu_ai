@@ -1,0 +1,473 @@
+{
+  "updatedAt": "2026-10-02T17:03:42.514Z",
+  "nodeCount": 44,
+  "linkCount": 40,
+  "nodes": [
+    {
+      "id": "doc:docs/00_overview/architecture_tree.md",
+      "label": "architecture_tree.md",
+      "type": "document",
+      "details": "Specification doc: docs/00_overview/architecture_tree.md"
+    },
+    {
+      "id": "cat:00_overview",
+      "label": "00_overview",
+      "type": "system",
+      "details": "Category Module: 00_overview"
+    },
+    {
+      "id": "doc:docs/00_overview/prd.md",
+      "label": "prd.md",
+      "type": "document",
+      "details": "Specification doc: docs/00_overview/prd.md"
+    },
+    {
+      "id": "doc:docs/01_architecture/network_adaptive_engine.md",
+      "label": "network_adaptive_engine.md",
+      "type": "document",
+      "details": "Specification doc: docs/01_architecture/network_adaptive_engine.md"
+    },
+    {
+      "id": "cat:01_architecture",
+      "label": "01_architecture",
+      "type": "system",
+      "details": "Category Module: 01_architecture"
+    },
+    {
+      "id": "doc:docs/01_architecture/sequence_flows.md",
+      "label": "sequence_flows.md",
+      "type": "document",
+      "details": "Specification doc: docs/01_architecture/sequence_flows.md"
+    },
+    {
+      "id": "api:POST /api/v1/representatives/declare",
+      "label": "POST /api/v1/representatives/declare",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "api:POST /api/v1/consents/request",
+      "label": "POST /api/v1/consents/request",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "api:POST /api/v1/consents/{id}/decision",
+      "label": "POST /api/v1/consents/{id}/decision",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "api:GET /api/v1/records/{id}/stream",
+      "label": "GET /api/v1/records/{id}/stream",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "api:POST /api/v1/encounters/{id}/ai-draft",
+      "label": "POST /api/v1/encounters/{id}/ai-draft",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "api:POST /api/v1/encounters/{id}/sign-off",
+      "label": "POST /api/v1/encounters/{id}/sign-off",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "doc:docs/01_architecture/system_topology.md",
+      "label": "system_topology.md",
+      "type": "document",
+      "details": "Specification doc: docs/01_architecture/system_topology.md"
+    },
+    {
+      "id": "doc:docs/01_architecture/tech_stack_evaluation.md",
+      "label": "tech_stack_evaluation.md",
+      "type": "document",
+      "details": "Specification doc: docs/01_architecture/tech_stack_evaluation.md"
+    },
+    {
+      "id": "doc:docs/02_data/data_pipelines.md",
+      "label": "data_pipelines.md",
+      "type": "document",
+      "details": "Specification doc: docs/02_data/data_pipelines.md"
+    },
+    {
+      "id": "cat:02_data",
+      "label": "02_data",
+      "type": "system",
+      "details": "Category Module: 02_data"
+    },
+    {
+      "id": "doc:docs/02_data/fhir_r4_mappings.md",
+      "label": "fhir_r4_mappings.md",
+      "type": "document",
+      "details": "Specification doc: docs/02_data/fhir_r4_mappings.md"
+    },
+    {
+      "id": "doc:docs/02_data/schema.md",
+      "label": "schema.md",
+      "type": "document",
+      "details": "Specification doc: docs/02_data/schema.md"
+    },
+    {
+      "id": "entity:users",
+      "label": "users",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:patient_profiles",
+      "label": "patient_profiles",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:practitioners",
+      "label": "practitioners",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:representatives",
+      "label": "representatives",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:encounters",
+      "label": "encounters",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:record_metadata",
+      "label": "record_metadata",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:consents",
+      "label": "consents",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "entity:audit_events",
+      "label": "audit_events",
+      "type": "entity",
+      "details": "Data Model / Entity"
+    },
+    {
+      "id": "doc:docs/02_data/storage_vault.md",
+      "label": "storage_vault.md",
+      "type": "document",
+      "details": "Specification doc: docs/02_data/storage_vault.md"
+    },
+    {
+      "id": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "label": "consent_token_lifecycle.md",
+      "type": "document",
+      "details": "Specification doc: docs/03_security_and_compliance/consent_token_lifecycle.md"
+    },
+    {
+      "id": "cat:03_security_and_compliance",
+      "label": "03_security_and_compliance",
+      "type": "system",
+      "details": "Category Module: 03_security_and_compliance"
+    },
+    {
+      "id": "api:POST /api/v1/consents/{id}/revoke",
+      "label": "POST /api/v1/consents/{id}/revoke",
+      "type": "api",
+      "details": "API Endpoint"
+    },
+    {
+      "id": "doc:docs/03_security_and_compliance/dpdp_and_disha_compliance.md",
+      "label": "dpdp_and_disha_compliance.md",
+      "type": "document",
+      "details": "Specification doc: docs/03_security_and_compliance/dpdp_and_disha_compliance.md"
+    },
+    {
+      "id": "doc:docs/03_security_and_compliance/stride_threat_model.md",
+      "label": "stride_threat_model.md",
+      "type": "document",
+      "details": "Specification doc: docs/03_security_and_compliance/stride_threat_model.md"
+    },
+    {
+      "id": "doc:docs/04_features_and_engines/ai_clinical_scribe.md",
+      "label": "ai_clinical_scribe.md",
+      "type": "document",
+      "details": "Specification doc: docs/04_features_and_engines/ai_clinical_scribe.md"
+    },
+    {
+      "id": "cat:04_features_and_engines",
+      "label": "04_features_and_engines",
+      "type": "system",
+      "details": "Category Module: 04_features_and_engines"
+    },
+    {
+      "id": "doc:docs/04_features_and_engines/consent_engine.md",
+      "label": "consent_engine.md",
+      "type": "document",
+      "details": "Specification doc: docs/04_features_and_engines/consent_engine.md"
+    },
+    {
+      "id": "doc:docs/04_features_and_engines/ddi_safety_engine.md",
+      "label": "ddi_safety_engine.md",
+      "type": "document",
+      "details": "Specification doc: docs/04_features_and_engines/ddi_safety_engine.md"
+    },
+    {
+      "id": "doc:docs/04_features_and_engines/multilingual_bhashini_engine.md",
+      "label": "multilingual_bhashini_engine.md",
+      "type": "document",
+      "details": "Specification doc: docs/04_features_and_engines/multilingual_bhashini_engine.md"
+    },
+    {
+      "id": "doc:docs/04_features_and_engines/patient_and_doctor_portals.md",
+      "label": "patient_and_doctor_portals.md",
+      "type": "document",
+      "details": "Specification doc: docs/04_features_and_engines/patient_and_doctor_portals.md"
+    },
+    {
+      "id": "doc:docs/05_ui_ux/design_system_tokens.md",
+      "label": "design_system_tokens.md",
+      "type": "document",
+      "details": "Specification doc: docs/05_ui_ux/design_system_tokens.md"
+    },
+    {
+      "id": "cat:05_ui_ux",
+      "label": "05_ui_ux",
+      "type": "system",
+      "details": "Category Module: 05_ui_ux"
+    },
+    {
+      "id": "doc:docs/05_ui_ux/screen_flows.md",
+      "label": "screen_flows.md",
+      "type": "document",
+      "details": "Specification doc: docs/05_ui_ux/screen_flows.md"
+    },
+    {
+      "id": "doc:docs/06_delivery_and_mobile/pwa_to_apk_capacitor.md",
+      "label": "pwa_to_apk_capacitor.md",
+      "type": "document",
+      "details": "Specification doc: docs/06_delivery_and_mobile/pwa_to_apk_capacitor.md"
+    },
+    {
+      "id": "cat:06_delivery_and_mobile",
+      "label": "06_delivery_and_mobile",
+      "type": "system",
+      "details": "Category Module: 06_delivery_and_mobile"
+    },
+    {
+      "id": "doc:docs/06_delivery_and_mobile/sprint_roadmap.md",
+      "label": "sprint_roadmap.md",
+      "type": "document",
+      "details": "Specification doc: docs/06_delivery_and_mobile/sprint_roadmap.md"
+    }
+  ],
+  "links": [
+    {
+      "source": "cat:00_overview",
+      "target": "doc:docs/00_overview/architecture_tree.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:00_overview",
+      "target": "doc:docs/00_overview/prd.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:01_architecture",
+      "target": "doc:docs/01_architecture/network_adaptive_engine.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:01_architecture",
+      "target": "doc:docs/01_architecture/sequence_flows.md",
+      "relation": "contains"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:POST /api/v1/representatives/declare",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:POST /api/v1/consents/request",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:POST /api/v1/consents/{id}/decision",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:GET /api/v1/records/{id}/stream",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:POST /api/v1/encounters/{id}/ai-draft",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/01_architecture/sequence_flows.md",
+      "target": "api:POST /api/v1/encounters/{id}/sign-off",
+      "relation": "specifies"
+    },
+    {
+      "source": "cat:01_architecture",
+      "target": "doc:docs/01_architecture/system_topology.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:01_architecture",
+      "target": "doc:docs/01_architecture/tech_stack_evaluation.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:02_data",
+      "target": "doc:docs/02_data/data_pipelines.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:02_data",
+      "target": "doc:docs/02_data/fhir_r4_mappings.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:02_data",
+      "target": "doc:docs/02_data/schema.md",
+      "relation": "contains"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:users",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:patient_profiles",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:practitioners",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:representatives",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:encounters",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:record_metadata",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:consents",
+      "relation": "defines"
+    },
+    {
+      "source": "doc:docs/02_data/schema.md",
+      "target": "entity:audit_events",
+      "relation": "defines"
+    },
+    {
+      "source": "cat:02_data",
+      "target": "doc:docs/02_data/storage_vault.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:03_security_and_compliance",
+      "target": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "relation": "contains"
+    },
+    {
+      "source": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "target": "api:POST /api/v1/consents/request",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "target": "api:POST /api/v1/consents/{id}/decision",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "target": "api:GET /api/v1/records/{id}/stream",
+      "relation": "specifies"
+    },
+    {
+      "source": "doc:docs/03_security_and_compliance/consent_token_lifecycle.md",
+      "target": "api:POST /api/v1/consents/{id}/revoke",
+      "relation": "specifies"
+    },
+    {
+      "source": "cat:03_security_and_compliance",
+      "target": "doc:docs/03_security_and_compliance/dpdp_and_disha_compliance.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:03_security_and_compliance",
+      "target": "doc:docs/03_security_and_compliance/stride_threat_model.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:04_features_and_engines",
+      "target": "doc:docs/04_features_and_engines/ai_clinical_scribe.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:04_features_and_engines",
+      "target": "doc:docs/04_features_and_engines/consent_engine.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:04_features_and_engines",
+      "target": "doc:docs/04_features_and_engines/ddi_safety_engine.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:04_features_and_engines",
+      "target": "doc:docs/04_features_and_engines/multilingual_bhashini_engine.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:04_features_and_engines",
+      "target": "doc:docs/04_features_and_engines/patient_and_doctor_portals.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:05_ui_ux",
+      "target": "doc:docs/05_ui_ux/design_system_tokens.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:05_ui_ux",
+      "target": "doc:docs/05_ui_ux/screen_flows.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:06_delivery_and_mobile",
+      "target": "doc:docs/06_delivery_and_mobile/pwa_to_apk_capacitor.md",
+      "relation": "contains"
+    },
+    {
+      "source": "cat:06_delivery_and_mobile",
+      "target": "doc:docs/06_delivery_and_mobile/sprint_roadmap.md",
+      "relation": "contains"
+    }
+  ]
+}

@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CareBridge India — Interactive System Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;600;700&family=Noto+Sans+Kannada:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #0b63e5;
+      --primary-hover: #084ebd;
+      --primary-light: #eff6ff;
+      --teal: #0d9488;
+      --teal-light: #f0fdfa;
+      --success: #16a34a;
+      --success-light: #f0fdf4;
+      --warning: #d97706;
+      --warning-light: #fffbeb;
+      --danger: #dc2626;
+      --danger-light: #fef2f2;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 12px;
+      --shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+      --font-family: 'Inter', system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font-family); }
+    body { background: var(--bg); color: var(--text); padding-bottom: 60px; line-height: 1.5; }
+
+    /* Top Control Bar */
+    .top-bar {
+      background: #0f172a;
+      color: #fff;
+      padding: 12px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; }
+    .brand-badge { background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; border: 1px solid #334155; }
+    
+    .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .segmented { display: inline-flex; background: #1e293b; padding: 3px; border-radius: 8px; border: 1px solid #334155; }
+    .seg-btn { background: transparent; border: none; color: #94a3b8; padding: 6px 14px; border-radius: 6px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .seg-btn.active { background: var(--primary); color: #fff; }
+    .network-pill { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; }
+    .net-good { background: #064e3b; color: #34d399; }
+    .net-weak { background: #78350f; color: #fbbf24; }
+    .net-bad { background: #7f1d1d; color: #f87171; }
+
+    /* Main Container */
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+    .view-container { display: none; }
+    .view-container.active { display: block; animation: fadeIn 0.25s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Cards & Layout */
+    .grid-2 { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); margin-bottom: 24px; }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .card-title { font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-outline:hover { background: var(--bg); }
+    .btn-audio { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; }
+    .btn-audio:hover { background: #d1fae5; }
+
+    /* Video Room Simulation */
+    .video-viewport { background: #020617; border-radius: 12px; aspect-ratio: 16/9; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; }
+    .video-tile { width: 100%; height: 100%; object-fit: cover; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .pip-tile { position: absolute; bottom: 16px; right: 16px; width: 140px; height: 95px; background: #1e293b; border-radius: 8px; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; }
+    .call-bar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 12px; z-index: 10; }
+    .call-btn { width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(30, 41, 59, 0.85); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; cursor: pointer; backdrop-filter: blur(4px); }
+    .call-btn.end { background: var(--danger); }
+    .audio-waveform { display: flex; gap: 4px; align-items: center; height: 40px; }
+    .wave-bar { width: 4px; background: #38bdf8; border-radius: 2px; animation: wave 1s infinite alternate; }
+    .wave-bar:nth-child(2) { animation-delay: 0.2s; height: 28px; }
+    .wave-bar:nth-child(3) { animation-delay: 0.4s; height: 38px; }
+    .wave-bar:nth-child(4) { animation-delay: 0.1s; height: 18px; }
+    @keyframes wave { from { height: 10px; } to { height: 35px; } }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.65); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+    .modal-overlay.active { display: flex; }
+    .modal { background: #fff; width: 100%; max-width: 500px; border-radius: 16px; padding: 28px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); animation: popIn 0.2s ease-out; }
+    @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    /* Alerts */
+    .alert-box { padding: 14px 18px; border-radius: 10px; margin-bottom: 16px; font-size: 0.9rem; display: flex; gap: 12px; }
+    .alert-warning { background: var(--warning-light); border: 1px solid #fde68a; color: #92400e; }
+    .alert-danger { background: var(--danger-light); border: 1px solid #fecaca; color: #991b1b; }
+    .alert-success { background: var(--success-light); border: 1px solid #bbf7d0; color: #166534; }
+
+    /* Audit Badge */
+    .audit-tag { font-family: monospace; font-size: 0.75rem; background: #f1f5f9; padding: 3px 8px; border-radius: 4px; border: 1px solid #cbd5e1; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Global Simulation Bar -->
+  <header class="top-bar">
+    <div class="brand">
+      <span>CareBridge India</span>
+      <span class="brand-badge">ABDM Telemedicine Layer</span>
+    </div>
+
+    <div class="controls">
+      <!-- Role Switcher -->
+      <span style="font-size: 0.85rem; color: #94a3b8;">Role:</span>
+      <div class="segmented">
+        <button class="seg-btn active" onclick="switchRole('patient')">Patient View</button>
+        <button class="seg-btn" onclick="switchRole('doctor')">Doctor View</button>
+      </div>
+
+      <!-- Language Selector -->
+      <span style="font-size: 0.85rem; color: #94a3b8; margin-left: 8px;">Language:</span>
+      <div class="segmented">
+        <button class="seg-btn" onclick="setLanguage('en')">EN</button>
+        <button class="seg-btn active" onclick="setLanguage('kn')">ಕನ್ನಡ</button>
+        <button class="seg-btn" onclick="setLanguage('hi')">हिन्दी</button>
+      </div>
+
+      <!-- Network Quality Simulator -->
+      <span style="font-size: 0.85rem; color: #94a3b8; margin-left: 8px;">Network:</span>
+      <select id="netSelect" onchange="simulateNetwork(this.value)" style="background: #1e293b; color: #fff; border: 1px solid #334155; padding: 6px 10px; border-radius: 6px; font-size: 0.85rem;">
+        <option value="good">🟢 Good (HD Video)</option>
+        <option value="weak">🟡 Weak (Audio Priority)</option>
+        <option value="bad">🔴 Poor (Store & Forward)</option>
+      </select>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- PATIENT VIEW -->
+    <div id="patientView" class="view-container active">
+      
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <span>👤</span>
+            <span id="txtPatientTitle">ರೋಗಿಯ ವಿವರ ಮತ್ತು ಗುರುತು (Patient Details)</span>
+          </div>
+          <button class="btn btn-audio" onclick="playVoicePrompt('welcome')">🔊 ಧ್ವನಿಯಲ್ಲಿ ಕೇಳಿ (Listen)</button>
+        </div>
+
+        <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
+          <div><strong>ರೋಗಿಯ ಹೆಸರು (Name):</strong> ರಮೇಶ್ ಗೌಡ (Ramesh Gowda, 54)</div>
+          <div><strong>ABHA ID:</strong> 91-4820-1928-1120</div>
+          <div><strong>ಜಿಲ್ಲೆ (District):</strong> ಹಾಸನ, ಕರ್ನಾಟಕ (Hassan, KA)</div>
+        </div>
+
+        <div style="background: #f1f5f9; padding: 12px 16px; border-radius: 8px; display: flex; gap: 20px; align-items: center;">
+          <span style="font-size: 0.9rem; font-weight: 600;">ಸಮಾಲೋಚನೆಯಲ್ಲಿ ಯಾರು ಭಾಗವಹಿಸುತ್ತಿದ್ದಾರೆ? (Participant):</span>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer;">
+            <input type="radio" name="participantType" checked onchange="toggleRep(false)"> ನಾನೇ ರೋಗಿ (Patient Self)
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer;">
+            <input type="radio" name="participantType" onchange="toggleRep(true)"> ಅಧಿಕೃತ ಪ್ರತಿನಿಧಿ (Authorised Representative)
+          </label>
+        </div>
+
+        <div id="repDetails" style="display: none; margin-top: 14px; padding: 12px; background: #e0f2fe; border-radius: 8px; font-size: 0.85rem;">
+          <strong>ಪ್ರತಿನಿಧಿಯ ಮಾಹಿತಿ (Representative):</strong> ಸುನೀತಾ (ಸೊಸೆ / Daughter-in-law) · ಅಧಿಕಾರ ಪತ್ರ ದೃಢೀಕರಿಸಲಾಗಿದೆ (Authorized)
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📹</span>
+                <span id="txtCallTitle">ಡಾ. ಅನನ್ಯಾ ಶರ್ಮಾ ಅವರೊಂದಿಗೆ ಸಮಾಲೋಚನೆ (Live Consultation)</span>
+              </div>
+              <span id="patientNetBadge" class="network-pill net-good">🟢 HD Video (450 kbps)</span>
+            </div>
+
+            <div class="video-viewport" id="patientViewport">
+              <div id="videoStreamContent" class="video-tile">
+                <div style="font-size: 3rem;">👩‍⚕️</div>
+                <div style="font-size: 0.95rem; margin-top: 8px;">Dr. Ananya Sharma (General Medicine)</div>
+                <div style="font-size: 0.75rem; color: #94a3b8;">NMC Reg: #581920 (Verified)</div>
+              </div>
+
+              <div id="audioStreamContent" class="video-tile" style="display: none; background: #0f172a;">
+                <div style="font-size: 2.5rem;">🎙️</div>
+                <div style="font-weight: 600; margin-top: 8px;">ಆಡಿಯೊ-ಮಾತ್ರ ಸಮಾಲೋಚನೆ (Audio Priority Mode)</div>
+                <div style="font-size: 0.8rem; color: #38bdf8; margin-top: 4px;">ನೆಟ್‌ವರ್ಕ್ ಕಡಿಮೆ ಇರುವುದರಿಂದ ಧ್ವನಿ ಸ್ಪಷ್ಟತೆಗೆ ಬದಲಾಯಿಸಲಾಗಿದೆ</div>
+                <div class="audio-waveform" style="margin-top: 12px;">
+                  <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                </div>
+              </div>
+
+              <div id="textStreamContent" class="video-tile" style="display: none; background: #1e1e24; padding: 20px;">
+                <div style="color: #f87171; font-weight: 600;">⚠️ ನೆಟ್‌ವರ್ಕ್ ಸಂಪರ್ಕ ಕಡಿತಗೊಂಡಿದೆ (Connection Lost)</div>
+                <p style="font-size: 0.8rem; color: #cbd5e1; margin-top: 6px; text-align: center;">ಆಫ್‌ಲೈನ್ ಸಂದೇಶ ವ್ಯವಸ್ಥೆಗೆ ಬದಲಾಯಿಸಲಾಗಿದೆ. ವೈದ್ಯರಿಗೆ ಸಂದೇಶ ಕಳುಹಿಸಿ.</p>
+                <div style="margin-top: 10px; width: 100%; display: flex; gap: 8px;">
+                  <input type="text" placeholder="ನಿಮ್ಮ ಪ್ರಶ್ನೆ ಟೈಪ್ ಮಾಡಿ..." style="flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff;">
+                  <button class="btn btn-primary" style="padding: 8px 14px;">ಕಳುಹಿಸಿ</button>
+                </div>
+              </div>
+
+              <div class="pip-tile" id="selfPip">
+                <span>ರಮೇಶ್ (ನೀವು)</span>
+              </div>
+
+              <div class="call-bar">
+                <button class="call-btn" title="Mute Mic">🎤</button>
+                <button class="call-btn" title="Toggle Cam">📷</button>
+                <button class="call-btn end" title="End Call">📞</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📁</span>
+                <span>ನನ್ನ ವೈದ್ಯಕೀಯ ದಾಖಲೆಗಳು (My Health Records)</span>
+              </div>
+              <span class="audit-tag">ABDM Linked</span>
+            </div>
+
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 14px;">
+              ನಿಮ್ಮ ಅನುಮತಿಯಿಲ್ಲದೆ ವೈದ್ಯರು ಯಾವುದೇ ದಾಖಲೆಯನ್ನು ನೋಡಲು ಸಾಧ್ಯವಿಲ್ಲ (Records require your explicit consent).
+            </p>
+
+            <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-weight: 600; font-size: 0.9rem;">ಉದರ ಸ್ಕ್ಯಾನ್ ವರದಿ (Ultrasound Pelvis/Abdomen)</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">ದಿನಾಂಕ: 24 ಮೇ 2026 · ಗಾತ್ರ: 2.4 MB</div>
+              </div>
+              <span id="scanConsentStatus" class="audit-tag" style="background: #fee2e2; color: #991b1b;">🔒 ಅನುಮತಿ ಇಲ್ಲ (Protected)</span>
+            </div>
+
+            <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-weight: 600; font-size: 0.9rem;">ರಕ್ತ ಪರೀಕ್ಷೆ (Blood Sugar Panel)</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">ದಿನಾಂಕ: 10 ಏಪ್ರಿಲ್ 2026 · ಸಾಮಾನ್ಯ</div>
+              </div>
+              <span class="audit-tag" style="background: #dcfce7; color: #166534;">✅ ಹಂಚಿಕೊಳ್ಳಲಾಗಿದೆ (Shared)</span>
+            </div>
+
+            <div style="margin-top: 20px; padding-top: 14px; border-top: 1px dashed var(--border);">
+              <button class="btn btn-outline" style="width: 100%; justify-content: center; font-size: 0.85rem;" onclick="triggerDoctorRequest()">
+                ⚡ [ಡೆಮೊ ಪರೀಕ್ಷೆ]: ವೈದ್ಯರಿಂದ ಸ್ಕ್ಯಾನ್ ಅನುಮತಿ ಕೋರಿಕೆಯನ್ನು ಸಿಮ್ಯುಲೇಟ್ ಮಾಡಿ
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- DOCTOR VIEW -->
+    <div id="doctorView" class="view-container">
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>🩺</span>
+                <span>Doctor Consultation Console</span>
+              </div>
+              <span class="audit-tag">Encounter #ENC-9481</span>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <strong>Patient:</strong> Ramesh Gowda (54 / Male) · <strong>Chief Complaint:</strong> Acute Lower Abdominal Pain (3 days)
+            </div>
+
+            <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+              <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 8px;">Request Specific Protected Record</div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                Specify the exact clinical purpose and duration. The patient will receive a purpose-bound consent prompt.
+              </p>
+
+              <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                <select id="docRecordSelect" style="flex: 1; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                  <option value="usg">Ultrasound Pelvis & Abdomen (24 May 2026)</option>
+                  <option value="ecg">12-Lead Resting ECG (Jan 2026)</option>
+                </select>
+                <select id="docDurationSelect" style="width: 140px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                  <option value="60">60 Minutes</option>
+                  <option value="120">2 Hours</option>
+                  <option value="1440">24 Hours</option>
+                </select>
+              </div>
+
+              <input type="text" id="docPurposeInput" value="Assessing suspected renal colic / appendicitis" placeholder="Clinical purpose" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px;">
+
+              <button class="btn btn-primary" style="width: 100%; justify-content: center;" onclick="sendDoctorConsentRequest()">
+                Send Purpose-Specific Consent Request
+              </button>
+            </div>
+
+            <div id="docRecordViewer" style="display: none; border: 2px solid #bbf7d0; background: #f0fdf4; border-radius: 8px; padding: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight: 600; color: #166534;">🔓 Decrypted Scan Preview (Active Token)</span>
+                <span class="audit-tag" style="background: #166534; color: #fff;">Expires in: 59m 40s</span>
+              </div>
+              <p style="font-size: 0.85rem; color: #166534; margin-bottom: 8px;">
+                <strong>Finding:</strong> Mild right hydronephrosis with a 4mm calculus at the right vesicoureteric junction.
+              </p>
+              <div class="audit-tag">Audit Token: HMAC-SHA256:d8a94e... (Stored in Redis)</div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>🤖</span>
+                <span>AI Clinical Scribe & CDSS Safety</span>
+              </div>
+              <span class="audit-tag" style="background: #e0e7ff; color: #3730a3;">Clinician-in-the-Loop</span>
+            </div>
+
+            <div class="alert-box alert-danger">
+              <span style="font-size: 1.4rem;">⚠️</span>
+              <div>
+                <strong>High Safety Alert: Drug-Drug Interaction Detected</strong>
+                <div style="font-size: 0.8rem; margin-top: 4px;">
+                  Prescribing <em>Ciprofloxacin</em> alongside patient's existing <em>Antacid (Magnesium Hydroxide)</em> reduces antibiotic bioavailability by >70%.
+                </div>
+                <div style="font-size: 0.75rem; color: #7f1d1d; margin-top: 4px;">
+                  <strong>Guideline:</strong> Space administration by at least 2 hours or substitute with Ceftriaxone. (Source: National Formulary of India)
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label style="font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 6px;">Draft Diagnosis & Care Plan (AI Generated — Review & Edit):</label>
+              <textarea id="clinicalNoteText" rows="6" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.85rem; font-family: monospace;">
+Subjective: 54M c/o colicky right flank pain radiating to groin.
+Objective: Ultrasound confirms 4mm right distal ureteric calculus.
+Assessment: Uncomplicated acute renal colic (ICD-10: N20.1).
+Plan:
+1. Hydration therapy (3L oral fluid/day).
+2. Tamsulosin 0.4mg OD at bedtime x 14 days.
+3. Paracetamol 650mg SOS for pain (Max 3g/day).
+4. Red flag advice: High fever or anuria -> Immediate ER visit.
+              </textarea>
+            </div>
+
+            <div style="display: flex; gap: 12px;">
+              <button class="btn btn-success" style="flex: 1; justify-content: center;" onclick="signAndIssueCarePlan()">
+                ✍️ Review, Sign & Issue Care Plan
+              </button>
+              <button class="btn btn-outline" onclick="exportFHIR()">
+                📄 Export FHIR R4
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- CONSENT MODAL -->
+  <div id="consentModal" class="modal-overlay">
+    <div class="modal">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; color: var(--primary);">
+          <span>🔒</span>
+          <span id="txtModalHeader">ದಾಖಲೆ ಪ್ರವೇಶ ಅನುಮತಿ ಕೋರಿಕೆ (Record Request)</span>
+        </div>
+        <button class="btn btn-audio" onclick="playVoicePrompt('consent_request')">🔊 ಕೇಳಿ</button>
+      </div>
+
+      <div class="alert-box alert-warning" style="margin-bottom: 16px;">
+        <div>
+          <strong id="txtDoctorRequestName">ಡಾ. ಅನನ್ಯಾ ಶರ್ಮಾ ಅವರು ನಿಮ್ಮ ಈ ಕೆಳಗಿನ ದಾಖಲೆಯನ್ನು ವೀಕ್ಷಿಸಲು ಅನುಮತಿ ಕೋರುತ್ತಿದ್ದಾರೆ:</strong>
+        </div>
+      </div>
+
+      <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 16px; font-size: 0.85rem;">
+        <div style="margin-bottom: 6px;"><strong>ದಾಖಲೆಯ ಹೆಸರು (Record):</strong> ಉದರ ಸ್ಕ್ಯಾನ್ ವರದಿ (Ultrasound Pelvis)</div>
+        <div style="margin-bottom: 6px;"><strong>ಉದ್ದೇಶ (Purpose):</strong> ತೀವ್ರ ಹೊಟ್ಟೆನೋವಿನ ನಿಖರ ತಪಾಸಣೆಗಾಗಿ (Acute pain assessment)</div>
+        <div style="margin-bottom: 6px;"><strong>ಅನುಮತಿ ಕಾಲಾವಧಿ (Access Period):</strong> 60 ನಿಮಿಷಗಳು (ಸ್ವಯಂಚಾಲಿತವಾಗಿ ರದ್ದಾಗುತ್ತದೆ)</div>
+        <div><strong>ವ್ಯಾಪ್ತಿ (Scope):</strong> ಕೇವಲ ವೀಕ್ಷಣೆ ಮಾತ್ರ (ಡೌನ್‌ಲೋಡ್ ಮಾಡಲು ಸಾಧ್ಯವಿಲ್ಲ)</div>
+      </div>
+
+      <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 20px;">
+        * DPDP ಕಾಯ್ದೆಯ ಅಡಿಯಲ್ಲಿ, ನೀವು ಯಾವುದೇ ಸಮಯದಲ್ಲಿ ಈ ಅನುಮತಿಯನ್ನು ಹಿಂಪಡೆಯಬಹುದು (Revocable at any time).
+      </p>
+
+      <div style="display: flex; gap: 12px;">
+        <button class="btn btn-outline" style="flex: 1; justify-content: center;" onclick="respondConsent(false)">
+          ❌ ತಿರಸ್ಕರಿಸಿ (Decline)
+        </button>
+        <button class="btn btn-success" style="flex: 1.3; justify-content: center;" onclick="respondConsent(true)">
+          ✅ ಅನುಮೋದಿಸಿ (Approve)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentRole = 'patient';
+    let currentLanguage = 'kn';
+    let consentGranted = false;
+
+    const translations = {
+      kn: {
+        patientTitle: "ರೋಗಿಯ ವಿವರ ಮತ್ತು ಗುರುತು (Patient Details)",
+        callTitle: "ಡಾ. ಅನನ್ಯಾ ಶರ್ಮಾ ಅವರೊಂದಿಗೆ ಸಮಾಲೋಚನೆ (Live Consultation)",
+        modalHeader: "ದಾಖಲೆ ಪ್ರವೇಶ ಅನುಮತಿ ಕೋರಿಕೆ (Record Request)",
+        welcomeVoice: "ನಮಸ್ಕಾರ ರಮೇಶ್ ಅವರೇ. ಕೇರ್‌ಬ್ರಿಡ್ಜ್‌ಗೆ ಸ್ವಾಗತ. ನಿಮ್ಮ ಗೌಪ್ಯತೆಯನ್ನು ನಾವು ಗೌರವಿಸುತ್ತೇವೆ.",
+        consentVoice: "ಡಾಕ್ಟರ್ ಅನನ್ಯಾ ಶರ್ಮಾ ಅವರು ನಿಮ್ಮ ಹೊಟ್ಟೆ ನೋವಿನ ತಪಾಸಣೆಗಾಗಿ ನಿಮ್ಮ ಅಲ್ಟ್ರಾಸೌಂಡ್ ಸ್ಕ್ಯಾನ್ ವರದಿಯನ್ನು 60 ನಿಮಿಷಗಳ ಕಾಲ ವೀಕ್ಷಿಸಲು ಅನುಮತಿ ಕೇಳುತ್ತಿದ್ದಾರೆ. ನೀವು ಅನುಮೋದಿಸಲು ಹಸಿರು ಬಟನ್ ಒತ್ತಿ."
+      },
+      hi: {
+        patientTitle: "रोगी विवरण एवं पहचान (Patient Details)",
+        callTitle: "डॉ. अनन्या शर्मा के साथ लाइव परामर्श (Live Consultation)",
+        modalHeader: "रिकॉर्ड एक्सेस अनुमति अनुरोध (Record Request)",
+        welcomeVoice: "नमस्ते रमेश जी। केयरब्रिज में आपका स्वागत है। आपकी गोपनीयता सुरक्षित है।",
+        consentVoice: "डॉ. अनन्या शर्मा ने पेट दर्द की जांच के लिए आपकी अल्ट्रासाउंड रिपोर्ट को 60 मिनट के लिए देखने की अनुमति मांगी है। कृपया स्वीकार करने के लिए हरा बटन दबाएं।"
+      },
+      en: {
+        patientTitle: "Patient Profile & Identity Verification",
+        callTitle: "Teleconsultation with Dr. Ananya Sharma",
+        modalHeader: "Purpose-Specific Record Access Request",
+        welcomeVoice: "Welcome Ramesh Gowda to CareBridge India. Your medical records remain under your explicit control.",
+        consentVoice: "Dr. Ananya Sharma requests access to your Ultrasound Scan for evaluating abdominal pain for 60 minutes. Click approve to grant access."
+      }
+    };
+
+    function switchRole(role) {
+      currentRole = role;
+      document.querySelectorAll('.controls .seg-btn').forEach(b => {
+        if (b.innerText.toLowerCase().includes(role)) b.classList.add('active');
+        else if (b.innerText.toLowerCase().includes('patient') || b.innerText.toLowerCase().includes('doctor')) b.classList.remove('active');
+      });
+
+      document.getElementById('patientView').classList.toggle('active', role === 'patient');
+      document.getElementById('doctorView').classList.toggle('active', role === 'doctor');
+    }
+
+    function setLanguage(lang) {
+      currentLanguage = lang;
+      const t = translations[lang];
+      document.getElementById('txtPatientTitle').innerText = t.patientTitle;
+      document.getElementById('txtCallTitle').innerText = t.callTitle;
+      document.getElementById('txtModalHeader').innerText = t.modalHeader;
+
+      const segs = document.querySelectorAll('.controls .segmented:nth-of-type(2) .seg-btn');
+      segs.forEach(s => s.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    function toggleRep(isRep) {
+      document.getElementById('repDetails').style.display = isRep ? 'block' : 'none';
+    }
+
+    function simulateNetwork(mode) {
+      const v = document.getElementById('videoStreamContent');
+      const a = document.getElementById('audioStreamContent');
+      const t = document.getElementById('textStreamContent');
+      const badge = document.getElementById('patientNetBadge');
+
+      v.style.display = 'none';
+      a.style.display = 'none';
+      t.style.display = 'none';
+
+      if (mode === 'good') {
+        v.style.display = 'flex';
+        badge.className = 'network-pill net-good';
+        badge.innerText = '🟢 HD Video (450 kbps)';
+      } else if (mode === 'weak') {
+        a.style.display = 'flex';
+        badge.className = 'network-pill net-weak';
+        badge.innerText = '🟡 Audio Priority (50 kbps)';
+      } else {
+        t.style.display = 'flex';
+        badge.className = 'network-pill net-bad';
+        badge.innerText = '🔴 Store & Forward (<20 kbps)';
+      }
+    }
+
+    function triggerDoctorRequest() {
+      document.getElementById('consentModal').classList.add('active');
+    }
+
+    function sendDoctorConsentRequest() {
+      alert("Purpose-specific consent request dispatched to Patient's screen with HMAC token.");
+      switchRole('patient');
+      document.getElementById('consentModal').classList.add('active');
+    }
+
+    function respondConsent(approved) {
+      document.getElementById('consentModal').classList.remove('active');
+      consentGranted = approved;
+      const statusBadge = document.getElementById('scanConsentStatus');
+      const docViewer = document.getElementById('docRecordViewer');
+
+      if (approved) {
+        statusBadge.style.background = '#dcfce7';
+        statusBadge.style.color = '#166534';
+        statusBadge.innerText = '🔓 ಅನುಮೋದಿಸಲಾಗಿದೆ (Approved - 60m)';
+        docViewer.style.display = 'block';
+        alert("✅ Consent Approved: Single-use purpose token generated in Redis. Doctor can now stream the scan.");
+      } else {
+        statusBadge.style.background = '#fee2e2';
+        statusBadge.style.color = '#991b1b';
+        statusBadge.innerText = '❌ ತಿರಸ್ಕರಿಸಲಾಗಿದೆ (Access Denied)';
+        docViewer.style.display = 'none';
+        alert("❌ Consent Declined: Backend strictly blocked doctor's access request.");
+      }
+    }
+
+    function signAndIssueCarePlan() {
+      alert("✅ Care plan verified & signed by Dr. Ananya Sharma!\n\nDispatched to patient with bilingual text + audio summary.");
+    }
+
+    function exportFHIR() {
+      const fhirBundle = {
+        resourceType: "Bundle",
+        type: "document",
+        timestamp: new Date().toISOString(),
+        entry: [
+          { resource: { resourceType: "Patient", id: "ramesh-gowda", language: "kn" } },
+          { resource: { resourceType: "Encounter", status: "finished", class: { code: "VR" } } },
+          { resource: { resourceType: "Consent", status: "active", scope: { text: "Ultrasound Pelvis" } } }
+        ]
+      };
+      const blob = new Blob([JSON.stringify(fhirBundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "fhir_encounter_bundle.json";
+      a.click();
+    }
+
+    function playVoicePrompt(type) {
+      if ('speechSynthesis' in window) {
+        const text = translations[currentLanguage][type === 'welcome' ? 'welcomeVoice' : 'consentVoice'];
+        const utter = new SpeechSynthesisUtterance(text);
+        if (currentLanguage === 'hi') utter.lang = 'hi-IN';
+        else if (currentLanguage === 'kn') utter.lang = 'kn-IN';
+        else utter.lang = 'en-IN';
+        window.speechSynthesis.speak(utter);
+      } else {
+        alert("Audio synthesis not supported in this browser.");
+      }
+    }
+  </script>
+</body>
+</html>
