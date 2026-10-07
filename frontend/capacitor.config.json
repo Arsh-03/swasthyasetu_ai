@@ -1,0 +1,14 @@
+{
+  "appId": "in.gov.carebridge.app",
+  "appName": "CareBridge India",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_carebridge",
+      "iconColor": "#0B63E5"
+    }
+  }
+}
