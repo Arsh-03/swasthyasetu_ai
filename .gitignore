@@ -1,0 +1,56 @@
+# Environment files
+.env
+.env.*
+*.env
+!.env.example
+
+# Databases & SQLite
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+carebridge.db
+backend/carebridge.db
+
+# Python & Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+
+# Node & Frontend Build
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+dist-ssr
+*.local
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.sw?
+*.bak
