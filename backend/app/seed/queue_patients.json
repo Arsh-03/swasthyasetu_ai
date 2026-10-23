@@ -1,0 +1,96 @@
+[
+  {
+    "patient_id": "usr_ramesh_gowda",
+    "full_name": "Ramesh Gowda (ರಮೇಶ್ ಗೌಡ)",
+    "abha_address": "91-4820-1928-1120@abdm",
+    "phone_number": "9845012345",
+    "preferred_language": "kn",
+    "demographics": {
+      "age": 54,
+      "gender": "Male",
+      "district": "Hassan, Karnataka",
+      "occupation": "Agriculture",
+      "phone_masked": "+91 98450 12345"
+    },
+    "complaint": "Acute right flank pain radiating to groin, nausea",
+    "vitals": "BP 130/85 • 101.4°F • SpO2 98%",
+    "allergies": [
+      "Penicillin"
+    ],
+    "active_rx": [
+      "Antacid Suspension (Gelusil 10ml)",
+      "Paracetamol 500mg PRN"
+    ],
+    "wait_time": "12m wait",
+    "urgency": "high",
+    "avatar_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuAMknnrL1azNBnB58uMox-l1CcLlCOqWvUimLBiLkJDaWKKrtkqvKnzs2xdOeVF8iSMHpTSk0ENugY-yF1k0JbvFHTOYCtzwJVjaqx9vKZdAogAGrJm1fLfa22lW6sdm1aSSRYxv0craALN6s1BZNS6itFWOoWj_QWMP-wF772FTz5PEDVqxhkesTSt97veSZTFlDJhJgLUmUjUgo1fQDzUqUL_PXosFUri_P1ve9yPukx2vFxzlUA5NQ"
+  },
+  {
+    "patient_id": "pat_kamla_devi",
+    "full_name": "Kamla Devi, 68 yrs",
+    "abha_address": "44-9021-3312-8801@abdm",
+    "phone_number": "9845099882",
+    "preferred_language": "kn",
+    "demographics": {
+      "age": 68,
+      "gender": "Female",
+      "district": "Mandya, Karnataka",
+      "occupation": "Homemaker"
+    },
+    "complaint": "High fever and severe chills (3 days)",
+    "vitals": "BP 135/88 • 102.2°F • SpO2 97%",
+    "allergies": [
+      "Penicillin",
+      "Sulfa drugs"
+    ],
+    "active_rx": [
+      "Metformin 500mg",
+      "Amlodipine 5mg"
+    ],
+    "wait_time": "10m wait",
+    "urgency": "high",
+    "avatar_url": "https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg"
+  },
+  {
+    "patient_id": "pat_rajesh_kumar",
+    "full_name": "Rajesh Kumar, 24 yrs",
+    "abha_address": "12-3341-9981-2245@abdm",
+    "phone_number": "9876500123",
+    "preferred_language": "hi",
+    "demographics": {
+      "age": 24,
+      "gender": "Male",
+      "district": "Bengaluru Rural"
+    },
+    "complaint": "Chest discomfort on exertion, fatigue",
+    "vitals": "BP 120/80 • 98.6°F • SpO2 99%",
+    "allergies": [],
+    "active_rx": [
+      "Multivitamin daily"
+    ],
+    "wait_time": "18m wait",
+    "urgency": "follow_up",
+    "avatar_url": "https://lh3.googleusercontent.com/aida/AEtjO1XhW_jWjVuKzcXPjD3rFF_wxInRKFR_DlpUGvCKTqyRFkhoSdWm28yL1M58aJvl3rfXWVP3uq7NWfrUCvQg7LOYvxpDv4h4liaUW6515Gm634P3tkuM0cONqiCiOkNmlym3kgMjgYmeHTlZ1fvM_kfWUb46ObQGlHhhSYCPZAHL32j3MGKwxeiPpVmGQFT3zzvBetcYFPS5AVbq5koPEOmLHfewMmYxbav6al4m3UHdBhVNoG5MoCmrMSw"
+  },
+  {
+    "patient_id": "pat_sunita_patil",
+    "full_name": "Sunita Patil, 42 yrs",
+    "abha_address": "88-1120-4491-0012@abdm",
+    "phone_number": "9988776655",
+    "preferred_language": "kn",
+    "demographics": {
+      "age": 42,
+      "gender": "Female",
+      "district": "Belagavi, Karnataka"
+    },
+    "complaint": "Routine fasting blood sugar review & refill",
+    "vitals": "BP 118/76 • 98.4°F • SpO2 99%",
+    "allergies": [],
+    "active_rx": [
+      "Metformin 500mg SR"
+    ],
+    "wait_time": "25m wait",
+    "urgency": "routine",
+    "avatar_url": "https://lh3.googleusercontent.com/aida/AEtjO1VNu41eg1BOx_12dIMcTk240m1X3miHBl17YloUV74oGNemNKO6of7ejkaMQUkIz4LvBUKk8uGEf_jyIOk-YlldFNV1sQinKqsbwGYXB9VEza2XcGU6YGTLpBPPLUkvrcsqpwX_3pxgdCvK8q8SXqOitj_aT4lk6Geq91_Q9eH6ayZ26njfro1091Xk5pSRVtSkCcgM1_MbTSwBK7FlABcBSwYnWCn9tcBvXtdCDztNC6HZfRcREh3eDpkj"
+  }
+]

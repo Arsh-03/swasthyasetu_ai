@@ -54,3 +54,6 @@ Thumbs.db
 !.vscode/extensions.json
 *.sw?
 *.bak
+.neon
+
+.agents/mcp_config.json

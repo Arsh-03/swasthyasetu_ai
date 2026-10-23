@@ -2,9 +2,10 @@ import uuid
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from app.database import get_db
-from app.models.models import RecordMetadata, Consent, AuditEvent
+from app.models.models import RecordMetadata, Consent, AuditEvent, Practitioner
+from app.services.serializers import active_consent_for_record
 from app.schemas.schemas import RecordMetadataOut, RecordCreateRequest
 from app.services.token_vault import token_vault
 from app.services.auth_dependencies import get_current_user
@@ -18,53 +19,63 @@ async def list_patient_records(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Lists ABDM-linked records for a patient.
-    Protected Endpoint: Validates user identity and role.
-    Checks active consents to annotate protected vs approved state.
+    Lists ABDM-linked records for a patient, newest first.
+    Patients see all their own records. Doctors see findings only for records
+    covered by a live (approved, unexpired) consent.
     """
-    # Enforce patient boundary: A patient can only view their own records
-    is_owner = (current_user["role"] == "patient" and (current_user["user_id"] == patient_id or "ramesh" in current_user["user_id"] and "ramesh" in patient_id))
-    if current_user["role"] == "patient" and not is_owner:
+    is_owner = current_user["role"] in ("patient", "representative") and current_user["user_id"] == patient_id
+    if current_user["role"] != "doctor" and not is_owner:
         raise HTTPException(
             status_code=403,
             detail="Access Denied: You cannot view records of another patient under DPDP Act."
         )
-    res = await db.execute(select(RecordMetadata).where(RecordMetadata.patient_id == patient_id))
+    res = await db.execute(
+        select(RecordMetadata)
+        .where(RecordMetadata.patient_id == patient_id)
+        .order_by(desc(RecordMetadata.created_at))
+    )
     records = res.scalars().all()
 
-    # Query active consents
-    consent_res = await db.execute(
-        select(Consent).where(
-            Consent.patient_id == patient_id,
-            Consent.status == "approved"
+    consent_rows = (
+        await db.execute(
+            select(Consent, Practitioner)
+            .outerjoin(Practitioner, Practitioner.practitioner_id == Consent.practitioner_id)
+            .where(Consent.patient_id == patient_id, Consent.status == "approved")
         )
-    )
-    approved_consents = {c.record_id: c for c in consent_res.scalars().all()}
+    ).all()
+    consents = [c for c, _ in consent_rows]
+    doctor_names = {c.consent_id: (p.display_name if p else None) for c, p in consent_rows}
 
     output = []
     for r in records:
-        status = "protected"
-        if is_owner:
+        live = active_consent_for_record(consents, r.record_id)
+        had_consent = any(c.record_id in (r.record_id, "all_abdm_records") for c in consents)
+        if is_owner or live:
             status = "approved"
-        elif r.record_id in approved_consents:
-            c = approved_consents[r.record_id]
-            if c.grant_token_hash:
-                check = token_vault.verify_and_check(c.grant_token_hash)
-                if check.get("valid"):
-                    status = "approved"
-                else:
-                    status = "expired"
+        elif had_consent:
+            status = "expired"
+        else:
+            status = "protected"
+        visible = status == "approved"
 
         output.append(RecordMetadataOut(
             record_id=r.record_id,
             patient_id=r.patient_id,
             record_type=r.record_type,
             title=r.title,
-            date_str=r.date_str or "2026-05-24",
+            date_str=r.date_str or "",
             file_mime_type=r.file_mime_type,
             file_size_bytes=r.file_size_bytes,
-            summary_findings=r.summary_findings if (status == "approved" or is_owner) else None,
-            consent_status=status
+            summary_findings=r.summary_findings if visible else None,
+            consent_status=status,
+            facility=r.facility,
+            category=r.category,
+            type_label=r.type_label,
+            imaging=r.imaging_json if visible else None,
+            lab_results=r.lab_results_json if visible else None,
+            shared_with=doctor_names.get(live.consent_id) if live else None,
+            consent_expires_at=live.expires_at if live else None,
+            created_at=r.created_at,
         ))
 
     return output
@@ -79,9 +90,8 @@ async def add_medical_record(
     Adds a medical record / diagnostic report to the patient's ABDM encrypted vault.
     """
     target_patient_id = req.patient_id or current_user["user_id"]
-    if current_user["role"] == "patient" and current_user["user_id"] != target_patient_id:
-        if "ramesh" not in target_patient_id and "ramesh" not in current_user["user_id"]:
-            raise HTTPException(status_code=403, detail="Cannot add records for another patient.")
+    if current_user["role"] != "doctor" and current_user["user_id"] != target_patient_id:
+        raise HTTPException(status_code=403, detail="Cannot add records for another patient.")
 
     rec_id = f"rec_{uuid.uuid4().hex[:10]}"
     new_record = RecordMetadata(
@@ -95,7 +105,10 @@ async def add_medical_record(
         secure_storage_reference=f"vault://abdm/patients/{target_patient_id}/records/{rec_id}.enc",
         encryption_key_id="kms-carebridge-aes256-gcm",
         summary_findings=req.summary_findings or "Patient uploaded historical record in ABDM vault.",
-        raw_preview_text=req.raw_preview_text or req.summary_findings or f"Historical Record: {req.title}"
+        raw_preview_text=req.raw_preview_text or req.summary_findings or f"Historical Record: {req.title}",
+        facility=req.facility,
+        category=req.category or ("lab" if req.record_type in ("blood_panel", "lab") else "diagnostic"),
+        type_label=req.type_label,
     )
     db.add(new_record)
 
@@ -117,7 +130,11 @@ async def add_medical_record(
         file_mime_type=new_record.file_mime_type,
         file_size_bytes=new_record.file_size_bytes,
         summary_findings=new_record.summary_findings,
-        consent_status="approved"
+        consent_status="approved",
+        facility=new_record.facility,
+        category=new_record.category,
+        type_label=new_record.type_label,
+        created_at=new_record.created_at,
     )
 
 @router.get("/{record_id}/stream")

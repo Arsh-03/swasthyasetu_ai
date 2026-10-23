@@ -5,7 +5,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.seed_data import seed_database
-from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate
+from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan
 from app.services.connection_manager import ws_manager
 
 @asynccontextmanager
@@ -41,6 +41,9 @@ app.include_router(scribe.router, prefix=settings.API_V1_STR)
 app.include_router(fhir.router, prefix=settings.API_V1_STR)
 app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(translate.router, prefix=settings.API_V1_STR)
+app.include_router(patients.router, prefix=settings.API_V1_STR)
+app.include_router(appointments.router, prefix=settings.API_V1_STR)
+app.include_router(careplan.router, prefix=settings.API_V1_STR)
 
 @app.websocket("/ws/telehealth")
 async def telehealth_signaling_ws(websocket: WebSocket):

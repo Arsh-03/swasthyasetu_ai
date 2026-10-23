@@ -13,8 +13,17 @@ from app.schemas.schemas import (
 from app.services.token_vault import token_vault
 from app.services.connection_manager import ws_manager
 from app.services.auth_dependencies import require_doctor, require_patient, get_current_user
+from app.services.serializers import as_aware, consent_display_status, remaining_label
 
 router = APIRouter(prefix="/consents", tags=["consents"])
+
+
+def _restart_window(consent: Consent) -> None:
+    """Grant window = requested duration, counted from the moment of approval."""
+    created = as_aware(consent.created_at)
+    expires = as_aware(consent.expires_at)
+    duration = (expires - created) if (created and expires and expires > created) else timedelta(minutes=60)
+    consent.expires_at = datetime.now(timezone.utc) + duration
 
 @router.post("/link-patient-request")
 async def link_patient_request(
@@ -144,6 +153,7 @@ async def link_patient_request(
 async def verify_otp_and_grant_consent(
     consent_id: str,
     req: ConsentOtpVerifyIn,
+    current_patient: Dict[str, Any] = Depends(require_patient),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -159,6 +169,10 @@ async def verify_otp_and_grant_consent(
     consent = res.scalar_one_or_none()
     if not consent:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    if consent.patient_id != current_patient["user_id"]:
+        raise HTTPException(status_code=403, detail="This consent request belongs to another patient")
+
+    _restart_window(consent)
 
     # Issue HMAC grant token in vault
     token_info = token_vault.create_grant_token(
@@ -235,21 +249,29 @@ async def get_pending_consents_for_patient(
     ]
 
     stmt = (
-        select(Consent, Practitioner)
+        select(Consent, Practitioner, RecordMetadata)
         .outerjoin(Practitioner, Consent.practitioner_id == Practitioner.practitioner_id)
+        .outerjoin(RecordMetadata, Consent.record_id == RecordMetadata.record_id)
         .where(*conditions)
+        .order_by(Consent.created_at.desc())
     )
     res = await db.execute(stmt)
     results = res.all()
     output = []
-    for consent, practitioner in results:
+    for consent, practitioner, record in results:
+        created = as_aware(consent.created_at)
+        expires = as_aware(consent.expires_at)
+        duration = round((expires - created).total_seconds() / 60) if created and expires else 60
         output.append({
             "consent_id": consent.consent_id,
             "encounter_id": consent.encounter_id,
             "patient_id": consent.patient_id,
             "practitioner_id": consent.practitioner_id,
-            "practitioner_name": practitioner.display_name if practitioner else "Dr. Ananya Sharma (MD)",
-            "practitioner_reg": practitioner.registration_number if practitioner else "NMC-KA-581920",
+            "practitioner_name": practitioner.display_name if practitioner else consent.practitioner_id,
+            "practitioner_reg": practitioner.registration_number if practitioner else "",
+            "record_title": record.title if record else "All linked ABDM records",
+            "clinical_purpose": consent.purpose,
+            "duration_minutes": duration,
             "purpose": consent.purpose,
             "scope": consent.scope,
             "status": consent.status,
@@ -266,25 +288,45 @@ async def request_consent(
 ):
     """
     Doctor creates a purpose-bound consent request for a specific record.
-    Status starts as 'requested'.
+    Status starts as 'requested'; the patient app is notified over WebSocket.
     """
-    # Fetch encounter and record
-    enc_res = await db.execute(select(Encounter).where(Encounter.encounter_id == req.encounter_id))
-    enc = enc_res.scalar_one_or_none()
-    if not enc:
-        raise HTTPException(status_code=404, detail="Encounter not found")
+    doctor_id = current_doctor["user_id"]
 
-    rec_res = await db.execute(select(RecordMetadata).where(RecordMetadata.record_id == req.record_id))
-    rec = rec_res.scalar_one_or_none()
+    rec = (await db.execute(select(RecordMetadata).where(RecordMetadata.record_id == req.record_id))).scalar_one_or_none()
     if not rec:
         raise HTTPException(status_code=404, detail="Health record not found")
+    if req.patient_id and rec.patient_id != req.patient_id:
+        raise HTTPException(status_code=400, detail="This record does not belong to the selected patient")
+
+    enc = None
+    if req.encounter_id:
+        enc = (await db.execute(select(Encounter).where(Encounter.encounter_id == req.encounter_id))).scalar_one_or_none()
+        if not enc:
+            raise HTTPException(status_code=404, detail="Encounter not found")
+    if enc is None or enc.patient_id != rec.patient_id:
+        enc = (await db.execute(
+            select(Encounter)
+            .where(Encounter.patient_id == rec.patient_id, Encounter.status.in_(["queued", "in_progress"]))
+            .order_by(Encounter.start_time)
+        )).scalars().first()
+    if enc is None:
+        enc = Encounter(
+            encounter_id=f"enc_{uuid.uuid4().hex[:8]}",
+            patient_id=rec.patient_id,
+            practitioner_id=doctor_id,
+            mode="video",
+            status="in_progress",
+        )
+        db.add(enc)
+        await db.flush()
 
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=req.duration_minutes)
 
     consent = Consent(
-        encounter_id=req.encounter_id,
-        patient_id=enc.patient_id,
-        practitioner_id=enc.practitioner_id or "dr_ananya_sharma",
+        consent_id=f"c_{uuid.uuid4().hex[:12]}",
+        encounter_id=enc.encounter_id,
+        patient_id=rec.patient_id,
+        practitioner_id=doctor_id,
         record_id=req.record_id,
         purpose=req.purpose,
         scope="read_only",
@@ -293,17 +335,28 @@ async def request_consent(
     )
     db.add(consent)
 
-    # Log audit event
-    audit = AuditEvent(
-        actor_id=consent.practitioner_id,
+    db.add(AuditEvent(
+        actor_id=doctor_id,
         action="CONSENT_REQUEST",
         resource_id=req.record_id,
-        outcome="SUCCESS"
-    )
-    db.add(audit)
+        outcome="PENDING",
+        purpose=req.purpose,
+    ))
 
     await db.commit()
     await db.refresh(consent)
+
+    doctor = (await db.execute(select(Practitioner).where(Practitioner.practitioner_id == doctor_id))).scalar_one_or_none()
+    await ws_manager.broadcast({
+        "type": "consent_request",
+        "consent_id": consent.consent_id,
+        "patient_id": consent.patient_id,
+        "practitioner_name": doctor.display_name if doctor else current_doctor.get("name"),
+        "practitioner_reg": doctor.registration_number if doctor else "",
+        "record_title": rec.title,
+        "clinical_purpose": req.purpose,
+        "duration_minutes": req.duration_minutes,
+    })
 
     return ConsentOut(
         consent_id=consent.consent_id,
@@ -334,10 +387,13 @@ async def decide_consent(
     consent = res.scalar_one_or_none()
     if not consent:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    if consent.patient_id != current_patient["user_id"]:
+        raise HTTPException(status_code=403, detail="This consent request belongs to another patient")
 
     grant_token_hash = None
     if decision.approved:
         consent.status = "approved"
+        _restart_window(consent)
         # Generate HMAC grant token
         token_info = token_vault.create_grant_token(
             consent_id=consent.consent_id,
@@ -404,6 +460,8 @@ async def revoke_consent(
     consent = res.scalar_one_or_none()
     if not consent:
         raise HTTPException(status_code=404, detail="Consent not found")
+    if consent.patient_id != current_patient["user_id"]:
+        raise HTTPException(status_code=403, detail="This consent belongs to another patient")
 
     consent.status = "revoked"
     token_vault.revoke_by_consent_id(consent_id)
@@ -443,3 +501,38 @@ async def get_consent_status(
         "grant_token_hash": consent.grant_token_hash,
         "token_live_status": token_check
     }
+
+
+@router.get("/history")
+async def get_my_consent_history(
+    current_patient: Dict[str, Any] = Depends(require_patient),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    "Who saw my records": every consent on the patient's records, newest first,
+    with the doctor, record, purpose and whether access is still live.
+    """
+    stmt = (
+        select(Consent, Practitioner, RecordMetadata)
+        .outerjoin(Practitioner, Consent.practitioner_id == Practitioner.practitioner_id)
+        .outerjoin(RecordMetadata, Consent.record_id == RecordMetadata.record_id)
+        .where(Consent.patient_id == current_patient["user_id"])
+        .order_by(Consent.created_at.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        {
+            "consent_id": c.consent_id,
+            "doctor": p.display_name if p else c.practitioner_id,
+            "reg": p.registration_number if p else "",
+            "facility": (p.facility if p else None) or "",
+            "record": r.title if r else "All linked ABDM records",
+            "purpose": c.purpose,
+            "status": consent_display_status(c),
+            "active": consent_display_status(c) == "approved",
+            "remaining": remaining_label(c.expires_at) if consent_display_status(c) == "approved" else None,
+            "created_at": c.created_at,
+            "expires_at": c.expires_at,
+        }
+        for c, p, r in rows
+    ]

@@ -1,0 +1,51 @@
+/* SwasthyaSetu macOS Sequoia Clinician Suite Design System */
+
+:root {
+  --color-primary: #1C1C1E;
+  --color-secondary: #636366;
+  --color-tertiary: #8E8E93;
+  --color-separator: #E5E5EA;
+
+  --color-surface: #F2F2F7;
+  --color-card: #FFFFFF;
+
+  --apple-blue: #007AFF;
+  --apple-green: #34C759;
+  --apple-orange: #FF9500;
+  --apple-red: #FF3B30;
+  --apple-indigo: #5856D6;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #F2F2F7;
+  color: #1C1C1E;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", Inter, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.font-kannada {
+  font-family: 'Noto Sans Kannada', -apple-system, sans-serif;
+  line-height: 1.6;
+}
+
+.font-hindi {
+  font-family: 'Noto Sans Devanagari', -apple-system, sans-serif;
+  line-height: 1.6;
+}
+
+/* Custom scrollbar hiding */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
