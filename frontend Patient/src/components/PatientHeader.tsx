@@ -1,165 +1,123 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { WarmClinicTheme } from '../theme/tokens';
-import { PatientUser } from '../services/api';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
+import type { PatientUser } from '../services/api';
+import { useLanguage } from '../i18n/LanguageContext';
+import { LANGUAGE_NAMES, t as translate } from '../utils/translations';
+import { GlassToolbar } from './glass';
+import { AppText, Avatar, BrandMark, IconButton, StableLabel } from './ui';
 
 interface PatientHeaderProps {
   user: PatientUser | null;
-  selectedLanguage: 'kn' | 'hi' | 'en';
-  onToggleLanguage: () => void;
   onOpenProfile: () => void;
   onLogout?: () => void;
 }
 
-export const PatientHeader: React.FC<PatientHeaderProps> = ({
-  user,
-  selectedLanguage,
-  onToggleLanguage,
-  onOpenProfile,
-  onLogout,
-}) => {
-  const getGreeting = () => {
-    if (selectedLanguage === 'kn') return 'ನಮಸ್ಕಾರ';
-    if (selectedLanguage === 'hi') return 'नमस्ते';
-    return 'Namaste';
-  };
+const initialsOf = (name: string) => {
+  const parts = name.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'P';
+  const first = parts[0][0];
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+  return `${first}${last}`.toUpperCase();
+};
 
-  const getLanguageLabel = () => {
-    if (selectedLanguage === 'kn') return 'ಕ (KN)';
-    if (selectedLanguage === 'hi') return 'हि (HI)';
-    return 'EN';
-  };
-
-  const todayDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  }).toUpperCase();
-
-  const firstName = user?.full_name?.split(' ')[0] || '';
+/** Mobile DoctorHeader: brand mark, language pill and monogram avatar on the glass toolbar. */
+export const PatientHeader: React.FC<PatientHeaderProps> = ({ user, onOpenProfile, onLogout }) => {
+  const { lang, t, cycleLang } = useLanguage();
 
   return (
-    <View style={styles.headerContainer}>
-      {/* Top row: date on the left, actions on the right */}
-      <View style={styles.topRow}>
-        <Text style={styles.dateEyebrow} numberOfLines={1}>
-          {todayDate}
-        </Text>
-
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={onToggleLanguage}
-            style={styles.langPill}
-            accessibilityLabel="Change language"
-          >
-            <Ionicons name="language" size={14} color={WarmClinicTheme.colors.systemBlue} />
-            <Text style={styles.langText}>{getLanguageLabel()}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={onOpenProfile}
-            style={styles.avatarButton}
-            accessibilityLabel="Profile"
-          >
-            <Text style={styles.avatarInitial}>{firstName.charAt(0).toUpperCase()}</Text>
-          </TouchableOpacity>
-
-          {onLogout && (
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={onLogout}
-              style={styles.iconButton}
-              accessibilityLabel="Sign out"
-            >
-              <Ionicons name="log-out-outline" size={18} color={WarmClinicTheme.colors.alertRed} />
-            </TouchableOpacity>
-          )}
+    <GlassToolbar>
+      {/* Brand */}
+      <View style={styles.brand}>
+        <BrandMark size={36} />
+        <View>
+          <AppText variant="callout" lang="en" compact style={styles.brandName}>
+            {t('appName')}
+          </AppText>
+          <StableLabel text={(l) => translate(l, 'patientApp')} variant="caption" color="tertiary" compact />
         </View>
       </View>
 
-      {/* Greeting on its own line so long Kannada / Hindi text never collides with the buttons */}
-      <Text style={styles.nameText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-        {getGreeting()}, {firstName}
-      </Text>
-    </View>
+      <View style={styles.actions}>
+        {/* Language switcher pill */}
+        <Pressable
+          onPress={cycleLang}
+          accessibilityRole="button"
+          accessibilityLabel={`${t('switchLanguage')}: ${LANGUAGE_NAMES[lang]}`}
+          hitSlop={4}
+          style={({ pressed }) => [styles.langPill, pressed && styles.langPillPressed]}
+        >
+          <StableLabel text={(l) => LANGUAGE_NAMES[l]} variant="subhead" weight={500} compact />
+          <View style={styles.langCode}>
+            <AppText variant="mono" color="secondary">
+              {lang.toUpperCase()}
+            </AppText>
+          </View>
+        </Pressable>
+
+        {/* Monogram avatar → profile / symptom intake */}
+        <Pressable
+          onPress={onOpenProfile}
+          accessibilityRole="button"
+          accessibilityLabel={`${user?.full_name ?? ''}, ${t('openProfile')}`}
+          hitSlop={4}
+          style={({ pressed }) => [styles.avatarPill, pressed && styles.langPillPressed]}
+        >
+          <Avatar initials={initialsOf(user?.full_name ?? '')} size={30} />
+        </Pressable>
+
+        {onLogout && (
+          <IconButton icon="logout" tone="danger" size={32} accessibilityLabel={t('signOut')} onPress={onLogout} />
+        )}
+      </View>
+    </GlassToolbar>
   );
 };
 
 const styles = StyleSheet.create({
-  headerContainer: {
-    width: '100%',
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 14,
-    backgroundColor: WarmClinicTheme.colors.surface,
-    gap: 4,
-  },
-  topRow: {
+  brand: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    gap: 10,
+    flexShrink: 1,
   },
-  dateEyebrow: {
-    flex: 1,
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '700',
-    letterSpacing: 0.5,
+  brandName: {
+    letterSpacing: -0.3,
   },
-  nameText: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    letterSpacing: -0.6,
-  },
-  actionRow: {
+  actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
   },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 34,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    borderRadius: WarmClinicTheme.radii.pill,
-    gap: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: 10,
+    borderRadius: radii.md,
+    backgroundColor: tints.gray,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
   },
-  langText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1C1C1E',
+  langPillPressed: {
+    opacity: 0.7,
   },
-  avatarButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: WarmClinicTheme.colors.verifiedGreenBg,
-    borderWidth: 1.5,
-    borderColor: WarmClinicTheme.colors.verifiedGreen,
+  langCode: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    backgroundColor: colors.card,
+  },
+  avatarPill: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  avatarInitial: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: WarmClinicTheme.colors.forestHover,
-  },
-  iconButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.hairline,
+    ...shadows.sm,
   },
 });

@@ -1,30 +1,37 @@
 import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
+import { patientApi, type PatientUser } from '../services/api';
+import { useLanguage } from '../i18n/LanguageContext';
+import { LANGUAGE_NAMES, t as translate } from '../utils/translations';
+import { GlassSurface } from './glass';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
-import { WarmClinicTheme } from '../theme/tokens';
-import { patientApi, PatientUser } from '../services/api';
+  AppText,
+  AudioListenButton,
+  Badge,
+  BrandMark,
+  Icon,
+  type IconName,
+  PrimaryButton,
+  SecondaryButton,
+  SegmentedControl,
+  StableLabel,
+  TextField,
+} from './ui';
 
 interface PatientLoginViewProps {
   onLoginSuccess: (user: PatientUser) => void;
-  selectedLanguage: 'kn' | 'hi' | 'en';
-  onToggleLanguage: () => void;
 }
 
-export const PatientLoginView: React.FC<PatientLoginViewProps> = ({
-  onLoginSuccess,
-  selectedLanguage,
-  onToggleLanguage,
-}) => {
+const DEMO_ABHA = '91-4820-1928-1120@abdm';
+const DEMO_MOBILE = '9845012345';
+
+export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSuccess }) => {
+  const { t, cycleLang } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [authMode, setAuthMode] = useState<'abha' | 'mobile'>('abha');
-  const [identifier, setIdentifier] = useState('91-4820-1928-1120@abdm');
+  const [identifier, setIdentifier] = useState(DEMO_ABHA);
   const [otp, setOtp] = useState('123456');
   const [showOtpField, setShowOtpField] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -40,246 +47,181 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({
     setErrorMsg(null);
     try {
       // In demo environment, authenticates via patientApi.loginPatient
-      const cleanId = identifier.includes('@') ? '9845012345' : identifier;
+      const cleanId = identifier.includes('@') ? DEMO_MOBILE : identifier;
       const res = await patientApi.loginPatient(cleanId, 'password123');
       if (res.user) {
         onLoginSuccess(res.user);
       }
     } catch (err: any) {
-      setErrorMsg(err.message || 'Login failed. Please verify ABHA ID or mobile number.');
+      setErrorMsg(err.message || t('loginFailed'));
     } finally {
       setLoading(false);
     }
   };
 
-  const handleQuickDemoFill = async () => {
-    setIdentifier('91-4820-1928-1120@abdm');
+  const handleQuickDemoFill = () => {
+    setIdentifier(DEMO_ABHA);
     setOtp('123456');
     setShowOtpField(true);
     setErrorMsg(null);
   };
 
-  const handleListen = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const text =
-        selectedLanguage === 'kn'
-          ? 'ನಿಮ್ಮ ಸರ್ಕಾರದ ಆಯುಷ್ಮಾನ್ ಭಾರತ್ ಎಬಿಎಚ್ಎ ಆರೋಗ್ಯ ಐಡಿ ಅಥವಾ ಮೊಬೈಲ್ ಸಂಖ್ಯೆಯನ್ನು ಬಳಸಿಕೊಂಡು ಸುರಕ್ಷಿತವಾಗಿ ಸೈನ್ ಇನ್ ಮಾಡಿ.'
-          : 'Sign in securely using your Government ABHA Health ID or mobile number.';
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.85;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
+  const trust: { icon: IconName; label: string }[] = [
+    { icon: 'lock', label: t('trustOnlyYou') },
+    { icon: 'shield', label: t('trustNeverShared') },
+    { icon: 'badge', label: t('trustGovtId') },
+  ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Top Bar with Step Indicators & Language Switcher */}
-      <View style={styles.topBar}>
-        <View style={styles.stepsRow}>
-          <View style={[styles.stepDot, styles.stepDotActive]} />
-          <View style={[styles.stepBar, styles.stepDotActive]} />
-          <View style={styles.stepDot} />
-          <View style={styles.stepDot} />
-        </View>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xxxl }]}
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* Branding panel (Doctor login's dark left column, stacked on top for mobile) */}
+      <View style={styles.brandPanel}>
+        <View style={[styles.glow, styles.glowBlue]} />
+        <View style={[styles.glow, styles.glowIndigo]} />
 
-        <View style={styles.topRightActions}>
-          <TouchableOpacity activeOpacity={0.8} onPress={onToggleLanguage} style={styles.langPill}>
-            <Text style={styles.langIcon}>🌐</Text>
-            <Text style={styles.langText}>
-              {selectedLanguage === 'kn' ? 'ಕ (KN)' : selectedLanguage === 'hi' ? 'हि (HI)' : 'EN'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Hero Arch Frame Illustration (~40% of viewport, Warm Clinic motif) */}
-      <View style={styles.archFrameContainer}>
-        <Image
-          source={{
-            uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAFK9g29UzOVbBvmanewfcfhpS7lYK0M5zBI9xI58osxtgGAB0MCpGRRs8HqlfBee-3YLiRTFqzyWK0xJVlp2x1VOluy2qv4P3EeKW-acWdYovs1chKa4D2XmWyu1rSRGE_KyQSTrkCVCguXBp9qqWT0Ei1f9FOQ3J9RZUWt4fYM8NJC0ejPhNj1lnCON71PGBVjODZWfVYb_FXu52582hRSr-jJ9PV6KPCadYv8tTa072WLvnc2o0jDg',
-          }}
-          style={styles.heroArchImage}
-        />
-      </View>
-
-      {/* Headline & Voice Audio Pill */}
-      <View style={styles.headlineRow}>
-        <View>
-          <Text style={styles.signInTitle}>Sign in</Text>
-          <Text style={styles.kannadaSubtitle}>
-            {selectedLanguage === 'kn' ? 'ಖಾತೆಗೆ ಪ್ರವೇಶಿಸಿ' : selectedLanguage === 'hi' ? 'लॉगिन करें' : 'ABDM Patient Gate'}
-          </Text>
-        </View>
-
-        <TouchableOpacity activeOpacity={0.8} onPress={handleListen} style={styles.listenPill}>
-          <Text style={{ fontSize: 18 }}>🔊</Text>
-          <Text style={styles.listenPillText}>Listen</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Privacy Trust Safeguards (3 Visual Chips) */}
-      <View style={styles.trustGrid}>
-        <View style={styles.trustTile}>
-          <View style={styles.trustCircle}>
-            <Text style={{ fontSize: 24 }}>🔒</Text>
+        <View style={styles.brandTop}>
+          <View style={styles.brandRow}>
+            <BrandMark size={44} />
+            <View style={styles.brandText}>
+              <AppText variant="title2" color="onTint" lang="en" compact>
+                {t('appName')}
+              </AppText>
+              <StableLabel text={(l) => translate(l, 'patientApp')} variant="eyebrow" color="blue" compact />
+            </View>
           </View>
-          <Text style={styles.trustText}>
-            {selectedLanguage === 'kn'
-              ? 'ನಿಮ್ಮದೇ ನಿರ್ಧಾರ'
-              : selectedLanguage === 'hi'
-              ? 'केवल आपका निर्णय'
-              : 'Only you decide'}
-          </Text>
-        </View>
 
-        <View style={styles.trustTile}>
-          <View style={styles.trustCircle}>
-            <Text style={{ fontSize: 24 }}>🛡️</Text>
-          </View>
-          <Text style={styles.trustText}>
-            {selectedLanguage === 'kn'
-              ? 'ಖಾಸಗಿ & ಸುರಕ್ಷಿತ'
-              : selectedLanguage === 'hi'
-              ? 'कभी साझा नहीं'
-              : 'Never shared'}
-          </Text>
-        </View>
-
-        <View style={styles.trustTile}>
-          <View style={styles.trustCircle}>
-            <Text style={{ fontSize: 24 }}>🪪</Text>
-          </View>
-          <Text style={styles.trustText}>
-            {selectedLanguage === 'kn'
-              ? 'ಸರ್ಕಾರಿ ಆರೋಗ್ಯ ಐಡಿ'
-              : selectedLanguage === 'hi'
-              ? 'सरकारी स्वास्थ्य आईडी'
-              : 'Govt health ID'}
-          </Text>
-        </View>
-      </View>
-
-      {errorMsg && (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>⚠️ {errorMsg}</Text>
-        </View>
-      )}
-
-      {/* Form Fields: ABHA or Mobile */}
-      <View style={styles.inputCard}>
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            onPress={() => {
-              setAuthMode('abha');
-              setIdentifier('91-4820-1928-1120@abdm');
-            }}
-            style={[styles.toggleBtn, authMode === 'abha' && styles.toggleBtnActive]}
+          <Pressable
+            onPress={cycleLang}
+            accessibilityRole="button"
+            accessibilityLabel={t('switchLanguage')}
+            hitSlop={6}
+            style={({ pressed }) => [styles.langPillWrap, pressed && styles.pressed]}
           >
-            <Text style={[styles.toggleBtnText, authMode === 'abha' && styles.toggleBtnTextActive]}>
-              {selectedLanguage === 'kn' ? 'ಆಭಾ ವಿಳಾಸ' : selectedLanguage === 'hi' ? 'आभा पता' : 'ABHA Address'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            onPress={() => {
-              setAuthMode('mobile');
-              setIdentifier('9845012345');
-            }}
-            style={[styles.toggleBtn, authMode === 'mobile' && styles.toggleBtnActive]}
-          >
-            <Text style={[styles.toggleBtnText, authMode === 'mobile' && styles.toggleBtnTextActive]}>
-              {selectedLanguage === 'kn' ? 'ಮೊಬೈಲ್ ಸಂಖ್ಯೆ' : selectedLanguage === 'hi' ? 'मोबाइल नंबर' : 'Mobile Number'}
-            </Text>
-          </TouchableOpacity>
+            <GlassSurface material="dark" style={styles.langPill}>
+              <Icon name="translate" size={16} color={colors.onTint} />
+              <StableLabel text={(l) => LANGUAGE_NAMES[l]} variant="footnote" weight={600} color="onTint" compact />
+            </GlassSurface>
+          </Pressable>
         </View>
 
-        <View style={styles.fieldWrapper}>
-          <Text style={styles.inputLabel}>
-            {authMode === 'abha'
-              ? selectedLanguage === 'kn'
-                ? 'ಆಯುಷ್ಮಾನ್ ಭಾರತ್ ಆಭಾ ವಿಳಾಸ'
-                : selectedLanguage === 'hi'
-                ? 'आयुष्मान भारत आभा पता'
-                : 'AYUSHMAN BHARAT ABHA ADDRESS'
-              : selectedLanguage === 'kn'
-              ? 'ನೋಂದಾಯಿತ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ'
-              : selectedLanguage === 'hi'
-              ? 'पंजीकृत मोबाइल नंबर'
-              : 'REGISTERED MOBILE NUMBER'}
-          </Text>
-          <TextInput
-            value={identifier}
-            onChangeText={setIdentifier}
-            style={styles.textInput}
-            placeholder={authMode === 'abha' ? 'e.g. 91-4820-1928-1120@abdm' : '9845012345'}
-            placeholderTextColor={WarmClinicTheme.colors.outline}
-          />
+        <View style={styles.brandCopy}>
+          <AppText variant="title" color="onTint">
+            {t('brandHeadline')}
+          </AppText>
+          <AppText variant="footnote" color="tertiary">
+            {t('brandDescription')}
+          </AppText>
         </View>
 
-        {showOtpField && (
-          <View style={styles.fieldWrapper}>
-            <Text style={styles.inputLabel}>
-              {selectedLanguage === 'kn' ? '6-ಅಂಕಿಯ OTP ನಮೂದಿಸಿ' : selectedLanguage === 'hi' ? '6-अंकीय OTP दर्ज करें' : 'ENTER 6-DIGIT OTP'}
-            </Text>
-            <TextInput
-              value={otp}
-              onChangeText={setOtp}
-              keyboardType="number-pad"
-              maxLength={6}
-              style={[styles.textInput, styles.otpInput]}
-              placeholder="123456"
-              placeholderTextColor={WarmClinicTheme.colors.outline}
-            />
-            <Text style={styles.otpHelper}>Demo OTP automatically set to 123456</Text>
+        <View style={styles.brandFooter}>
+          <View style={styles.brandFooterRow}>
+            <Icon name="verified" size={16} color={colors.green} />
+            <AppText variant="footnote" weight={500} color="gray4" style={styles.flex}>
+              {t('brandAbdm')}
+            </AppText>
+          </View>
+          <View style={styles.brandFooterRow}>
+            <Icon name="lock" size={16} color={colors.blue} />
+            <AppText variant="footnote" weight={500} color="gray4" style={styles.flex}>
+              {t('brandDpdp')}
+            </AppText>
+          </View>
+        </View>
+      </View>
+
+      {/* Authentication card */}
+      <View style={styles.formCard}>
+        <View style={styles.formHeaderRow}>
+          <AppText variant="eyebrow" color="blue" style={styles.flex}>
+            {t('patientAuthentication')}
+          </AppText>
+          <Badge label={t('loginGate')} tone="neutral" />
+        </View>
+
+        <View style={styles.titleRow}>
+          <View style={styles.flex}>
+            <AppText variant="largeTitle">{t('signIn')}</AppText>
+            <AppText variant="footnote" color="tertiary">
+              {t('signInSubtitle')}
+            </AppText>
+          </View>
+          <AudioListenButton text={() => t('signInSubtitle')} />
+        </View>
+
+        {/* Privacy trust safeguards */}
+        <View style={styles.trustRow}>
+          {trust.map((item) => (
+            <View key={item.icon} style={styles.trustItem}>
+              <View style={styles.trustTile}>
+                <Icon name={item.icon} size={22} color={colors.blue} />
+              </View>
+              <AppText variant="caption" weight={600} color="secondary" align="center">
+                {item.label}
+              </AppText>
+            </View>
+          ))}
+        </View>
+
+        {errorMsg && (
+          <View style={styles.errorBox} accessibilityRole="alert">
+            <Icon name="error" size={18} color={colors.red} />
+            <AppText variant="footnote" weight={500} color="red" style={styles.flex}>
+              {errorMsg}
+            </AppText>
           </View>
         )}
-      </View>
 
-      {/* Action Buttons */}
-      <View style={styles.actionsCol}>
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={handleContinue}
-          disabled={loading}
-          style={styles.primaryBtn}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <>
-              <Text style={styles.primaryBtnText}>
-                {showOtpField
-                  ? selectedLanguage === 'kn'
-                    ? 'ದೃಢೀಕರಿಸಿ & ಪ್ರವೇಶಿಸಿ'
-                    : selectedLanguage === 'hi'
-                    ? 'सत्यापित करें और लॉगिन'
-                    : 'Verify & Sign In'
-                  : selectedLanguage === 'kn'
-                  ? 'ಮುಂದುವರಿಯಿರಿ'
-                  : selectedLanguage === 'hi'
-                  ? 'आगे बढ़ें'
-                  : 'Continue with ABHA'}
-              </Text>
-              <Text style={{ fontSize: 18, color: '#FFFFFF' }}>→</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <SegmentedControl
+          options={[
+            { value: 'abha', label: t('abhaAddress'), icon: 'badge' },
+            { value: 'mobile', label: t('mobileNumber'), icon: 'smartphone' },
+          ]}
+          value={authMode}
+          onChange={(mode) => {
+            setAuthMode(mode);
+            setIdentifier(mode === 'abha' ? DEMO_ABHA : DEMO_MOBILE);
+          }}
+        />
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={handleQuickDemoFill}
-          style={styles.demoQuickBtn}
-        >
-          <Text style={styles.demoQuickIcon}>⚡</Text>
-          <Text style={styles.demoQuickText}>
-            {selectedLanguage === 'kn'
-              ? 'ತ್ವರಿತ ಲಾಗಿನ್: ರಮೇಶ್ ಗೌಡ (ರೈತ, ಹಾಸನ)'
-              : selectedLanguage === 'hi'
-              ? 'त्वरित लॉगिन: रमेश गौड़ा (किसान, हासन)'
-              : 'Demo 1-Click: Ramesh Gowda (Agriculture)'}
-          </Text>
-        </TouchableOpacity>
+        <TextField
+          label={authMode === 'abha' ? t('abhaAddressLabel') : t('mobileNumberLabel')}
+          icon={authMode === 'abha' ? 'badge' : 'smartphone'}
+          value={identifier}
+          onChangeText={setIdentifier}
+          placeholder={authMode === 'abha' ? t('abhaPlaceholder') : DEMO_MOBILE}
+          keyboardType={authMode === 'abha' ? 'email-address' : 'phone-pad'}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        {showOtpField && (
+          <TextField
+            label={t('otpLabel')}
+            value={otp}
+            onChangeText={setOtp}
+            keyboardType="number-pad"
+            maxLength={6}
+            placeholder="123456"
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
+            hint={t('otpDemoHint')}
+            otp
+          />
+        )}
+
+        <View style={styles.actions}>
+          <PrimaryButton
+            label={loading ? t('signingIn') : showOtpField ? t('verifyAndSignIn') : t('continueWithAbha')}
+            icon="login"
+            onPress={handleContinue}
+            loading={loading}
+          />
+          <SecondaryButton label={t('demoLogin')} icon="bolt" onPress={handleQuickDemoFill} />
+        </View>
       </View>
     </ScrollView>
   );
@@ -288,289 +230,135 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: colors.bg,
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 40,
-    gap: 14,
+    paddingHorizontal: spacing.gutter,
+    gap: spacing.lg,
   },
-  topBar: {
+  flex: {
+    flex: 1,
+  },
+  pressed: {
+    opacity: 0.8,
+  },
+  brandPanel: {
+    backgroundColor: colors.dark,
+    borderRadius: radii.xl,
+    padding: spacing.xxl,
+    gap: spacing.xl,
+    overflow: 'hidden',
+    ...shadows.lg,
+  },
+  glow: {
+    position: 'absolute',
+    borderRadius: 9999,
+  },
+  glowBlue: {
+    width: 260,
+    height: 260,
+    top: -110,
+    right: -90,
+    backgroundColor: 'rgba(0, 122, 255, 0.22)',
+  },
+  glowIndigo: {
+    width: 220,
+    height: 220,
+    bottom: -110,
+    left: -80,
+    backgroundColor: 'rgba(88, 86, 214, 0.18)',
+  },
+  brandTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 44,
+    gap: spacing.md,
   },
-  stepsRow: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.md,
+    flexShrink: 1,
   },
-  stepDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D1D1D6',
+  brandText: {
+    flexShrink: 1,
   },
-  stepBar: {
-    width: 22,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#D1D1D6',
-  },
-  stepDotActive: {
-    backgroundColor: '#007AFF',
-  },
-  topRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  langPillWrap: {
+    borderRadius: radii.pill,
   },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: WarmClinicTheme.radii.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  langIcon: {
-    fontSize: 12,
+  brandCopy: {
+    gap: spacing.sm,
   },
-  langText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1C1C1E',
+  brandFooter: {
+    gap: 10,
+    paddingTop: spacing.lg,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.12)',
   },
-  archFrameContainer: {
-    width: '100%',
-    height: 200,
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: '#E5E5EA',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  heroArchImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  headlineRow: {
+  brandFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 2,
+    gap: spacing.sm,
   },
-  signInTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    letterSpacing: -0.6,
+  formCard: {
+    backgroundColor: colors.card,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    padding: spacing.xl,
+    gap: spacing.lg,
+    ...shadows.lg,
   },
-  kannadaSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#8E8E93',
-  },
-  listenPill: {
+  formHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: WarmClinicTheme.radii.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    gap: spacing.sm,
   },
-  listenPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#007AFF',
-  },
-  trustGrid: {
+  titleRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 2,
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  trustRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  trustItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
   },
   trustTile: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 6,
-  },
-  trustCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#FFFFFF',
+    width: 48,
+    height: 48,
+    borderRadius: radii.lg,
+    backgroundColor: tints.blue,
+    borderWidth: 1,
+    borderColor: tints.blueRing,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  trustText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#636366',
-    textAlign: 'center',
   },
   errorBox: {
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.2)',
-  },
-  errorText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FF3B30',
-    textAlign: 'center',
-  },
-  inputCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    gap: 12,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(118, 118, 128, 0.12)',
-    borderRadius: 10,
-    padding: 2,
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  toggleBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  toggleBtnText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#8E8E93',
-  },
-  toggleBtnTextActive: {
-    fontWeight: '700',
-    color: '#1C1C1E',
-  },
-  fieldWrapper: {
-    gap: 4,
-  },
-  inputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#8E8E93',
-    letterSpacing: 0.5,
-  },
-  textInput: {
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#F2F2F7',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
-    paddingHorizontal: 12,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1C1C1E',
-  },
-  otpInput: {
-    textAlign: 'center',
-    fontSize: 18,
-    letterSpacing: 6,
-    fontWeight: '800',
-  },
-  otpHelper: {
-    fontSize: 10,
-    color: '#8E8E93',
-    textAlign: 'center',
-    marginTop: 2,
-  },
-  actionsCol: {
-    gap: 8,
-    marginTop: 2,
-  },
-  primaryBtn: {
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: '#007AFF',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  primaryBtnText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  demoQuickBtn: {
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: tints.red,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
-    elevation: 1,
+    borderColor: tints.redRing,
   },
-  demoQuickIcon: {
-    fontSize: 14,
-  },
-  demoQuickText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1C1C1E',
+  actions: {
+    gap: 10,
+    paddingTop: spacing.xs,
   },
 });

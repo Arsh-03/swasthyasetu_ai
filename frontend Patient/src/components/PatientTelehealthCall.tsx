@@ -1,27 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
-import { AppleTheme } from '../theme/tokens';
+import { View, StyleSheet, Image, Platform, Pressable } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, radii, shadows, spacing } from '../theme/tokens';
+import { useLanguage } from '../i18n/LanguageContext';
+import { haptic } from '../utils/haptics';
+import { GlassSurface } from './glass';
+import { AppText, Icon, IconButton } from './ui';
 
 interface PatientTelehealthCallProps {
   doctorName: string;
   onEndCall: () => void;
-  selectedLanguage: 'kn' | 'hi' | 'en';
 }
 
-export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({
-  onEndCall,
-  selectedLanguage,
-  doctorName,
-}) => {
+type NetworkTier = 'hd' | 'audio' | 'async';
+
+const DOCTOR_FEED_URL =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuCNL4BMuLtJ2i8g6NTnwHeQCHuAOBoVH2a0-_LYQNHlpps-NYI7Zm0kJOS83_2mfT6iW0VmrLR_Ws1XWJQkqFvMdbLIdoytlvHdKWy4oymsMvJiix6ZCfnabbIW2pz4OVbBjAvjRwZlJrf3ptnODgtdPMIvvwU5TOI47tgVHvDdfaHFPeZZKaZ1uf0iQ6sHQIuhtUA6yt256idRVh9J47qEBF8ZhGzRWVzPeff2xX0xQ_aOPSGolBYQfw';
+const SELF_PIP_URL =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuAMknnrL1azNBnB58uMox-l1CcLlCOqWvUimLBiLkJDaWKKrtkqvKnzs2xdOeVF8iSMHpTSk0ENugY-yF1k0JbvFHTOYCtzwJVjaqx9vKZdAogAGrJm1fLfa22lW6sdm1aSSRYxv0craALN6s1BZNS6itFWOoWj_QWMP-wF772FTz5PEDVqxhkesTSt97veSZTFlDJhJgLUmUjUgo1fQDzUqUL_PXosFUri_P1ve9yPukx2vFxzlUA5NQ';
+
+const NEXT_TIER: Record<NetworkTier, NetworkTier> = { hd: 'audio', audio: 'async', async: 'hd' };
+const TIER_COLOR: Record<NetworkTier, string> = { hd: colors.green, audio: colors.orange, async: colors.red };
+
+export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ onEndCall, doctorName }) => {
+  const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const [callSeconds, setCallSeconds] = useState(0);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isCamOn, setIsCamOn] = useState(true);
-  const [networkTier, setNetworkTier] = useState<'hd' | 'audio' | 'async'>('hd');
+  const [networkTier, setNetworkTier] = useState<NetworkTier>('hd');
 
   // WebRTC Local Media Stream for Patient
   const [localStream, setLocalStream] = useState<any>(null);
   const streamRef = useRef<any>(null);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const videoRef = useRef<any>(null);
 
   const stopTracks = () => {
@@ -53,14 +64,12 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({
         .then((stream) => {
           streamRef.current = stream;
           setLocalStream(stream);
-          setHasPermission(true);
           if (videoRef.current) {
             videoRef.current.srcObject = stream;
           }
         })
         .catch((err) => {
           console.warn('Patient camera/mic permission not granted:', err);
-          setHasPermission(false);
         });
     }
 
@@ -100,9 +109,12 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({
   };
 
   const handleEnd = () => {
+    haptic.warning();
     stopTracks();
     onEndCall();
   };
+
+  const cycleNetworkTier = () => setNetworkTier(NEXT_TIER[networkTier]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -117,170 +129,152 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  const tierLabel = networkTier === 'hd' ? t('networkHd') : networkTier === 'audio' ? t('networkAudio') : t('networkOffline');
+  const overlayTop = insets.top + spacing.md;
+
   return (
     <View style={styles.callContainer}>
-      {/* Video Stage */}
+      {/* Video stage */}
       <View style={styles.videoStage}>
         {networkTier !== 'async' ? (
           <Image
-            source={{
-              uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCNL4BMuLtJ2i8g6NTnwHeQCHuAOBoVH2a0-_LYQNHlpps-NYI7Zm0kJOS83_2mfT6iW0VmrLR_Ws1XWJQkqFvMdbLIdoytlvHdKWy4oymsMvJiix6ZCfnabbIW2pz4OVbBjAvjRwZlJrf3ptnODgtdPMIvvwU5TOI47tgVHvDdfaHFPeZZKaZ1uf0iQ6sHQIuhtUA6yt256idRVh9J47qEBF8ZhGzRWVzPeff2xX0xQ_aOPSGolBYQfw',
-            }}
-            style={[styles.doctorFeedImage, networkTier === 'audio' && styles.blurredImage]}
+            source={{ uri: DOCTOR_FEED_URL }}
+            style={[styles.doctorFeedImage, networkTier === 'audio' && styles.dimmedImage]}
+            accessibilityIgnoresInvertColors
           />
         ) : (
           <View style={styles.cameraOffPlaceholder}>
             <View style={styles.avatarPlaceholder}>
-              <Text style={{ fontSize: 44 }}>👩‍⚕️</Text>
+              <Icon name="person" size={44} color={colors.onTint} />
             </View>
-            <Text style={styles.doctorNameText}>{doctorName}</Text>
-            <Text style={styles.cameraOffText}>Audio Prioritized Telehealth • 50 kbps</Text>
+            <AppText variant="title" color="onTint">
+              {doctorName}
+            </AppText>
+            <AppText variant="footnote" weight={500} color="gray2">
+              {t('audioPrioritized')}
+            </AppText>
           </View>
         )}
 
-        {/* Audio Waveform overlay if in weak network mode */}
+        {/* Weak-network audio waveform */}
         {networkTier === 'audio' && (
           <View style={styles.audioWaveOverlay}>
             <View style={styles.waveRow}>
-              <View style={[styles.waveBar, { height: 20 }]} />
-              <View style={[styles.waveBar, { height: 38 }]} />
-              <View style={[styles.waveBar, { height: 26 }]} />
-              <View style={[styles.waveBar, { height: 48 }]} />
-              <View style={[styles.waveBar, { height: 24 }]} />
+              {[20, 38, 26, 48, 24].map((h, i) => (
+                <View key={i} style={[styles.waveBar, { height: h }]} />
+              ))}
             </View>
-            <View style={styles.lowBandwidthBadge}>
-              <Text style={styles.lowBandwidthText}>Weak Signal • Audio Prioritized</Text>
-            </View>
+            <GlassSurface material="dark" style={styles.glassPill}>
+              <AppText variant="footnote" weight={600} color="onTint" compact>
+                {t('weakSignal')}
+              </AppText>
+            </GlassSurface>
           </View>
         )}
 
-        {/* iOS Dynamic Status Pill (Top Center) */}
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() =>
-              setNetworkTier(networkTier === 'hd' ? 'audio' : networkTier === 'audio' ? 'async' : 'hd')
-            }
-            style={styles.networkBadge}
+        {/* Top status pills */}
+        <View style={[styles.topBar, { top: overlayTop }]}>
+          <Pressable
+            onPress={cycleNetworkTier}
+            accessibilityRole="button"
+            accessibilityLabel={`${t('switchNetworkTier')}: ${tierLabel}`}
+            hitSlop={8}
           >
-            <View
-              style={[
-                styles.networkDot,
-                {
-                  backgroundColor:
-                    networkTier === 'hd'
-                      ? AppleTheme.colors.systemGreen
-                      : networkTier === 'audio'
-                      ? AppleTheme.colors.systemOrange
-                      : AppleTheme.colors.systemRed,
-                },
-              ]}
-            />
-            <Text style={styles.networkText}>
-              {networkTier === 'hd'
-                ? 'HD 450 kbps'
-                : networkTier === 'audio'
-                ? 'Audio 50 kbps'
-                : 'Offline Sync'}
-            </Text>
-          </TouchableOpacity>
+            <GlassSurface material="dark" style={styles.glassPill}>
+              <View style={[styles.statusDot, { backgroundColor: TIER_COLOR[networkTier] }]} />
+              <AppText variant="caption" weight={600} color="onTint" compact>
+                {tierLabel}
+              </AppText>
+            </GlassSurface>
+          </Pressable>
 
-          <View style={styles.callTimerBadge}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.callTimerText}>{formatTimer(callSeconds)}</Text>
-          </View>
+          <GlassSurface material="dark" style={styles.glassPill}>
+            <View style={[styles.statusDot, styles.recordingDot]} />
+            <AppText variant="mono" color="onTint" style={styles.tabular}>
+              {formatTimer(callSeconds)}
+            </AppText>
+          </GlassSurface>
         </View>
 
-        {/* Clinician Info Overlay */}
-        <View style={styles.doctorInfoOverlay}>
-          <Text style={styles.doctorOverlayName}>{doctorName}</Text>
-          <Text style={styles.doctorOverlaySpecialty}>SwasthyaSetu Telehealth</Text>
-        </View>
+        {/* Clinician info */}
+        <GlassSurface material="dark" style={[styles.doctorInfo, { top: overlayTop + 48 }]}>
+          <AppText variant="subhead" weight={700} color="onTint" numberOfLines={1}>
+            {doctorName}
+          </AppText>
+          <AppText variant="caption" color="gray3" numberOfLines={1}>
+            {t('telehealthBrand')}
+          </AppText>
+        </GlassSurface>
 
-        {/* Patient Self-PIP (Floating iOS Window with Live Camera Stream) */}
-        <View style={styles.selfPip}>
+        {/* Self picture-in-picture with the live camera on web */}
+        <View style={[styles.selfPip, { top: overlayTop + 48 }]}>
           {Platform.OS === 'web' && localStream && isCamOn ? (
             <video
               ref={videoRef}
               autoPlay
               playsInline
               muted
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                transform: 'scaleX(-1)',
-              }}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
             />
+          ) : isCamOn ? (
+            <Image source={{ uri: SELF_PIP_URL }} style={styles.pipImage} accessibilityIgnoresInvertColors />
           ) : (
-            <Image
-              source={{
-                uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAMknnrL1azNBnB58uMox-l1CcLlCOqWvUimLBiLkJDaWKKrtkqvKnzs2xdOeVF8iSMHpTSk0ENugY-yF1k0JbvFHTOYCtzwJVjaqx9vKZdAogAGrJm1fLfa22lW6sdm1aSSRYxv0craALN6s1BZNS6itFWOoWj_QWMP-wF772FTz5PEDVqxhkesTSt97veSZTFlDJhJgLUmUjUgo1fQDzUqUL_PXosFUri_P1ve9yPukx2vFxzlUA5NQ',
-              }}
-              style={styles.pipImage}
-            />
+            <View style={styles.pipOff}>
+              <Icon name="videocam-off" size={28} color={colors.gray2} />
+            </View>
           )}
-          <View style={styles.pipLabelContainer}>
-            <Text style={styles.pipLabel}>You</Text>
+          <View style={styles.pipLabel}>
+            <AppText variant="caption" weight={600} color="onTint" compact>
+              {t('you')}
+            </AppText>
           </View>
         </View>
 
-        {/* Live Subtitle / Translation Banner (Apple Intelligence style pill) */}
+        {/* Live translated caption */}
         <View style={styles.captionContainer}>
-          <View style={styles.captionBanner}>
-            <Text style={styles.captionSparkle}>✨</Text>
-            <Text style={styles.captionText}>
-              {selectedLanguage === 'kn'
-                ? 'ಡಾಕ್ಟರ್: "ಜ್ವರ ಕಡಿಮೆಯಾಗಲು ಪ್ಯಾರಸಿಟಮಾಲ್ 650mg ತೆಗೆದುಕೊಳ್ಳಿ"'
-                : selectedLanguage === 'hi'
-                ? 'डॉक्टर: "बुखार कम करने के लिए पैरासिटामोल 650mg लें"'
-                : 'Doctor: "Take Paracetamol 650mg after meals for fever"'}
-            </Text>
-          </View>
+          <GlassSurface material="dark" style={styles.captionBanner}>
+            <Icon name="auto-awesome" size={16} color="#64D2FF" />
+            <AppText variant="subhead" weight={500} color="onTint" style={styles.captionText}>
+              {t('liveCaption')}
+            </AppText>
+          </GlassSurface>
         </View>
       </View>
 
-      {/* Floating Bottom FaceTime Controls (Liquid Glass functional layer) */}
-      <View style={styles.controlsContainer}>
-        <View style={styles.controlsGlassPill}>
-          {/* Mute Mic */}
-          <TouchableOpacity
-            activeOpacity={0.8}
+      {/* Floating call controls */}
+      <View style={[styles.controlsContainer, { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.sm }]}>
+        <GlassSurface material="dark" style={styles.controlsPill}>
+          <IconButton
+            icon={isMicOn ? 'mic' : 'mic-off'}
+            tone={isMicOn ? 'dark' : 'darkOff'}
+            size={52}
+            iconSize={24}
+            selected={!isMicOn}
+            accessibilityLabel={isMicOn ? t('muteMic') : t('unmuteMic')}
             onPress={handleToggleMic}
-            style={[styles.controlButton, !isMicOn && styles.controlButtonOff]}
-          >
-            <Text style={styles.controlEmoji}>{isMicOn ? '🎙️' : '🔇'}</Text>
-          </TouchableOpacity>
-
-          {/* Toggle Camera */}
-          <TouchableOpacity
-            activeOpacity={0.8}
+            haptics
+          />
+          <IconButton
+            icon={isCamOn ? 'videocam' : 'videocam-off'}
+            tone={isCamOn ? 'dark' : 'darkOff'}
+            size={52}
+            iconSize={24}
+            selected={!isCamOn}
+            accessibilityLabel={isCamOn ? t('cameraOff') : t('cameraOn')}
             onPress={handleToggleCam}
-            style={[styles.controlButton, !isCamOn && styles.controlButtonOff]}
-          >
-            <Text style={styles.controlEmoji}>{isCamOn ? '📹' : '🚫'}</Text>
-          </TouchableOpacity>
-
-          {/* Switch Network Tier */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() =>
-              setNetworkTier(networkTier === 'hd' ? 'audio' : networkTier === 'audio' ? 'async' : 'hd')
-            }
-            style={styles.controlButton}
-          >
-            <Text style={styles.controlEmoji}>📶</Text>
-          </TouchableOpacity>
-
-          {/* End Call / Hang Up */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={handleEnd}
-            style={styles.hangupButton}
-          >
-            <Text style={styles.hangupEmoji}>✕</Text>
-          </TouchableOpacity>
-        </View>
+            haptics
+          />
+          <IconButton
+            icon="network-check"
+            tone="dark"
+            size={52}
+            iconSize={24}
+            accessibilityLabel={t('switchNetworkTier')}
+            onPress={cycleNetworkTier}
+            haptics
+          />
+          <IconButton icon="call-end" tone="red" size={60} iconSize={28} accessibilityLabel={t('endCall')} onPress={handleEnd} />
+        </GlassSurface>
       </View>
     </View>
   );
@@ -289,13 +283,11 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({
 const styles = StyleSheet.create({
   callContainer: {
     flex: 1,
-    backgroundColor: '#000000',
-    justifyContent: 'space-between',
+    backgroundColor: colors.black,
   },
   videoStage: {
     flex: 1,
-    position: 'relative',
-    backgroundColor: '#1C1C1E',
+    backgroundColor: colors.dark,
     overflow: 'hidden',
   },
   doctorFeedImage: {
@@ -303,15 +295,15 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
-  blurredImage: {
+  dimmedImage: {
     opacity: 0.25,
   },
   cameraOffPlaceholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 12,
+    paddingHorizontal: spacing.xxl,
+    gap: spacing.md,
   },
   avatarPlaceholder: {
     width: 88,
@@ -321,239 +313,124 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  doctorNameText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Display' : 'System',
-  },
-  cameraOffText: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontWeight: '500',
-  },
   audioWaveOverlay: {
-    position: 'absolute',
-    inset: 0,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    gap: spacing.lg,
   },
   waveRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
+    gap: spacing.sm,
   },
   waveBar: {
     width: 5,
-    backgroundColor: AppleTheme.colors.systemGreen,
+    backgroundColor: colors.green,
     borderRadius: 2.5,
-  },
-  lowBandwidthBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 9999,
-  },
-  lowBandwidthText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
   topBar: {
     position: 'absolute',
-    top: 20,
-    left: 20,
-    right: 20,
+    left: spacing.lg,
+    right: spacing.lg,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     zIndex: 10,
   },
-  networkBadge: {
+  glassPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    backgroundColor: 'rgba(28, 28, 30, 0.75)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9999,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  networkDot: {
+  statusDot: {
     width: 7,
     height: 7,
     borderRadius: 3.5,
   },
-  networkText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-  },
-  callTimerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(28, 28, 30, 0.75)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9999,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
   recordingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: AppleTheme.colors.systemRed,
+    backgroundColor: colors.red,
   },
-  callTimerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  tabular: {
     fontVariant: ['tabular-nums'],
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'monospace',
+    fontSize: 12,
   },
-  doctorInfoOverlay: {
+  doctorInfo: {
     position: 'absolute',
-    top: 68,
-    left: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    paddingHorizontal: 12,
+    left: spacing.lg,
+    maxWidth: '55%',
+    paddingHorizontal: spacing.md,
     paddingVertical: 6,
-    borderRadius: 12,
-  },
-  doctorOverlayName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  doctorOverlaySpecialty: {
-    fontSize: 11,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontWeight: '500',
+    borderRadius: radii.md,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   selfPip: {
     position: 'absolute',
-    top: 68,
-    right: 20,
+    right: spacing.lg,
     width: 96,
     height: 136,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.35)',
-    backgroundColor: '#1C1C1E',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
+    backgroundColor: colors.dark,
+    ...shadows.lg,
   },
   pipImage: {
     width: '100%',
     height: '100%',
   },
-  pipLabelContainer: {
+  pipOff: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pipLabel: {
     position: 'absolute',
     bottom: 6,
     left: 6,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  pipLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    paddingVertical: 1,
+    borderRadius: radii.xs,
   },
   captionContainer: {
     position: 'absolute',
-    bottom: 24,
-    left: 16,
-    right: 16,
+    bottom: spacing.xxl,
+    left: spacing.lg,
+    right: spacing.lg,
     alignItems: 'center',
   },
   captionBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(28, 28, 30, 0.85)',
+    gap: spacing.sm,
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
-    maxWidth: 420,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-  },
-  captionSparkle: {
-    fontSize: 13,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: 440,
   },
   captionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#FFFFFF',
-    flex: 1,
-    lineHeight: 18,
+    flexShrink: 1,
   },
   controlsContainer: {
     alignItems: 'center',
-    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
-    paddingTop: 16,
-    backgroundColor: '#000000',
+    paddingTop: spacing.lg,
+    backgroundColor: colors.black,
   },
-  controlsGlassPill: {
+  controlsPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 18,
-    backgroundColor: 'rgba(28, 28, 30, 0.92)',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
+    gap: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 10,
     borderRadius: 40,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-  },
-  controlButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlButtonOff: {
-    backgroundColor: 'rgba(255, 59, 48, 0.25)',
-  },
-  controlEmoji: {
-    fontSize: 20,
-  },
-  hangupButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: AppleTheme.colors.systemRed,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: AppleTheme.colors.systemRed,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-  },
-  hangupEmoji: {
-    fontSize: 22,
-    color: '#FFFFFF',
-    fontWeight: '700',
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

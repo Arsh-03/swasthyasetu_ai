@@ -1,23 +1,46 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import { AppleTheme } from '../theme/tokens';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { colors, radii, spacing, tints, tones, touch, type Tone } from '../theme/tokens';
 import { patientApi, type CarePlan, type CarePlanMedication, type DoseSlot } from '../services/api';
+import { useLanguage } from '../i18n/LanguageContext';
+import type { TranslationKey } from '../utils/translations';
+import { haptic } from '../utils/haptics';
+import {
+  AppText,
+  AudioListenButton,
+  Badge,
+  Card,
+  Divider,
+  Icon,
+  type IconName,
+  LIST_ROW_TEXT_INSET,
+  ListRow,
+  NavBar,
+  ScreenScroll,
+  ScreenHeader,
+  SectionHeader,
+} from './ui';
 
 interface CarePlanViewProps {
   onBack: () => void;
-  selectedLanguage: 'kn' | 'hi' | 'en';
 }
 
 type CheckinStatus = 'better' | 'same' | 'worse';
 
 // How each dose slot looks in the list
-const SLOT_STYLE: Record<DoseSlot, { icon: string; time: string; bg?: string; color?: string }> = {
-  morning: { icon: '☀️', time: '8:00 AM' },
-  afternoon: { icon: '🌤️', time: '1:30 PM', bg: 'rgba(255, 149, 0, 0.12)', color: AppleTheme.colors.systemOrange },
-  night: { icon: '🌙', time: '8:30 PM', bg: 'rgba(88, 86, 214, 0.12)', color: AppleTheme.colors.systemIndigo },
-  prn: { icon: '💊', time: 'As needed' },
+const SLOT_STYLE: Record<DoseSlot, { icon: IconName; time: TranslationKey; tone: Tone }> = {
+  morning: { icon: 'wb-sunny', time: 'slotMorning', tone: 'green' },
+  afternoon: { icon: 'wb-twilight', time: 'slotAfternoon', tone: 'orange' },
+  night: { icon: 'nightlight', time: 'slotNight', tone: 'indigo' },
+  prn: { icon: 'medication', time: 'slotPrn', tone: 'green' },
 };
 const SLOT_ORDER: DoseSlot[] = ['morning', 'afternoon', 'night', 'prn'];
+
+const CHECKIN_OPTIONS: { value: CheckinStatus; label: TranslationKey; icon: IconName; tone: Tone }[] = [
+  { value: 'better', label: 'feelingBetter', icon: 'sentiment-satisfied', tone: 'green' },
+  { value: 'same', label: 'feelingSame', icon: 'sentiment-neutral', tone: 'blue' },
+  { value: 'worse', label: 'feelingWorse', icon: 'sos', tone: 'red' },
+];
 
 interface DoseRow {
   key: string; // "medicationId:slot", same as the backend's doses_today keys
@@ -37,29 +60,8 @@ const buildDoseRows = (meds: CarePlanMedication[]): DoseRow[] => {
   return rows;
 };
 
-const buildAudioText = (plan: CarePlan | null, lang: 'kn' | 'hi' | 'en') => {
-  const meds = plan?.medications || [];
-  const intro =
-    lang === 'kn' ? 'ವೈದ್ಯರ ಆರೈಕೆ ಯೋಜನೆ.' : lang === 'hi' ? 'डॉक्टर केयर प्लान।' : 'Doctor Care Plan.';
-  if (meds.length === 0) {
-    return `${intro} ${
-      lang === 'kn'
-        ? 'ಈಗ ಯಾವುದೇ ಔಷಧಿಗಳಿಲ್ಲ.'
-        : lang === 'hi'
-        ? 'अभी कोई दवा नहीं है।'
-        : 'You have no active medications.'
-    }`;
-  }
-  const lines = meds.map((m) => `${m.name}, ${m.dosage}, ${m.frequency}, ${m.timing}.`);
-  const advice = plan?.latest_note?.plan?.advice ? ` ${plan.latest_note.plan.advice}.` : '';
-  return `${intro} ${lines.join(' ')}${advice}`;
-};
-
-export const CarePlanView: React.FC<CarePlanViewProps> = ({
-  onBack,
-  selectedLanguage,
-}) => {
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
+  const { t } = useLanguage();
   const [plan, setPlan] = useState<CarePlan | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [followUpStatus, setFollowUpStatus] = useState<CheckinStatus | null>(null);
@@ -85,35 +87,30 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({
     };
   }, []);
 
-  const handleToggleAudio = () => {
-    setIsPlayingAudio(!isPlayingAudio);
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      if (!isPlayingAudio) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(buildAudioText(plan, selectedLanguage));
-        utterance.rate = 0.85;
-        utterance.onend = () => setIsPlayingAudio(false);
-        window.speechSynthesis.speak(utterance);
-      } else {
-        window.speechSynthesis.cancel();
-      }
-    }
+  const buildAudioText = () => {
+    const meds = plan?.medications || [];
+    if (meds.length === 0) return `${t('audioIntro')} ${t('audioNoMeds')}`;
+    const lines = meds.map((m) => `${m.name}, ${m.dosage}, ${m.frequency}, ${m.timing}.`);
+    const advice = plan?.latest_note?.plan?.advice ? ` ${plan.latest_note.plan.advice}.` : '';
+    return `${t('audioIntro')} ${lines.join(' ')}${advice}`;
   };
 
   // Optimistic toggle; rolled back if the save fails
   const toggleDose = async (row: DoseRow) => {
     const taken = !loggedDoses[row.key];
+    if (taken) haptic.success();
     setLoggedDoses((prev) => ({ ...prev, [row.key]: taken }));
     setSaveError(null);
     try {
       await patientApi.logDose(row.med.id, row.slot, taken);
     } catch {
       setLoggedDoses((prev) => ({ ...prev, [row.key]: !taken }));
-      setSaveError('Could not save the dose. Check your connection.');
+      setSaveError(t('doseSaveError'));
     }
   };
 
   const submitCheckin = async (value: CheckinStatus) => {
+    haptic.tap();
     const previous = followUpStatus;
     setFollowUpStatus(value);
     setSaveError(null);
@@ -121,7 +118,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({
       await patientApi.submitCheckin(value);
     } catch {
       setFollowUpStatus(previous);
-      setSaveError('Could not send your check-in. Check your connection.');
+      setSaveError(t('checkinError'));
     }
   };
 
@@ -129,471 +126,198 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({
   const subtitle = [plan?.doctor_name, plan?.facility].filter(Boolean).join(' • ');
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* iOS Navigation Bar */}
-      <View style={styles.navBar}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={onBack}
-          style={styles.backButton}
-          accessibilityLabel="Back"
-        >
-          <Text style={styles.backChevron}>‹</Text>
-          <Text style={styles.backLabel}>Home</Text>
-        </TouchableOpacity>
-      </View>
+    <ScreenScroll contentContainerStyle={styles.content}>
+      <NavBar backLabel={t('home')} onBack={onBack} />
 
-      {/* Apple Health Large Title */}
-      <View style={styles.headerBlock}>
-        <Text style={styles.largeTitle}>Care Plan</Text>
-        <Text style={styles.headerSubtitle}>
-          {subtitle || (status === 'loading' ? 'Loading…' : 'No care plan from a doctor yet')}
-        </Text>
-      </View>
+      <ScreenHeader
+        icon="medication"
+        title={t('carePlan')}
+        subtitle={subtitle || (status === 'loading' ? t('loading') : t('noCarePlan'))}
+      />
 
-      {/* Apple Health Audio Player Widget */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={handleToggleAudio}
-        style={styles.audioCard}
-      >
-        <View style={styles.audioPlayBtn}>
-          <Text style={{ fontSize: 18 }}>{isPlayingAudio ? '⏸' : '▶'}</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.audioTitle}>
-            {isPlayingAudio
-              ? 'Playing Doctor Audio Notes...'
-              : selectedLanguage === 'kn'
-              ? 'ಕನ್ನಡದಲ್ಲಿ ಆಲಿಸಿ (Audio Advice)'
-              : selectedLanguage === 'hi'
-              ? 'हिंदी में सुनें (Audio Advice)'
-              : 'Listen to Voice Instructions'}
-          </Text>
-          <Text style={styles.audioMeta}>
-            Bhashini TTS • {plan?.medications.length || 0} medications
-          </Text>
-        </View>
-        <View style={styles.audioSoundwave}>
-          <View style={[styles.soundBar, isPlayingAudio && styles.soundBarActive, { height: 12 }]} />
-          <View style={[styles.soundBar, isPlayingAudio && styles.soundBarActive, { height: 20 }]} />
-          <View style={[styles.soundBar, isPlayingAudio && styles.soundBarActive, { height: 16 }]} />
-          <View style={[styles.soundBar, isPlayingAudio && styles.soundBarActive, { height: 24 }]} />
-        </View>
-      </TouchableOpacity>
+      {/* Voice instructions */}
+      <AudioListenButton
+        variant="card"
+        text={buildAudioText}
+        title={t('listenInstructions')}
+        playingTitle={t('playingAudio')}
+        subtitle={t('audioMeta', { count: plan?.medications.length || 0 })}
+      />
 
-      {/* Apple Health Medications Section */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionHeader}>MEDICATIONS (ಔಷಧಿಗಳು)</Text>
-
-        <View style={styles.insetGroup}>
+      {/* Medications */}
+      <View style={styles.section}>
+        <SectionHeader title={t('medicationsSection')} count={doseRows.length} />
+        <Card padded={false} style={styles.group}>
           {doseRows.length === 0 && (
-            <View style={styles.medicationRow}>
-              <Text style={styles.medInstruction}>
-                {status === 'loading'
-                  ? 'Loading your medications…'
-                  : status === 'error'
-                  ? 'Could not load your care plan. Check your connection.'
-                  : 'No active medications.'}
-              </Text>
-            </View>
+            <AppText variant="footnote" color="tertiary" style={styles.emptyRow}>
+              {status === 'loading' ? t('loadingMedications') : status === 'error' ? t('carePlanError') : t('noMedications')}
+            </AppText>
           )}
           {doseRows.map((row, index) => {
             const look = SLOT_STYLE[row.slot];
             const taken = !!loggedDoses[row.key];
             return (
               <React.Fragment key={row.key}>
-                {index > 0 && <View style={styles.rowDivider} />}
-                <View style={styles.medicationRow}>
-                  <View style={styles.timeIconWrap}>
-                    <Text style={{ fontSize: 20 }}>{look.icon}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.medTitleRow}>
-                      <Text style={styles.medName}>{row.med.name}</Text>
-                      <View style={[styles.scheduleTag, look.bg ? { backgroundColor: look.bg } : null]}>
-                        <Text style={[styles.scheduleText, look.color ? { color: look.color } : null]}>
-                          {look.time}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.medInstruction}>
-                      {[row.med.dosage, row.med.timing].filter(Boolean).join(' • ')}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={() => toggleDose(row)}
-                    style={[styles.doseCheckBtn, taken && styles.doseCheckBtnTaken]}
-                  >
-                    <Text style={[styles.doseCheckText, taken && styles.doseCheckTextTaken]}>
-                      {taken ? '✓' : 'Take'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                {index > 0 && <Divider inset={LIST_ROW_TEXT_INSET} />}
+                <ListRow
+                  icon={look.icon}
+                  iconTone={look.tone}
+                  title={row.med.name}
+                  subtitle={[row.med.dosage, row.med.timing].filter(Boolean).join(' • ')}
+                  trailing={
+                    <Pressable
+                      onPress={() => toggleDose(row)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: taken }}
+                      accessibilityLabel={t('markDoseTaken', { name: row.med.name })}
+                      hitSlop={4}
+                      style={({ pressed }) => [styles.doseBtn, taken && styles.doseBtnTaken, pressed && styles.pressed]}
+                    >
+                      {taken && <Icon name="check" size={16} color={colors.onTint} />}
+                      <AppText variant="footnote" weight={600} color={taken ? 'onTint' : 'blue'} compact>
+                        {taken ? t('taken') : t('take')}
+                      </AppText>
+                    </Pressable>
+                  }
+                >
+                  <Badge label={t(look.time)} tone={look.tone} icon="schedule" style={styles.slotBadge} />
+                </ListRow>
               </React.Fragment>
             );
           })}
-        </View>
-        {saveError && <Text style={styles.medInstruction}>{saveError}</Text>}
+        </Card>
+        {saveError && (
+          <AppText variant="footnote" color="red" accessibilityRole="alert">
+            {saveError}
+          </AppText>
+        )}
       </View>
 
-      {/* 48-Hour Recovery Status Check (Apple Health Widget) */}
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionHeader}>48-HOUR RECOVERY CHECK-IN</Text>
+      {/* 48-hour recovery check-in */}
+      <View style={styles.section}>
+        <SectionHeader title={t('recoveryCheckin')} />
+        <Card style={styles.checkinCard}>
+          <AppText variant="headline">{t('howAreYouFeeling')}</AppText>
+          <AppText variant="footnote" color="secondary">
+            {t('checkinSub')}
+          </AppText>
 
-        <View style={styles.followUpCard}>
-          <Text style={styles.followUpTitle}>How are you feeling today?</Text>
-          <Text style={styles.followUpSub}>
-            Your response is instantly synced with your doctor's triage dashboard.
-          </Text>
-
-          {/* iOS Segmented Pill Options */}
-          <View style={styles.statusButtonsRow}>
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => submitCheckin('better')}
-              style={[
-                styles.statusBtn,
-                followUpStatus === 'better' && styles.statusBtnActiveBetter,
-              ]}
-            >
-              <Text style={{ fontSize: 20 }}>😊</Text>
-              <Text
-                style={[
-                  styles.statusBtnText,
-                  followUpStatus === 'better' && styles.statusBtnTextActive,
-                ]}
-              >
-                Better
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => submitCheckin('same')}
-              style={[
-                styles.statusBtn,
-                followUpStatus === 'same' && styles.statusBtnActiveSame,
-              ]}
-            >
-              <Text style={{ fontSize: 20 }}>😐</Text>
-              <Text
-                style={[
-                  styles.statusBtnText,
-                  followUpStatus === 'same' && styles.statusBtnTextActive,
-                ]}
-              >
-                Same
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={() => submitCheckin('worse')}
-              style={[
-                styles.statusBtn,
-                followUpStatus === 'worse' && styles.statusBtnActiveWorse,
-              ]}
-            >
-              <Text style={{ fontSize: 20 }}>🚨</Text>
-              <Text
-                style={[
-                  styles.statusBtnText,
-                  followUpStatus === 'worse' && { color: AppleTheme.colors.systemRed, fontWeight: '700' },
-                ]}
-              >
-                Need Help
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.checkinRow} accessibilityRole="radiogroup">
+            {CHECKIN_OPTIONS.map((opt) => {
+              const selected = followUpStatus === opt.value;
+              const c = tones[opt.tone];
+              return (
+                <Pressable
+                  key={opt.value}
+                  onPress={() => submitCheckin(opt.value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  accessibilityLabel={t(opt.label)}
+                  style={({ pressed }) => [
+                    styles.checkinBtn,
+                    selected && { backgroundColor: c.bg, borderColor: c.fg },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Icon name={opt.icon} size={26} color={selected ? c.fg : colors.secondary} />
+                  <AppText
+                    variant="footnote"
+                    weight={selected ? 700 : 600}
+                    color={selected ? c.text : 'secondary'}
+                    align="center"
+                    compact
+                  >
+                    {t(opt.label)}
+                  </AppText>
+                </Pressable>
+              );
+            })}
           </View>
 
           {followUpStatus && (
-            <View style={styles.recordedBanner}>
-              <Text style={styles.recordedCheck}>✓</Text>
-              <Text style={styles.recordedStatus}>
-                Logged to Doctor's clinical ledger. Auto follow-up scheduled.
-              </Text>
+            <View style={styles.recorded}>
+              <Icon name="check-circle" size={18} color={colors.greenDeep} />
+              <AppText variant="footnote" weight={600} color="greenDeep" style={styles.flex}>
+                {t('checkinLogged')}
+              </AppText>
             </View>
           )}
-        </View>
+        </Card>
       </View>
-    </ScrollView>
+    </ScreenScroll>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    backgroundColor: AppleTheme.colors.systemGroupedBackground,
   },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 40,
-    gap: 20,
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.xl,
   },
-  navBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
+  section: {
+    gap: spacing.md,
   },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  backChevron: {
-    fontSize: 28,
-    color: AppleTheme.colors.systemBlue,
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  backLabel: {
-    fontSize: 17,
-    color: AppleTheme.colors.systemBlue,
-    fontWeight: '400',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-  },
-  headerBlock: {
-    gap: 4,
-  },
-  largeTitle: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: AppleTheme.colors.label,
-    letterSpacing: -0.5,
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Display' : 'System',
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: AppleTheme.colors.secondaryLabel,
-    fontWeight: '400',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-  },
-  audioCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: AppleTheme.colors.card,
-    borderRadius: 18,
-    padding: 16,
-    gap: 14,
-    borderWidth: 0.5,
-    borderColor: AppleTheme.colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  audioPlayBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: AppleTheme.colors.systemBlue,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: AppleTheme.colors.systemBlue,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  audioTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: AppleTheme.colors.label,
-  },
-  audioMeta: {
-    fontSize: 12,
-    color: AppleTheme.colors.secondaryLabel,
-    marginTop: 2,
-  },
-  audioSoundwave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingRight: 4,
-  },
-  soundBar: {
-    width: 3,
-    backgroundColor: AppleTheme.colors.separator,
-    borderRadius: 1.5,
-  },
-  soundBarActive: {
-    backgroundColor: AppleTheme.colors.systemBlue,
-  },
-  sectionContainer: {
-    gap: 8,
-  },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: AppleTheme.colors.secondaryLabel,
-    letterSpacing: 0.6,
-    paddingLeft: 4,
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-  },
-  insetGroup: {
-    backgroundColor: AppleTheme.colors.card,
-    borderRadius: 18,
+  group: {
     overflow: 'hidden',
-    borderWidth: 0.5,
-    borderColor: AppleTheme.colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
   },
-  medicationRow: {
+  emptyRow: {
+    padding: spacing.lg,
+  },
+  slotBadge: {
+    marginTop: spacing.xs,
+  },
+  doseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    gap: 14,
-  },
-  timeIconWrap: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: AppleTheme.colors.systemGroupedBackground,
-    alignItems: 'center',
+    gap: spacing.xs,
+    minHeight: touch.compact - 4,
+    minWidth: 72,
     justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: tints.blue,
   },
-  medTitleRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    columnGap: 8,
-    rowGap: 4,
+  doseBtnTaken: {
+    backgroundColor: colors.green,
   },
-  medName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: AppleTheme.colors.label,
+  pressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.97 }],
   },
-  scheduleTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(52, 199, 89, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+  checkinCard: {
+    gap: spacing.sm,
+    padding: spacing.xl,
   },
-  scheduleText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: AppleTheme.colors.systemGreenDark,
-  },
-  medInstruction: {
-    fontSize: 12,
-    color: AppleTheme.colors.secondaryLabel,
-    marginTop: 3,
-  },
-  doseCheckBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: AppleTheme.colors.systemGroupedBackground,
-    borderWidth: 1,
-    borderColor: AppleTheme.colors.separator,
-  },
-  doseCheckBtnTaken: {
-    backgroundColor: AppleTheme.colors.systemGreen,
-    borderColor: AppleTheme.colors.systemGreen,
-  },
-  doseCheckText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: AppleTheme.colors.secondaryLabel,
-  },
-  doseCheckTextTaken: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  rowDivider: {
-    height: 0.5,
-    backgroundColor: AppleTheme.colors.separator,
-    marginLeft: 66,
-  },
-  followUpCard: {
-    backgroundColor: AppleTheme.colors.card,
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 0.5,
-    borderColor: AppleTheme.colors.border,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  followUpTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: AppleTheme.colors.label,
-  },
-  followUpSub: {
-    fontSize: 13,
-    color: AppleTheme.colors.secondaryLabel,
-    lineHeight: 18,
-  },
-  statusButtonsRow: {
+  checkinRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 4,
+    marginTop: spacing.sm,
   },
-  statusBtn: {
+  checkinBtn: {
     flex: 1,
-    paddingVertical: 14,
     alignItems: 'center',
-    backgroundColor: AppleTheme.colors.systemGroupedBackground,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: AppleTheme.colors.separator,
+    justifyContent: 'center',
     gap: 6,
+    minHeight: 76,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.lg,
+    backgroundColor: colors.gray6,
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
-  statusBtnActiveBetter: {
-    backgroundColor: 'rgba(52, 199, 89, 0.12)',
-    borderColor: AppleTheme.colors.systemGreen,
-  },
-  statusBtnActiveSame: {
-    backgroundColor: 'rgba(0, 122, 255, 0.12)',
-    borderColor: AppleTheme.colors.systemBlue,
-  },
-  statusBtnActiveWorse: {
-    backgroundColor: 'rgba(255, 59, 48, 0.12)',
-    borderColor: AppleTheme.colors.systemRed,
-  },
-  statusBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: AppleTheme.colors.secondaryLabel,
-  },
-  statusBtnTextActive: {
-    color: AppleTheme.colors.label,
-    fontWeight: '700',
-  },
-  recordedBanner: {
+  recorded: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(52, 199, 89, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginTop: 4,
-  },
-  recordedCheck: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: AppleTheme.colors.systemGreenDark,
-  },
-  recordedStatus: {
-    fontSize: 12,
-    color: AppleTheme.colors.systemGreenDark,
-    fontWeight: '600',
-    flex: 1,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    borderRadius: radii.md,
+    backgroundColor: tints.green,
   },
 });

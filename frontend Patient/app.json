@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "temp-patient",
-    "slug": "temp-patient",
+    "name": "SwasthyaSetu",
+    "slug": "swasthyasetu-patient",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

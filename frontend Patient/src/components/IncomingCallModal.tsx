@@ -1,219 +1,148 @@
-import React from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, Platform } from 'react-native';
-import { AppleTheme } from '../theme/tokens';
+import React, { useEffect, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
+import { colors, spacing } from '../theme/tokens';
+import { useLanguage } from '../i18n/LanguageContext';
+import { haptic } from '../utils/haptics';
+import { GlassSheet } from './glass';
+import { AppText, Icon, IconButton } from './ui';
 
 interface IncomingCallModalProps {
   visible: boolean;
   callerName: string;
   onAccept: () => void;
   onDecline: () => void;
-  selectedLanguage?: 'kn' | 'hi' | 'en';
 }
 
-export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
-  visible,
-  callerName,
-  onAccept,
-  onDecline,
-  selectedLanguage,
-}) => {
-  if (!visible) return null;
+export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, callerName, onAccept, onDecline }) => {
+  const { t } = useLanguage();
+  const [pulse] = useState(() => new Animated.Value(0));
+
+  // Ringing pulse; skipped when the user prefers reduced motion
+  useEffect(() => {
+    if (!visible) return;
+    haptic.warning();
+    let loop: Animated.CompositeAnimation | null = null;
+    AccessibilityInfo.isReduceMotionEnabled().then((reduced) => {
+      if (reduced) return;
+      loop = Animated.loop(
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1400,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: Platform.OS !== 'web',
+        })
+      );
+      loop.start();
+    });
+    return () => {
+      loop?.stop();
+      pulse.setValue(0);
+    };
+  }, [visible, pulse]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onDecline}>
-      <View style={styles.backdrop}>
-        <View style={styles.modalCard}>
-          {/* Top grabber bar */}
-          <View style={styles.grabber} />
-
-          {/* Clinician Avatar with Ringing Glow */}
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarCircle}>
-              <Text style={{ fontSize: 44 }}>👩‍⚕️</Text>
-            </View>
-            <View style={styles.ringPulse} />
+    <GlassSheet visible={visible} onClose={onDecline} material="dark" strongScrim>
+      <View style={styles.body}>
+        <View style={styles.avatarWrap}>
+          <Animated.View
+            style={[
+              styles.ring,
+              {
+                opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+                transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] }) }],
+              },
+            ]}
+          />
+          <View style={styles.avatar}>
+            <Icon name="medical-services" size={40} color={colors.onTint} />
           </View>
+        </View>
 
-          {/* Caller Details */}
-          <View style={styles.textContainer}>
-            <Text style={styles.eyebrow}>
-              {selectedLanguage === 'kn'
-                ? 'ಒಳಬರುವ ವೀಡಿಯೊ ಕರೆ'
-                : 'INCOMING VIDEO CALL'}
-            </Text>
-            <Text style={styles.callerTitle}>{callerName || 'Your doctor'}</Text>
-            <Text style={styles.callerSub}>
-              Hassan District Hub • SwasthyaSetu Telehealth
-            </Text>
-            <Text style={styles.complianceTag}>
-              🛡️ ABDM Encrypted • DPDP Purpose Verified
-            </Text>
+        <View style={styles.text}>
+          <AppText variant="eyebrow" color="green" align="center" compact>
+            {t('incomingVideoCall')}
+          </AppText>
+          <AppText variant="title" color="onTint" align="center">
+            {callerName}
+          </AppText>
+          <AppText variant="footnote" color="gray3" align="center">
+            {t('callerFacility')}
+          </AppText>
+          <View style={styles.compliance}>
+            <Icon name="verified-user" size={14} color={colors.teal} />
+            <AppText variant="caption" weight={600} color="teal" compact>
+              {t('callCompliance')}
+            </AppText>
           </View>
+        </View>
 
-          {/* iOS Call Actions: Decline and Accept */}
-          <View style={styles.actionRow}>
-            {/* Decline */}
-            <TouchableOpacity
-              activeOpacity={0.8}
-              onPress={onDecline}
-              style={styles.declineButton}
-            >
-              <Text style={styles.declineIcon}>✕</Text>
-              <Text style={styles.declineLabel}>
-                {selectedLanguage === 'kn' ? 'ತಿರಸ್ಕರಿಸಿ' : 'Decline'}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Accept */}
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={onAccept}
-              style={styles.acceptButton}
-            >
-              <Text style={styles.acceptIcon}>📞</Text>
-              <Text style={styles.acceptLabel}>
-                {selectedLanguage === 'kn' ? 'ಉತ್ತರಿಸಿ' : 'Accept'}
-              </Text>
-            </TouchableOpacity>
+        <View style={styles.actions}>
+          <View style={styles.action}>
+            <IconButton icon="call-end" tone="red" size={68} iconSize={30} accessibilityLabel={t('decline')} onPress={onDecline} haptics />
+            <AppText variant="footnote" weight={600} color="gray3" compact>
+              {t('decline')}
+            </AppText>
+          </View>
+          <View style={styles.action}>
+            <IconButton icon="videocam" tone="green" size={68} iconSize={30} accessibilityLabel={t('accept')} onPress={onAccept} haptics />
+            <AppText variant="footnote" weight={600} color="gray3" compact>
+              {t('accept')}
+            </AppText>
           </View>
         </View>
       </View>
-    </Modal>
+    </GlassSheet>
   );
 };
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#1C1C1E',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 44 : 32,
-    paddingHorizontal: 24,
+  body: {
     alignItems: 'center',
-    gap: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 10,
+    gap: spacing.lg,
+    paddingTop: spacing.sm,
   },
-  grabber: {
-    width: 38,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    marginBottom: 10,
-  },
-  avatarContainer: {
-    position: 'relative',
+  avatarWrap: {
+    width: 120,
+    height: 120,
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 8,
   },
-  avatarCircle: {
+  ring: {
+    position: 'absolute',
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: 'rgba(52, 199, 89, 0.45)',
+  },
+  avatar: {
     width: 92,
     height: 92,
     borderRadius: 46,
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'rgba(255, 255, 255, 0.3)',
-    zIndex: 2,
-  },
-  ringPulse: {
-    position: 'absolute',
-    width: 114,
-    height: 114,
-    borderRadius: 57,
-    backgroundColor: 'rgba(52, 199, 89, 0.25)',
-    zIndex: 1,
-  },
-  textContainer: {
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'center',
   },
-  eyebrow: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: AppleTheme.colors.systemGreen,
-    letterSpacing: 1.2,
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
+  text: {
+    alignItems: 'center',
+    gap: spacing.xs,
   },
-  callerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Display' : 'System',
-    textAlign: 'center',
-  },
-  callerSub: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-    textAlign: 'center',
-  },
-  complianceTag: {
-    fontSize: 11,
-    color: AppleTheme.colors.systemTeal,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  actionRow: {
+  compliance: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  actions: {
+    flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
     maxWidth: 320,
-    marginTop: 14,
+    marginTop: spacing.md,
   },
-  declineButton: {
+  action: {
     alignItems: 'center',
-    gap: 8,
-  },
-  declineIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: AppleTheme.colors.systemRed,
-    color: '#FFFFFF',
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 64,
-    overflow: 'hidden',
-  },
-  declineLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
-  },
-  acceptButton: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  acceptIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: AppleTheme.colors.systemGreen,
-    fontSize: 26,
-    textAlign: 'center',
-    lineHeight: 64,
-    overflow: 'hidden',
-  },
-  acceptLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontFamily: Platform.OS === 'ios' ? 'SF Pro Text' : 'System',
+    gap: spacing.sm,
   },
 });
