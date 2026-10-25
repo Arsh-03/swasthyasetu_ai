@@ -48,6 +48,9 @@ class RecordCreateRequest(BaseModel):
     raw_preview_text: Optional[str] = None
     file_mime_type: Optional[str] = "application/pdf"
     file_size_bytes: Optional[int] = 1850000
+    facility: Optional[str] = None
+    category: Optional[str] = None
+    type_label: Optional[str] = None
 
 class MedicalHistoryUpdateRequest(BaseModel):
     chronic_conditions: List[str] = []
@@ -95,16 +98,33 @@ class RecordMetadataOut(BaseModel):
     file_size_bytes: int
     summary_findings: Optional[str] = None
     consent_status: Optional[str] = "protected"  # "protected", "approved", "expired"
+    facility: Optional[str] = None
+    category: Optional[str] = None
+    type_label: Optional[str] = None
+    imaging: Optional[Dict[str, Any]] = None
+    lab_results: Optional[List[Dict[str, Any]]] = None
+    # Active consent on this record (who it's shared with, until when)
+    shared_with: Optional[str] = None
+    consent_expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
 class ConsentRequestIn(BaseModel):
-    encounter_id: str
     record_id: str
     purpose: str
     duration_minutes: int = 60
+    # Either the encounter or the patient must be given; the patient's open encounter is used.
+    encounter_id: Optional[str] = None
+    patient_id: Optional[str] = None
 
 class ConsentDecisionIn(BaseModel):
     approved: bool
     decided_by_role: str = "patient"  # "patient" or "representative"
+    representative_notes: Optional[str] = None
+
+class ConsentOtpVerifyIn(BaseModel):
+    # Kept for the Expo patient app, which still sends a code; the patient is already signed in.
+    otp_code: str
+    decided_by_role: str = "patient"
     representative_notes: Optional[str] = None
 
 class LinkPatientRequestIn(BaseModel):
@@ -188,6 +208,10 @@ class AuditEventOut(BaseModel):
     resource_id: str
     outcome: str
     timestamp: datetime
+    actor_name: Optional[str] = None
+    resource_label: Optional[str] = None
+    purpose: Optional[str] = None
+    hmac_signature: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -222,3 +246,31 @@ class IntelliSenseCompleteIn(BaseModel):
     encounter_id: str
     text: str = Field(max_length=20000)
     cursor: int = 0
+
+
+class AppointmentUpdateIn(BaseModel):
+    date: str
+    time: str
+    relativeTime: Optional[str] = None
+    mode: str
+    agenda: Optional[str] = None
+    status: Optional[str] = None
+    instructionsForPatient: List[str] = []
+    patientId: Optional[str] = None  # used to book a new appointment when none exists
+
+
+class DoseLogIn(BaseModel):
+    medication_id: str
+    slot: str  # 'morning', 'afternoon', 'night', 'prn'
+    taken: bool = True
+    log_date: Optional[str] = None  # YYYY-MM-DD, defaults to today (UTC)
+
+
+class RecoveryCheckinIn(BaseModel):
+    status: str  # 'better', 'same', 'worse'
+
+
+class SymptomIntakeIn(BaseModel):
+    symptoms: List[str] = []
+    notes: Optional[str] = None
+    is_representative: bool = False

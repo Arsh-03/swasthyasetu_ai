@@ -57,3 +57,7 @@ Thumbs.db
 
 # Local terminology store and downloaded release files
 backend/data/
+
+.neon
+
+.agents/mcp_config.json

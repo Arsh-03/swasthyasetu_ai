@@ -6,8 +6,8 @@
 ![DPDP Act 2023](https://img.shields.io/badge/DPDP%20Act%202023-Enforced-4f46e5?style=for-the-badge&logo=lock)
 ![HL7 FHIR R4](https://img.shields.io/badge/HL7%20FHIR-R4%20Bundle-0284c7?style=for-the-badge)
 ![FastAPI](https://img.shields.io/badge/Backend-FastAPI%20%7C%20Python%203.12+-009688?style=for-the-badge&logo=fastapi)
-![React 19](https://img.shields.io/badge/Frontend-React%2019%20%7C%20TypeScript-61dafb?style=for-the-badge&logo=react)
-![Vite](https://img.shields.io/badge/Bundler-Vite-646cff?style=for-the-badge&logo=vite)
+![Doctor Portal](https://img.shields.io/badge/Doctor%20Portal-React%2019%20%7C%20Vite-61dafb?style=for-the-badge&logo=react)
+![Patient App](https://img.shields.io/badge/Patient%20App-Expo%20SDK%2058%20%7C%20React%20Native-000020?style=for-the-badge&logo=expo)
 
 **An open, modular, patient-centric digital care & privacy layer built for the Ayushman Bharat Digital Mission (ABDM).**
 
@@ -69,34 +69,39 @@ Contemporary Indian telemedicine applications face three critical infrastructura
 
 ## 🏗️ Architecture
 
+The project has three parts: one backend and two separate client apps.
+
 ```
-                                  +------------------------------------+
-                                  |   CareBridge India (Frontend)      |
-                                  |   React 19 • TypeScript • Vite     |
-                                  +-----------------+------------------+
-                                                    |
-                                          HTTP / WS | (Signaling & Events)
-                                                    v
-                                  +------------------------------------+
-                                  |    FastAPI Microservices Engine    |
-                                  |    Python 3.12+ • SQLAlchemy async |
-                                  +-----------------+------------------+
-                                                    |
-        +-------------------+-----------------------+-----------------------+-------------------+
-        |                   |                       |                       |                   |
-        v                   v                       v                       v                   v
-+---------------+   +---------------+       +---------------+       +---------------+   +---------------+
-|  ABHA & Auth  |   | DPDP Consent  |       | Clinical Vault|       | AI Scribe &   |   | Cryptographic |
-|    Engine     |   | HMAC Manager  |       |  FHIR R4 DB   |       | CDSS Engine   |   |  Audit Trail  |
-+---------------+   +---------------+       +---------------+       +---------------+   +---------------+
-        |                   |                       |                       |                   |
-        +-------------------+-----------------------+-----------------------+-------------------+
-                                                    |
-                                                    v
-                                  +------------------------------------+
-                                  |    SQLite Async Storage Layer      |
-                                  |    (carebridge.db / aiosqlite)     |
-                                  +------------------------------------+
++-----------------------------+              +-----------------------------+
+|   Patient App (mobile)      |              |   Doctor Portal (web)       |
+|   Expo • React Native • TS  |              |   React 19 • Vite • TS      |
+|   Android / iOS / Web       |              |   Tailwind • lucide-react   |
++--------------+--------------+              +--------------+--------------+
+               |                                            |
+               |        HTTP (REST)  +  WS /ws/telehealth   |
+               +---------------------+----------------------+
+                                     |
+                                     v
+                  +------------------------------------+
+                  |    FastAPI Backend                 |
+                  |    Python 3.12+ • SQLAlchemy async |
+                  +-----------------+------------------+
+                                    |
+   +-------------+-------------+----+--------+-------------+--------------+
+   |             |             |             |             |              |
+   v             v             v             v             v              v
++--------+  +---------+  +-----------+  +---------+  +-----------+  +-----------+
+| ABHA & |  | DPDP    |  | Clinical  |  | AI      |  | Care Plan |  | Audit     |
+| Auth   |  | Consent |  | Vault &   |  | Scribe  |  | & Appoint-|  | Trail     |
+|        |  | Tokens  |  | FHIR R4   |  | & CDSS  |  | ments     |  |           |
++--------+  +---------+  +-----------+  +---------+  +-----------+  +-----------+
+                                    |
+                                    v
+                  +------------------------------------+
+                  |  Database                          |
+                  |  SQLite (default, local dev)       |
+                  |  or Neon Postgres via DATABASE_URL |
+                  +------------------------------------+
 ```
 
 ---
@@ -105,53 +110,70 @@ Contemporary Indian telemedicine applications face three critical infrastructura
 
 ```
 swasthyasetu_ai/
-├── backend/
+├── backend/                          # FastAPI server
 │   ├── app/
-│   │   ├── config.py                 # Application configuration & settings
-│   │   ├── database.py               # Async SQLAlchemy database session engine
-│   │   ├── main.py                   # FastAPI entrypoint, middleware & WebSockets
-│   │   ├── models.py                 # SQLAlchemy ORM models (Users, Consents, Records)
-│   │   ├── seed_data.py              # Pre-loaded ABDM demo records & patients
+│   │   ├── main.py                   # Entry point, routers & /ws/telehealth WebSocket
+│   │   ├── config.py                 # Settings (reads backend/.env)
+│   │   ├── database.py               # Async engine: SQLite or Neon Postgres
+│   │   ├── seed_data.py              # Loads demo patients, doctors & records
+│   │   ├── models/models.py          # SQLAlchemy ORM models
+│   │   ├── schemas/schemas.py        # Pydantic request/response schemas
+│   │   ├── seed/                     # Demo patient charts & queue (JSON)
 │   │   ├── routers/
-│   │   │   ├── auth.py               # ABHA ID & Doctor authentication routes
-│   │   │   ├── consents.py           # DPDP consent requests, OTP approval & revocation
-│   │   │   ├── records.py            # Patient health records vault & additions
-│   │   │   ├── encounters.py         # Clinical tele-consultation encounters
-│   │   │   ├── scribe.py             # Ambient clinical AI SOAP note generator
-│   │   │   ├── cdss.py               # Drug-Drug Interaction (DDI) safety checks
-│   │   │   ├── fhir.py               # HL7 FHIR R4 bundle serialization
-│   │   │   ├── audit.py              # Cryptographic audit log ledger
-│   │   │   └── translate.py          # Dynamic multilingual translation router
-│   │   └── services/
-│   │       ├── connection_manager.py # Real-time WebSocket signaling manager
-│   │       └── consent_engine.py     # HMAC token generation & revocation logic
-│   ├── carebridge.db                 # SQLite database file
-│   └── requirements.txt              # Backend Python dependencies
+│   │   │   ├── auth.py               # Login, ABHA creation, patient/doctor registration
+│   │   │   ├── consents.py           # Consent request, OTP grant, decision & revoke
+│   │   │   ├── records.py            # Health records vault & decrypted streaming
+│   │   │   ├── encounters.py         # Symptom intake & call mode (HD / audio / async)
+│   │   │   ├── patients.py           # Doctor's patient queue & patient chart
+│   │   │   ├── appointments.py       # Next appointment & rescheduling
+│   │   │   ├── careplan.py           # Care plan, dose logging & recovery check-in
+│   │   │   ├── scribe.py             # AI SOAP note draft & doctor sign-off
+│   │   │   ├── cdss.py               # Drug-drug interaction checks
+│   │   │   ├── fhir.py               # HL7 FHIR R4 bundle export
+│   │   │   ├── audit.py              # Audit log
+│   │   │   └── translate.py          # Kannada / Hindi / English translation
+│   │   └── services/                 # Token vault, DDI engine, FHIR, scribe,
+│   │                                 # translation & WebSocket connection manager
+│   └── requirements.txt
 │
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Header.tsx            # Clean ABDM navigation bar & role status
-│   │   │   ├── ModernAuthView.tsx    # Split login interface (Patient & Doctor)
-│   │   │   ├── AbhaCreationModal.tsx # Multi-step Aadhaar/Mobile ABHA registration
-│   │   │   ├── PatientPortal.tsx     # Patient lobby, active call, records & care plan
-│   │   │   ├── DoctorPortal.tsx      # Doctor triage, AI Scribe, CDSS & patient vault
-│   │   │   ├── LinkPatientModal.tsx  # Doctor ABHA request modal
-│   │   │   ├── AddMedicalRecordModal.tsx # Patient medical record creation modal
-│   │   │   ├── ConsentModal.tsx      # Purpose-specific OTP consent modal
-│   │   │   └── AuditModal.tsx        # DPDP Act 2023 cryptographic audit ledger
-│   │   ├── services/
-│   │   │   ├── apiClient.py          # Authenticated fetch wrapper
-│   │   │   └── translator.ts         # Dynamic language translation engine
-│   │   ├── types.ts                  # TypeScript interface definitions
-│   │   ├── translations.ts           # Vernacular localization dictionaries
-│   │   ├── App.tsx                   # Main root view & WebSocket event router
-│   │   ├── index.css                 # Custom modern design system
-│   │   └── main.tsx                  # Vite application mounting point
-│   ├── package.json                  # Frontend scripts & dependencies
-│   └── vite.config.ts                # Vite dev server & proxy settings
+├── frontend Doctor/                  # Doctor web portal (React + Vite)
+│   └── src/
+│       ├── App.tsx                   # Root view & WebSocket event handling
+│       ├── components/
+│       │   ├── DoctorLoginView.tsx         # NMC registration login
+│       │   ├── DoctorHeader.tsx
+│       │   ├── PatientQueueView.tsx        # Today's patient queue
+│       │   ├── PatientMedicalChartView.tsx # Patient chart
+│       │   ├── ConsultationWorkspace.tsx   # Video call, AI scribe & prescriptions
+│       │   ├── ConsentRequestModal.tsx     # Ask a patient for record access
+│       │   ├── ClinicalRecordsView.tsx     # Records shared under consent
+│       │   └── AuditLedgerView.tsx         # Consent & access audit log
+│       ├── services/api.ts           # Backend client
+│       └── utils/translations.ts
 │
-└── docs/                             # Architecture specifications & PRD documents
+├── frontend Patient/                 # Patient mobile app (Expo + React Native)
+│   ├── App.tsx                       # Root view, tab bar & WebSocket event handling
+│   └── src/
+│       ├── components/
+│       │   ├── PatientLoginView.tsx        # ABHA / mobile + OTP sign-in (illustrated, stepper, Listen)
+│       │   ├── PatientHeader.tsx           # Glass toolbar: brand, language pill, avatar, sign-out
+│       │   ├── HomeView.tsx                # Today tab: greeting, appointment, quick actions, SOS
+│       │   ├── HeroAppointmentCard.tsx     # Next appointment (loading / none / error states), Listen, join call
+│       │   ├── TactileGrid.tsx             # Quick-action tiles & Emergency SOS
+│       │   ├── SymptomIntakeModal.tsx      # Pre-call symptom intake
+│       │   ├── PatientTelehealthCall.tsx   # Network-adaptive video call
+│       │   ├── IncomingCallModal.tsx       # Doctor is calling
+│       │   ├── ConsentGateModal.tsx        # Approve doctor access with OTP
+│       │   ├── CarePlanView.tsx            # Medicines, audio advice & check-in
+│       │   ├── RecordsLockerView.tsx       # Health records
+│       │   ├── WhoSawMyRecordsView.tsx     # Who accessed my records & revoke
+│       │   └── EmergencySOSModal.tsx       # Dial 108 / 112
+│       ├── services/api.ts           # Backend client
+│       └── theme/tokens.ts           # Colours, radii & shadows
+│
+├── docs/                             # Architecture, data, security & feature docs
+│   └── API_ROUTES.md                 # Full route design spec
+└── .env.example                      # Backend environment template
 ```
 
 ---
@@ -161,12 +183,15 @@ swasthyasetu_ai/
 ### Prerequisites
 - **Python 3.11+** (the backend uses `asyncio.timeout`)
 - **Node.js 20+** and **npm**
+- For the patient app on a phone: the **Expo Go** app, or an Android emulator / iOS simulator
+
+Start the backend first. Both apps talk to it at `http://localhost:8000`.
 
 ---
 
 ### Quick start (recommended)
 
-One command sets everything up and starts both servers. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the frontend packages, creates `.env` with a random `SECRET_KEY`, and starts the backend (port 8000) and frontend (port 5173).
+One command sets everything up and starts both servers. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the frontend packages, creates `.env` with a random `SECRET_KEY`, and starts the backend (port 8000) and the web app in `frontend/` (port 5173), which has the AI IntelliSense notepad, consultation calls and AI minutes. The new Doctor and Patient apps below are started separately.
 
 **Windows:** double-click `start.bat`, or in PowerShell:
 ```powershell
@@ -191,68 +216,149 @@ To run backend commands yourself, use the environment's Python: `backend\.venv\S
 
 ### Manual setup
 
-#### Backend
+### 1. Backend
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scriptsctivate
+
+python3 -m venv venv
+source venv/bin/activate          # fish: source venv/bin/activate.fish
+
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
+
+# Optional: copy the env template and set SECRET_KEY / DATABASE_URL
+cp ../.env.example .env
+
+uvicorn app.main:app --reload --port 8000
 ```
 
-The backend server will start at **`http://localhost:8000`**.
-Interactive Swagger API documentation is available at **`http://localhost:8000/docs`**.
+- API: **`http://localhost:8000`**
+- Swagger docs: **`http://localhost:8000/docs`**
+- Health check: **`http://localhost:8000/health`**
 
-#### Frontend
+**Database:** with no `DATABASE_URL` set, the backend uses a local SQLite file (`backend/carebridge.db`). To use Neon Postgres instead, set `DATABASE_URL` (pooled) and optionally `DATABASE_URL_UNPOOLED` (direct, for schema changes) in `backend/.env`.
 
-In a new terminal window:
+---
+
+### 2. Doctor Portal (web)
+
+In a new terminal:
 
 ```bash
-cd frontend
+cd "frontend Doctor"
 npm install
 npm run dev
 ```
 
-The frontend application will start at **`http://localhost:5173`**.
+Opens at **`http://localhost:5173`**.
+
+---
+
+### 3. Patient App (mobile)
+
+In a new terminal:
+
+```bash
+cd "frontend Patient"
+npm install
+npx expo start
+```
+
+Then:
+- press **`w`** to open it in a browser,
+- press **`a`** for an Android emulator, or
+- scan the QR code with **Expo Go** on your phone.
+
+> ⚠️ The app reaches the backend at `localhost` (or `10.0.2.2` on the Android emulator), set in `src/services/api.ts`. On a physical phone, change `API_HOST` to your computer's LAN IP address.
+
+> 💡 If code changes don't show up (common when the project is on an external drive), restart with `npx expo start --clear`.
 
 ---
 
 ## 👥 Demo Personas & Credentials
 
-| Role | Name | Identifier | Details |
+| Role | Name | Sign-in | Details |
 | :--- | :--- | :--- | :--- |
-| **Patient** | Ramesh Gowda | `91-4820-1928-1120@abdm` | 54 M, Hassan, Karnataka. Kannada/English native. |
-| **Representative** | Sunita Devi | Authorized Family Proxy | Daughter-in-law with legal proxy consent authorization. |
-| **Doctor** | Dr. Ananya Sharma | `NMC-581920` | MD (General Medicine), Hassan District Tele-Care Hub. |
+| **Patient** | Ramesh Gowda | ABHA `91-4820-1928-1120@abdm` or mobile `9845012345`, OTP `123456` | 54 M, farmer, Hassan, Karnataka. Prefers Kannada. |
+| **Representative** | Sunita Devi | Chosen in the symptom intake form | Family member with nominee consent. |
+| **Doctor** | Dr. Ananya Sharma | `NMC-KA-581920` / `password123` | MD (General Medicine), Hassan District Tele-Care Hub. |
 
-> 💡 **Tip:** You can also click **"Don't have an ABHA ID? Create ABHA ID"** on the patient login page to generate a fresh custom identity with Aadhaar OTP verification.
+> 💡 **Tip:** On the patient sign-in screen, tap **"Demo 1-Click: Ramesh Gowda"** to fill in the demo ABHA ID and OTP automatically. The screen shows a two-step indicator (ID → OTP), a **Listen** button that reads the whole screen aloud, and a language pill (ಕನ್ನಡ / हिंदी / English) whose choice is remembered.
+
+### Try the full flow
+1. Sign in as the **doctor** in the web portal and as the **patient** in the mobile app.
+2. From the doctor's queue, request access to a record. The patient gets a consent prompt and approves it with the OTP.
+3. Start a call from the doctor side. The patient sees an incoming call and accepts.
+4. End the call. The patient app opens the care plan automatically.
+5. On the patient's **Privacy** tab, see who accessed which record and revoke access.
 
 ---
 
 ## 🔌 API & WebSocket Endpoints
 
-### Core REST Endpoints
+All REST routes are under `/api/v1`. The live, complete list is always at **`http://localhost:8000/docs`**.
+
+### Auth & Identity
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `POST` | `/api/v1/auth/login` | Authenticate Patient or Doctor |
-| `POST` | `/api/v1/auth/register-abha` | Create and issue new ABDM ABHA ID |
-| `GET` | `/api/v1/auth/me` | Fetch active authenticated profile & medical history |
-| `POST` | `/api/v1/consents/request` | Doctor requests access to patient records |
-| `POST` | `/api/v1/consents/approve` | Patient grants OTP-verified HMAC consent token |
-| `POST` | `/api/v1/consents/revoke/{id}` | Immediate revocation of active consent token |
-| `GET` | `/api/v1/records/patient/{id}`| Fetch patient health records from secure vault |
-| `POST` | `/api/v1/records` | Upload/add a new medical record or condition |
-| `POST` | `/api/v1/scribe/transcribe` | Process consultation audio into SOAP note draft |
-| `POST` | `/api/v1/cdss/ddi-check` | Real-time Drug-Drug Interaction analysis |
-| `GET` | `/api/v1/fhir/encounter/{id}`| Export encounter as HL7 FHIR R4 JSON bundle |
-| `GET` | `/api/v1/audit/logs` | Retrieve DPDP Act 2023 tamper-evident audit logs |
+| `GET` | `/auth/profiles` | List demo profiles |
+| `POST` | `/auth/login` | Sign in as patient or doctor |
+| `POST` | `/auth/create-abha` | Create a new ABHA ID |
+| `POST` | `/auth/register/patient` | Register a patient |
+| `POST` | `/auth/register/doctor` | Register a doctor |
+| `GET` | `/auth/me` | Current user's profile |
+| `GET` | `/auth/patient/{patient_id}/details` | Patient details (doctor) |
+| `POST` | `/auth/patient/medical-history` | Patient updates own medical history |
+| `POST` | `/auth/patient/{patient_id}/doctor-update-history` | Doctor updates a patient's history |
 
-### WebSocket Endpoint
-- **`ws://localhost:8000/ws/telehealth`**
-  - Handles real-time WebRTC media signaling.
-  - Broadcasts incoming ABHA link requests (`ABHA_LINK_REQUEST`).
-  - Broadcasts consent approvals and medical history synchronization events.
+### Consent (DPDP Act 2023)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/consents/link-patient-request` | Doctor asks to link a patient by ABHA ID |
+| `POST` | `/consents/request` | Doctor requests access to a record |
+| `GET` | `/consents/pending-for-patient` | Patient's pending requests |
+| `POST` | `/consents/{consent_id}/verify-otp-and-grant` | Patient approves with OTP |
+| `POST` | `/consents/{consent_id}/decision` | Patient approves or declines |
+| `POST` | `/consents/{consent_id}/revoke` | Revoke access immediately |
+| `GET` | `/consents/{consent_id}/status` | Consent status |
+| `GET` | `/consents/history` | Consent history for the current user |
+
+### Records, Encounters & Care
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/records/patient/{patient_id}` | List a patient's records |
+| `POST` | `/records/add` | Add a medical record |
+| `GET` | `/records/{record_id}/stream` | Read a decrypted record (needs active consent) |
+| `POST` | `/encounters/intake` | Submit pre-call symptom intake |
+| `GET` | `/encounters/{encounter_id}` | Encounter details |
+| `POST` | `/encounters/{encounter_id}/mode` | Switch call mode (HD / audio / async) |
+| `GET` | `/patients/queue` | Doctor's patient queue |
+| `GET` | `/patients/{patient_id}/chart` | Patient chart |
+| `GET` | `/appointments/next` | Patient's next appointment |
+| `PUT` | `/appointments/{appointment_id}` | Reschedule an appointment |
+| `GET` | `/careplan` | Patient's care plan |
+| `POST` | `/careplan/doses` | Log a dose taken |
+| `POST` | `/careplan/checkin` | Submit recovery check-in |
+
+### AI, Safety & Interoperability
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/scribe/generate` | Draft a SOAP note |
+| `POST` | `/scribe/sign/{encounter_id}` | Doctor signs the care plan |
+| `GET` | `/scribe/{encounter_id}` | Get the clinical note |
+| `POST` | `/cdss/validate` | Check prescriptions for drug interactions |
+| `GET` | `/fhir/encounter/{encounter_id}` | Export encounter as FHIR R4 bundle |
+| `GET` | `/audit/logs` | Audit log |
+| `GET` | `/translate/languages` | Supported languages |
+| `POST` | `/translate` | Translate text |
+| `POST` | `/translate/batch` | Translate several texts |
+| `POST` | `/translate/careplan` | Translate a care plan |
+
+### WebSocket
+**`ws://localhost:8000/ws/telehealth`** carries live events between the two apps:
+- `consent_request` / `consent_approved`: record access requests and approvals
+- `call_invitation`, `call_accepted`, `call_declined`, `call_ended`: video call signalling
+- `appointment_rescheduled`: doctor changes the next appointment; the patient's home screen updates live
 
 ---
 

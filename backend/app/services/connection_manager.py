@@ -11,9 +11,12 @@ class ConnectionManager:
     """
     def __init__(self):
         self._by_user: Dict[str, Set[WebSocket]] = {}
+        self._roles: Dict[str, str] = {}              # user id -> "doctor" | "patient" | ...
 
-    def add(self, user_id: str, websocket: WebSocket) -> None:
+    def add(self, user_id: str, websocket: WebSocket, role: str = "") -> None:
         self._by_user.setdefault(user_id, set()).add(websocket)
+        if role:
+            self._roles[user_id] = role
 
     def remove(self, user_id: str, websocket: WebSocket) -> None:
         sockets = self._by_user.get(user_id)
@@ -21,6 +24,7 @@ class ConnectionManager:
             sockets.discard(websocket)
             if not sockets:
                 self._by_user.pop(user_id, None)
+                self._roles.pop(user_id, None)
 
     async def send_to(self, user_ids: Iterable[Optional[str]], message: Dict) -> None:
         text = json.dumps(message, default=str)
@@ -30,6 +34,11 @@ class ConnectionManager:
                     await ws.send_text(text)
                 except Exception:  # noqa: BLE001 - closed connection
                     self.remove(user_id, ws)
+
+
+    async def send_to_role(self, role: str, message: Dict) -> None:
+        """For clinician-only updates (queue, check-ins): every signed-in user with this role."""
+        await self.send_to([u for u, r in self._roles.items() if r == role], message)
 
 
 ws_manager = ConnectionManager()

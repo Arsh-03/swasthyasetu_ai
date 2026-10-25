@@ -566,6 +566,8 @@ async def get_current_user_profile(
             return {
                 "user_id": user_id,
                 "role": "doctor",
+                "practitioner_id": doc.practitioner_id,
+                "facility": doc.facility,
                 "display_name": doc.display_name,
                 "registration_number": doc.registration_number,
                 "phone_number": user.phone_number or "9876543210",

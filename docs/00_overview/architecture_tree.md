@@ -22,6 +22,7 @@ docs/
 ├── 02_data/
 │   ├── schema.md                             # PostgreSQL 16 DDL (Relational + JSONB schemas)
 │   ├── fhir_r4_mappings.md                   # HL7 FHIR R4 Bundles & ABDM Schema Mapping
+│   ├── data_pipelines.md                     # ABDM Gateway Async Callback & Event Pipelines
 │   └── storage_vault.md                      # Private Encrypted S3/MinIO Storage & Proxy Rules
 │
 ├── 03_security_and_compliance/

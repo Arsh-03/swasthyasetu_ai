@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.seed_data import seed_database
-from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, intellisense, terminology, calls
+from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls
 from app.services.connection_manager import ws_manager
 from app.services.auth_dependencies import decode_access_token
 from app.services.llm_completion import completion_service
@@ -46,18 +46,26 @@ app.include_router(scribe.router, prefix=settings.API_V1_STR)
 app.include_router(fhir.router, prefix=settings.API_V1_STR)
 app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(translate.router, prefix=settings.API_V1_STR)
+app.include_router(patients.router, prefix=settings.API_V1_STR)
+app.include_router(appointments.router, prefix=settings.API_V1_STR)
+app.include_router(careplan.router, prefix=settings.API_V1_STR)
 app.include_router(intellisense.router, prefix=settings.API_V1_STR)
 app.include_router(terminology.router, prefix=settings.API_V1_STR)
 app.include_router(calls.router, prefix=settings.API_V1_STR)
 app.include_router(calls.ws_router)
 app.include_router(intellisense.ws_router)
 
+CALL_RELAY_TYPES = {"call_invitation", "call_event"}   # used by the Doctor / Patient apps' call screens
+_last_invited: Dict[str, str] = {}                     # doctor id -> patient id of their latest call invitation
+
+
 @app.websocket("/ws/telehealth")
 async def telehealth_notifications_ws(websocket: WebSocket):
     """
-    Real-time notifications for the signed-in user (consent requests and decisions, history updates).
-    First frame must be {"type": "AUTH", "token": ...}. Listen-only: messages from clients are ignored,
-    so nobody can push events to other users.
+    Real-time notifications for the signed-in user (consent requests and decisions, appointments,
+    history updates). First frame must be {"type": "AUTH", "token": ...}; each message goes only to the
+    users it concerns. Clients may only send call signalling (CALL_RELAY_TYPES): a doctor's message goes
+    to the patient it names, a patient's message to doctors, stamped with the sender's real identity.
     """
     await websocket.accept()
     try:
@@ -72,10 +80,25 @@ async def telehealth_notifications_ws(websocket: WebSocket):
     if not user_id:
         await websocket.close(code=4401)
         return
-    ws_manager.add(user_id, websocket)
+    role = {"doctor": "doctor", "practitioner": "doctor"}.get(claims.get("role", ""), claims.get("role", ""))
+    ws_manager.add(user_id, websocket, role)
     try:
         while True:
-            await websocket.receive_text()          # ignored (keep-alive only)
+            try:
+                msg = json.loads(await websocket.receive_text())
+            except ValueError:
+                continue
+            if not isinstance(msg, dict) or msg.get("type") not in CALL_RELAY_TYPES:
+                continue                             # anything else (e.g. fake consent events) is ignored
+            if role == "doctor":
+                # "call_ended" from the Doctor app names no patient: use the one this doctor last invited.
+                patient_id = msg.get("patient_id") or _last_invited.get(user_id)
+                if msg.get("type") == "call_invitation" and patient_id:
+                    _last_invited[user_id] = patient_id
+                if patient_id:
+                    await ws_manager.send_to([patient_id], {**msg, "patient_id": patient_id, "doctor_id": user_id})
+            elif role in ("patient", "representative"):
+                await ws_manager.send_to_role("doctor", {**msg, "patient_id": user_id})
     except WebSocketDisconnect:
         pass
     finally:

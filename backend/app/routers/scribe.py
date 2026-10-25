@@ -1,16 +1,50 @@
+import re
 import hashlib
+import uuid
 from typing import Dict, Any
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models.models import Encounter, ClinicalNote, Practitioner, AuditEvent
+from app.models.models import Encounter, ClinicalNote, Practitioner, AuditEvent, PatientProfile
 from app.schemas.schemas import ScribeGenerateIn, ClinicalNoteOut, ClinicalNoteSignIn
 from app.services.scribe_service import generate_soap_note_from_dialogue
 from app.services.auth_dependencies import require_doctor
 
 router = APIRouter(prefix="/scribe", tags=["scribe"])
+
+
+def _prescription_from_text(text: str, doctor_name: str, when: datetime) -> Dict[str, Any]:
+    """Turn a free-text order like 'Paracetamol 650mg TDS (After food)' into a chart prescription."""
+    t = text.upper()
+    has = lambda *words: any(re.search(rf"\b{w}\b", t) for w in words)  # whole words only ("OD" not in "FOOD")
+    if has("TDS", "TID", "THRICE", "THREE TIMES"):
+        schedule = {"morning": True, "afternoon": True, "night": True}
+    elif has("BD", "BID", "TWICE"):
+        schedule = {"morning": True, "afternoon": False, "night": True}
+    elif has("BEDTIME", "HS", "NIGHT"):
+        schedule = {"morning": False, "afternoon": False, "night": True}
+    elif has("OD", "ONCE", "DAILY"):
+        schedule = {"morning": True, "afternoon": False, "night": False}
+    else:
+        schedule = {"morning": False, "afternoon": False, "night": False}  # as needed
+    timing = text[text.find("(") + 1:text.rfind(")")] if "(" in text and ")" in text else "As advised"
+    return {
+        "id": f"rx_{uuid.uuid4().hex[:8]}",
+        "name": text.split("(")[0].strip(),
+        "dosage": "",
+        "route": "Oral",
+        "frequency": "As prescribed",
+        "timing": timing,
+        "duration": "As advised",
+        "purpose": "Prescribed during tele-consultation",
+        "schedule": schedule,
+        "refillsRemaining": 0,
+        "prescribedBy": doctor_name,
+        "prescribedDate": when.strftime("%d %b %Y"),
+        "status": "Active",
+    }
 
 @router.post("/generate")
 async def draft_soap_note(
@@ -77,15 +111,18 @@ async def sign_care_plan(
     Under NMC Telemedicine Guidelines, doctor must review, acknowledge any DDI flags,
     and attach cryptographic signature timestamp before care plan can be delivered to patient.
     """
-    note_res = await db.execute(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id))
-    note = note_res.scalar_one_or_none()
-    if not note:
-        raise HTTPException(status_code=404, detail="Clinical note not found for this encounter")
-
     enc_res = await db.execute(select(Encounter).where(Encounter.encounter_id == encounter_id))
     enc = enc_res.scalar_one_or_none()
     if not enc:
         raise HTTPException(status_code=404, detail="Encounter not found")
+
+    note_res = await db.execute(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id))
+    note = note_res.scalar_one_or_none()
+    if not note:
+        # No AI draft was generated; the doctor's reviewed scribe entries become the note.
+        note = ClinicalNote(encounter_id=encounter_id, practitioner_id=current_doctor["user_id"])
+        db.add(note)
+    note.practitioner_id = current_doctor["user_id"]
 
     now = datetime.now(timezone.utc)
     sig_payload = f"{sign_data.doctor_signature_name}:{encounter_id}:{now.isoformat()}"
@@ -102,8 +139,20 @@ async def sign_care_plan(
     enc.status = "completed"
     enc.end_time = now
 
+    # New medicine from the signed plan goes onto the patient's chart (and care plan).
+    medicine = (sign_data.plan or {}).get("medicine")
+    if medicine and medicine.strip():
+        profile = (await db.execute(select(PatientProfile).where(PatientProfile.patient_id == enc.patient_id))).scalar_one_or_none()
+        if profile:
+            chart = dict(profile.chart_json or {})
+            doctor = (await db.execute(select(Practitioner).where(Practitioner.practitioner_id == current_doctor["user_id"]))).scalar_one_or_none()
+            chart["prescriptions"] = [
+                _prescription_from_text(medicine.strip(), doctor.display_name if doctor else sign_data.doctor_signature_name, now)
+            ] + list(chart.get("prescriptions", []))
+            profile.chart_json = chart
+
     audit = AuditEvent(
-        actor_id=sign_data.doctor_signature_name,
+        actor_id=current_doctor["user_id"],
         action="CARE_PLAN_SIGNED_AND_ISSUED",
         resource_id=encounter_id,
         outcome="SUCCESS"

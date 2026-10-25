@@ -1,13 +1,77 @@
+import uuid
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.models import Encounter, PatientProfile, Practitioner, Representative, AuditEvent
-from app.schemas.schemas import AuditEventOut
-from app.services.auth_dependencies import get_current_user
+from app.schemas.schemas import AuditEventOut, SymptomIntakeIn
+from app.services.auth_dependencies import get_current_user, require_patient
+from app.services.connection_manager import ws_manager
 
 router = APIRouter(prefix="/encounters", tags=["encounters"])
+
+
+@router.post("/intake")
+async def submit_symptom_intake(
+    req: SymptomIntakeIn,
+    current_patient: Dict[str, Any] = Depends(require_patient),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Pre-consultation symptom intake from the patient app. Updates the patient's open
+    encounter (or opens a new queued one) so it shows up in the doctor's triage queue.
+    """
+    patient_id = current_patient["user_id"]
+    profile = (await db.execute(select(PatientProfile).where(PatientProfile.patient_id == patient_id))).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    parts = [s.strip() for s in req.symptoms if s.strip()]
+    complaint = ", ".join(parts)
+    if req.notes and req.notes.strip():
+        complaint = f"{complaint}. {req.notes.strip()}" if complaint else req.notes.strip()
+    if req.is_representative:
+        complaint = f"[Reported by representative] {complaint}"
+
+    enc = (await db.execute(
+        select(Encounter)
+        .where(Encounter.patient_id == patient_id, Encounter.status.in_(["queued", "in_progress"]))
+        .order_by(Encounter.start_time)
+    )).scalars().first()
+
+    if enc:
+        enc.symptoms_text = complaint or enc.symptoms_text
+    else:
+        chart = profile.chart_json or {}
+        enc = Encounter(
+            encounter_id=f"enc_{uuid.uuid4().hex[:8]}",
+            patient_id=patient_id,
+            mode="video",
+            status="queued",
+            urgency="routine",
+            symptoms_text=complaint,
+            allergies_json=[a.get("allergen") for a in chart.get("allergies", []) if a.get("allergen")],
+            current_meds_json=[
+                f"{rx.get('name')} {rx.get('dosage') or ''}".strip()
+                for rx in chart.get("prescriptions", [])
+                if rx.get("status", "Active") == "Active"
+            ],
+        )
+        db.add(enc)
+
+    db.add(AuditEvent(
+        actor_id=f"{'representative' if req.is_representative else 'patient'}:{patient_id}",
+        action="SYMPTOM_INTAKE_SUBMITTED",
+        resource_id=enc.encounter_id,
+        outcome="SUCCESS",
+        purpose=complaint[:255] if complaint else None,
+    ))
+    await db.commit()
+
+    await ws_manager.send_to_role("doctor", {"type": "queue_updated", "patient_id": patient_id, "encounter_id": enc.encounter_id})
+    return {"encounter_id": enc.encounter_id, "status": enc.status, "complaint": enc.symptoms_text}
+
 
 @router.get("/{encounter_id}")
 async def get_encounter_details(

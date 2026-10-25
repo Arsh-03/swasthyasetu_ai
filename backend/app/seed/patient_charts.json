@@ -1,0 +1,870 @@
+{
+  "usr_ramesh_gowda": {
+    "patientId": "usr_ramesh_gowda",
+    "fullName": "Ramesh Gowda (ರಮೇಶ್ ಗೌಡ)",
+    "abhaAddress": "91-4820-1928-1120@abdm",
+    "abhaNumber": "14-8921-0021-4412",
+    "phoneNumber": "+91 98450 12345",
+    "gender": "Male",
+    "age": 54,
+    "dateOfBirth": "14 June 1972",
+    "bloodGroup": "O+ (Positive)",
+    "preferredLanguage": "Kannada (ಕನ್ನಡ) / English",
+    "occupation": "Farmer / Agriculture Specialist",
+    "district": "Hassan, Karnataka (Arasikere Taluk)",
+    "emergencyContact": {
+      "name": "Suresh Gowda",
+      "relation": "Son",
+      "phone": "+91 98450 67890"
+    },
+    "insurancePolicy": {
+      "scheme": "Ayushman Bharat - PM-JAY & Arogya Karnataka",
+      "id": "PMJAY-KA-9921402",
+      "status": "Active / Eligible"
+    },
+    "chronicConditions": [
+      {
+        "id": "c1",
+        "name": "Right Nephrolithiasis (Renal Calculus)",
+        "icd10": "N20.0",
+        "diagnosedYear": 2026,
+        "status": "Active",
+        "severity": "Moderate",
+        "notes": "4.2mm calculus in right lower pole calyx with Grade I mild hydronephrosis."
+      },
+      {
+        "id": "c2",
+        "name": "Type 2 Diabetes Mellitus",
+        "icd10": "E11.9",
+        "diagnosedYear": 2021,
+        "status": "Managed",
+        "severity": "Mild",
+        "notes": "Controlled with oral Metformin 500mg SR. Fasting glucose ~118 mg/dL."
+      },
+      {
+        "id": "c3",
+        "name": "Primary Essential Hypertension",
+        "icd10": "I10",
+        "diagnosedYear": 2023,
+        "status": "Managed",
+        "severity": "Mild",
+        "notes": "Well maintained, average readings 128-132 / 82-86 mmHg."
+      }
+    ],
+    "surgicalHistory": [
+      {
+        "id": "s1",
+        "procedure": "Open Appendectomy",
+        "year": 2018,
+        "facility": "Hassan General Hospital",
+        "surgeon": "Dr. B. K. Hegde",
+        "notes": "Elective procedure for recurrent subacute appendicitis. Full recovery without complications."
+      }
+    ],
+    "allergies": [
+      {
+        "id": "a1",
+        "allergen": "Penicillin (and Beta-Lactams)",
+        "reaction": "Severe urticaria, periorbital edema, risk of anaphylaxis",
+        "severity": "Critical",
+        "diagnosedDate": "12 May 2016"
+      },
+      {
+        "id": "a2",
+        "allergen": "NSAIDs (High Dose Diclofenac)",
+        "reaction": "Gastric irritation & epigastric burning",
+        "severity": "Moderate",
+        "diagnosedDate": "04 Oct 2022"
+      }
+    ],
+    "familyHistory": [
+      {
+        "relation": "Father (Late)",
+        "conditions": [
+          "Ischemic Heart Disease",
+          "Hypertension"
+        ]
+      },
+      {
+        "relation": "Mother (Age 78)",
+        "conditions": [
+          "Type 2 Diabetes",
+          "Osteoarthritis"
+        ]
+      },
+      {
+        "relation": "Elder Brother",
+        "conditions": [
+          "Renal Calculi (Nephrolithiasis)"
+        ]
+      }
+    ],
+    "socialHabits": {
+      "smoking": "Non-smoker (Never)",
+      "alcohol": "Non-drinker",
+      "physicalActivity": "High (Farm fieldwork 6-8 hrs/day)",
+      "dailyHydration": "1.2 - 1.5 Liters/day (Inadequate hydration predisposing to calculi)",
+      "diet": "South Indian Vegetarian (High sodium, rice, ragi mudde)"
+    },
+    "immunizations": [
+      {
+        "vaccine": "COVID-19 Covishield (Dose 1, 2 & Precaution)",
+        "date": "2021 - 2022",
+        "status": "Verified"
+      },
+      {
+        "vaccine": "Tetanus Toxoid Booster (TT)",
+        "date": "14 Sep 2026",
+        "status": "Verified"
+      },
+      {
+        "vaccine": "Pneumococcal Conjugate (PCV13)",
+        "date": "Pending 2027",
+        "status": "Due"
+      }
+    ],
+    "lastAppointment": {
+      "encounterId": "enc_hassan_20260914_001",
+      "date": "14 Sep 2026",
+      "facility": "Hassan District Telemedicine Centre",
+      "doctorName": "Dr. C. R. Patil",
+      "specialty": "Consultant Sonologist & Tele-Physician",
+      "mode": "In-Person Warm Clinic",
+      "chiefComplaint": "Right flank pain radiating to right groin, nausea and burning micturition x 4 days",
+      "historyOfPresentIllness": "Patient presented with acute colicky spasmodic pain in the right flank, aggravated during physical farm labor. Associated with nausea and mild dysuria. No gross hematuria reported.",
+      "vitals": {
+        "bp": "130/85 mmHg",
+        "heartRate": "78 bpm",
+        "temperature": "98.6°F",
+        "spo2": "98% on room air",
+        "respiratoryRate": "18 /min",
+        "bmi": "24.2 kg/m²",
+        "bloodGlucose": "118 mg/dL (Random)"
+      },
+      "physicalExamFindings": [
+        "Right costovertebral angle (CVA) knocking tenderness present",
+        "Abdomen soft, non-distended, no guarding or rebound tenderness in iliac fossa",
+        "Normal bowel sounds heard in all 4 quadrants",
+        "No peripheral pedal edema"
+      ],
+      "diagnosticAssessment": "Right lower pole renal calculus (4.2mm) with mild Grade I hydronephrosis. Normal renal function markers (Serum Creatinine 0.9 mg/dL). No acute obstruction or pyelonephritis.",
+      "physicianNotes": "Calculus size of 4.2mm has a >85% spontaneous expulsion probability under conservative medical expulsive therapy (MET). Advised high-volume hydration (>3.0 L/day) and urine alkalinization. Warned regarding red flag symptoms (fever with chills, severe intractable vomiting, or anuria).",
+      "clinicalAdvice": [
+        "Increase fluid intake to minimum 3.0 to 3.5 Liters per day (boiled and cooled water, tender coconut water).",
+        "Avoid oxalate-rich foods (spinach, beetroot, nuts, excessive tea/coffee).",
+        "Take medications strictly as scheduled. Avoid heavy lifting until calculus passes.",
+        "Immediate hospital visit if fever >100°F or unbearable abdominal pain develops."
+      ],
+      "investigationsOrdered": [
+        "Ultrasound Pelvis & Abdomen (Completed — 4.2mm stone confirmed)",
+        "Serum Creatinine & Blood Urea Nitrogen (Completed — 0.9 mg/dL / 14 mg/dL)",
+        "Routine Urine Microscopy & Culture (Completed — Normal pH 5.8, no infection)"
+      ]
+    },
+    "prescriptions": [
+      {
+        "id": "rx_1",
+        "name": "Tamsulosin Hydrochloride Tablet",
+        "dosage": "0.4 mg",
+        "route": "Oral",
+        "frequency": "Once Daily (OD)",
+        "timing": "At bedtime after dinner",
+        "duration": "14 Days",
+        "purpose": "Medical expulsive therapy (Relaxes ureteral smooth muscle for stone passage)",
+        "schedule": {
+          "morning": false,
+          "afternoon": false,
+          "night": true
+        },
+        "refillsRemaining": 1,
+        "prescribedBy": "Dr. C. R. Patil",
+        "prescribedDate": "14 Sep 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rx_2",
+        "name": "Potassium Magnesium Citrate Oral Solution",
+        "dosage": "10 mL in a glass of water",
+        "route": "Oral",
+        "frequency": "Three Times Daily (TDS)",
+        "timing": "Immediately after meals",
+        "duration": "21 Days",
+        "purpose": "Urine alkalinization and calcium oxalate dissolution inhibitor",
+        "schedule": {
+          "morning": true,
+          "afternoon": true,
+          "night": true
+        },
+        "refillsRemaining": 2,
+        "prescribedBy": "Dr. C. R. Patil",
+        "prescribedDate": "14 Sep 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rx_3",
+        "name": "Drotaverine Hydrochloride Tablet",
+        "dosage": "80 mg",
+        "route": "Oral",
+        "frequency": "PRN (As needed)",
+        "timing": "When experiencing acute colic spasms (Max 3 tabs/day)",
+        "duration": "10 Days",
+        "purpose": "Smooth muscle antispasmodic for acute flank colic pain",
+        "schedule": {
+          "morning": false,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 0,
+        "prescribedBy": "Dr. C. R. Patil",
+        "prescribedDate": "14 Sep 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rx_4",
+        "name": "Paracetamol Tablet",
+        "dosage": "650 mg",
+        "route": "Oral",
+        "frequency": "SOS (As needed)",
+        "timing": "For fever or mild pain after food",
+        "duration": "5 Days",
+        "purpose": "Analgesic and antipyretic",
+        "schedule": {
+          "morning": false,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 1,
+        "prescribedBy": "Dr. C. R. Patil",
+        "prescribedDate": "14 Sep 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rx_5",
+        "name": "Metformin Hydrochloride SR Tablet",
+        "dosage": "500 mg",
+        "route": "Oral",
+        "frequency": "Twice Daily (BD)",
+        "timing": "With morning breakfast & dinner",
+        "duration": "90 Days (Maintenance)",
+        "purpose": "Glycemic control for Type 2 Diabetes Mellitus",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": true
+        },
+        "refillsRemaining": 2,
+        "prescribedBy": "Dr. Ananya Sharma",
+        "prescribedDate": "01 Aug 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rx_old_1",
+        "name": "Diclofenac Sodium 50mg",
+        "dosage": "50 mg",
+        "route": "Oral",
+        "frequency": "BD",
+        "timing": "After meals",
+        "duration": "Discontinued",
+        "purpose": "Pain relief",
+        "schedule": {
+          "morning": false,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 0,
+        "prescribedBy": "Local Pharmacy",
+        "prescribedDate": "10 Sep 2026",
+        "status": "Discontinued",
+        "discontinuedReason": "Discontinued due to gastrointestinal irritation and renal safety risk with renal calculus"
+      }
+    ],
+    "nextAppointment": {
+      "appointmentId": "apt_next_001",
+      "date": "Tomorrow, 23 Oct 2026",
+      "time": "10:30 AM IST",
+      "relativeTime": "Scheduled for Tomorrow at 10:30 AM",
+      "mode": "Telehealth Video",
+      "doctorName": "Dr. Ananya Sharma (MBBS, MD)",
+      "specialty": "General Medicine & Tele-triage",
+      "facility": "SwasthyaSetu Virtual Tele-Clinic",
+      "agenda": "Review KUB Ultrasound follow-up, verify stone expulsion, and evaluate renal biochemical panel.",
+      "status": "Confirmed by Patient",
+      "instructionsForPatient": [
+        "Have recent ultrasound scan report and medicine strip handy.",
+        "Drink 2 glasses of water 30 minutes before tele-consultation.",
+        "Ensure quiet surroundings with stable internet for camera and microphone streaming."
+      ]
+    }
+  },
+  "pat_kamla_devi": {
+    "patientId": "pat_kamla_devi",
+    "fullName": "Kamla Devi (ಕಮಲಾ ದೇವಿ)",
+    "abhaAddress": "44-9021-3312-8801@abdm",
+    "abhaNumber": "28-1192-3301-7712",
+    "phoneNumber": "+91 98450 99882",
+    "gender": "Female",
+    "age": 68,
+    "dateOfBirth": "20 August 1958",
+    "bloodGroup": "B+ (Positive)",
+    "preferredLanguage": "Kannada (ಕನ್ನಡ)",
+    "occupation": "Homemaker / Retired Artisan",
+    "district": "Mandya, Karnataka",
+    "emergencyContact": {
+      "name": "Vinay Kumar",
+      "relation": "Grandson",
+      "phone": "+91 98450 55443"
+    },
+    "chronicConditions": [
+      {
+        "id": "kc1",
+        "name": "Acute Urinary Tract Infection (Suspected Pyelonephritis)",
+        "icd10": "N39.0",
+        "diagnosedYear": 2026,
+        "status": "Active",
+        "severity": "Severe",
+        "notes": "High spiking fever (102.2°F), dysuria, and rigors for 3 days."
+      },
+      {
+        "id": "kc2",
+        "name": "Essential Hypertension",
+        "icd10": "I10",
+        "diagnosedYear": 2015,
+        "status": "Managed",
+        "severity": "Moderate",
+        "notes": "Maintained on Amlodipine 5mg daily."
+      },
+      {
+        "id": "kc3",
+        "name": "Bilateral Knee Osteoarthritis",
+        "icd10": "M17.0",
+        "diagnosedYear": 2018,
+        "status": "Managed",
+        "severity": "Moderate",
+        "notes": "Stage 2 degenerative changes; manages with paracetamol and knee brace."
+      }
+    ],
+    "surgicalHistory": [
+      {
+        "id": "ks1",
+        "procedure": "Phacoemulsification with IOL Implant (Left Eye)",
+        "year": 2022,
+        "facility": "Mandya District Eye Hospital",
+        "notes": "Cataract surgery; 6/6 vision restored."
+      }
+    ],
+    "allergies": [
+      {
+        "id": "ka1",
+        "allergen": "Penicillin & Amoxicillin",
+        "reaction": "Generalized erythematous rash and wheezing",
+        "severity": "Critical",
+        "diagnosedDate": "18 July 2010"
+      },
+      {
+        "id": "ka2",
+        "allergen": "Sulfa Drugs (Co-trimoxazole)",
+        "reaction": "Severe skin peeling & mucosal irritation",
+        "severity": "Critical",
+        "diagnosedDate": "02 March 2014"
+      }
+    ],
+    "familyHistory": [
+      {
+        "relation": "Mother",
+        "conditions": [
+          "Hypertension",
+          "Stroke at age 75"
+        ]
+      },
+      {
+        "relation": "Sister",
+        "conditions": [
+          "Rheumatoid Arthritis"
+        ]
+      }
+    ],
+    "socialHabits": {
+      "smoking": "Non-smoker",
+      "alcohol": "Non-drinker",
+      "physicalActivity": "Light indoor activity",
+      "dailyHydration": "1.0 Liter/day (Requires encouragement for fluid intake)",
+      "diet": "Vegetarian (Traditional Karnataka diet)"
+    },
+    "immunizations": [
+      {
+        "vaccine": "COVID-19 Booster",
+        "date": "2022",
+        "status": "Verified"
+      },
+      {
+        "vaccine": "Influenza Annual Vaccine",
+        "date": "Oct 2025",
+        "status": "Verified"
+      }
+    ],
+    "lastAppointment": {
+      "encounterId": "enc_mandya_20261019_002",
+      "date": "19 Oct 2026",
+      "facility": "Mandya Taluk Hospital Telehealth Booth",
+      "doctorName": "Dr. M. Nayak",
+      "specialty": "Internal Medicine",
+      "mode": "In-Person Warm Clinic",
+      "chiefComplaint": "Spiking high grade fever, severe chills with rigors, lower abdominal burning for 3 days",
+      "historyOfPresentIllness": "Elderly female patient accompanied by grandson with acute dysuria and chills. Fever up to 102.5°F recorded at home. No respiratory symptoms or diarrhea.",
+      "vitals": {
+        "bp": "135/88 mmHg",
+        "heartRate": "92 bpm",
+        "temperature": "102.2°F",
+        "spo2": "97%",
+        "respiratoryRate": "20 /min",
+        "bmi": "26.1 kg/m²"
+      },
+      "physicalExamFindings": [
+        "Febrile and toxic appearance, dry coated tongue",
+        "Suprapubic fullness and tenderness on deep palpation",
+        "No costovertebral tenderness bilaterally",
+        "Chest clear, no adventitious sounds"
+      ],
+      "diagnosticAssessment": "Acute complicated Urinary Tract Infection with systemic inflammatory response. Penicillin & Sulfa allergy precludes first-line beta-lactams.",
+      "physicianNotes": "Commenced on oral fluoroquinolone (Ciprofloxacin) tailored to allergy profile. Strict hydration advised. Urine culture sample collected before antibiotic administration.",
+      "clinicalAdvice": [
+        "Complete full 7-day course of Ciprofloxacin even if fever subsides.",
+        "Cold sponge for body temperature above 101°F.",
+        "Drink boiled water, barley water, and clear soups frequently."
+      ],
+      "investigationsOrdered": [
+        "Urine Routine & Microscopic (Pus cells 35-40/HPF, RBCs 2-4/HPF)",
+        "Urine Culture & Sensitivity (Awaiting 48h report)",
+        "Complete Blood Count (WBC 13,800/mm³ with neutrophilia)"
+      ]
+    },
+    "prescriptions": [
+      {
+        "id": "krx_1",
+        "name": "Ciprofloxacin Tablet",
+        "dosage": "500 mg",
+        "route": "Oral",
+        "frequency": "Twice Daily (BD)",
+        "timing": "After breakfast and dinner",
+        "duration": "7 Days",
+        "purpose": "Targeted antibacterial therapy for complicated UTI (Penicillin-safe)",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": true
+        },
+        "refillsRemaining": 0,
+        "prescribedBy": "Dr. M. Nayak",
+        "prescribedDate": "19 Oct 2026",
+        "status": "Active"
+      },
+      {
+        "id": "krx_2",
+        "name": "Paracetamol Tablet",
+        "dosage": "650 mg",
+        "route": "Oral",
+        "frequency": "Three Times Daily (TDS)",
+        "timing": "After food during fever spikes",
+        "duration": "4 Days",
+        "purpose": "Antipyretic and analgesic",
+        "schedule": {
+          "morning": true,
+          "afternoon": true,
+          "night": true
+        },
+        "refillsRemaining": 1,
+        "prescribedBy": "Dr. M. Nayak",
+        "prescribedDate": "19 Oct 2026",
+        "status": "Active"
+      },
+      {
+        "id": "krx_3",
+        "name": "Amlodipine Tablet",
+        "dosage": "5 mg",
+        "route": "Oral",
+        "frequency": "Once Daily (OD)",
+        "timing": "Morning after breakfast",
+        "duration": "60 Days (Maintenance)",
+        "purpose": "Antihypertensive maintenance",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 2,
+        "prescribedBy": "Dr. Ananya Sharma",
+        "prescribedDate": "10 Sep 2026",
+        "status": "Active"
+      }
+    ],
+    "nextAppointment": {
+      "appointmentId": "apt_kamla_002",
+      "date": "Monday, 26 Oct 2026",
+      "time": "11:15 AM IST",
+      "relativeTime": "Scheduled in 4 days at 11:15 AM",
+      "mode": "In-Person Warm Clinic",
+      "doctorName": "Dr. Ananya Sharma",
+      "specialty": "General Medicine & Tele-triage",
+      "facility": "Mandya Primary Health Sub-Centre",
+      "agenda": "Review 48-hour urine culture results, confirm resolution of fever and leukocytosis.",
+      "status": "Confirmed by Patient",
+      "instructionsForPatient": [
+        "Bring the urine culture report printed copy.",
+        "Grandson to accompany patient for translation and transport."
+      ]
+    }
+  },
+  "pat_rajesh_kumar": {
+    "patientId": "pat_rajesh_kumar",
+    "fullName": "Rajesh Kumar (ರಾಜೇಶ್ ಕುಮಾರ್)",
+    "abhaAddress": "12-3341-9981-2245@abdm",
+    "abhaNumber": "91-3312-8821-0099",
+    "phoneNumber": "+91 98765 00123",
+    "gender": "Male",
+    "age": 24,
+    "dateOfBirth": "05 March 2002",
+    "bloodGroup": "A+ (Positive)",
+    "preferredLanguage": "Hindi (हिन्दी) / English",
+    "occupation": "Customer Support Representative (Work from Home)",
+    "district": "Bengaluru Rural, Karnataka",
+    "emergencyContact": {
+      "name": "Priya Sharma",
+      "relation": "Sister",
+      "phone": "+91 98765 11223"
+    },
+    "chronicConditions": [
+      {
+        "id": "rc1",
+        "name": "Atypical Musculoskeletal Chest Wall Strain (Costochondritis)",
+        "icd10": "M94.0",
+        "diagnosedYear": 2026,
+        "status": "Active",
+        "severity": "Mild",
+        "notes": "Exacerbated by poor desk posture and carrying heavy laptop backpack."
+      },
+      {
+        "id": "rc2",
+        "name": "Seasonal Allergic Rhinitis",
+        "icd10": "J30.1",
+        "diagnosedYear": 2020,
+        "status": "Managed",
+        "severity": "Mild",
+        "notes": "Pollen and dust triggers sneezing episodes."
+      }
+    ],
+    "surgicalHistory": [],
+    "allergies": [],
+    "familyHistory": [
+      {
+        "relation": "Father",
+        "conditions": [
+          "Type 2 Diabetes Mellitus"
+        ]
+      }
+    ],
+    "socialHabits": {
+      "smoking": "Occasional smoker (1-2 cigarettes/week, counseling provided)",
+      "alcohol": "Social drinker (1-2 drinks/month)",
+      "physicalActivity": "Sedentary (10+ hours desk screen time)",
+      "dailyHydration": "2.0 Liters/day",
+      "diet": "Non-vegetarian (Fast food 3x/week)"
+    },
+    "immunizations": [
+      {
+        "vaccine": "COVID-19 Covaxin (All Doses)",
+        "date": "2021",
+        "status": "Verified"
+      },
+      {
+        "vaccine": "Hepatitis B Complete Series",
+        "date": "2019",
+        "status": "Verified"
+      }
+    ],
+    "lastAppointment": {
+      "encounterId": "enc_blr_20261010_003",
+      "date": "10 Oct 2026",
+      "facility": "Yelahanka Urban Primary Health Centre",
+      "doctorName": "Dr. S. Rao",
+      "specialty": "General Practice",
+      "mode": "Telehealth Video",
+      "chiefComplaint": "Substernal chest discomfort when lifting backpack, fatigue on climbing stairs",
+      "historyOfPresentIllness": "Young adult male with localized tenderness along 3rd and 4th left costochondral junctions. No radiating arm pain, diaphoresis, or palpitations.",
+      "vitals": {
+        "bp": "120/80 mmHg",
+        "heartRate": "72 bpm (Regular)",
+        "temperature": "98.6°F",
+        "spo2": "99%",
+        "respiratoryRate": "16 /min",
+        "bmi": "22.8 kg/m²"
+      },
+      "physicalExamFindings": [
+        "Reproducible localized pain on direct palpation of left sternocostal joints",
+        "Normal heart sounds S1, S2, no murmurs or rubs",
+        "Lungs clear bilaterally with vesicular breath sounds",
+        "12-lead ECG: Normal sinus rhythm, normal axis, no ST elevation or depression"
+      ],
+      "diagnosticAssessment": "Costochondritis / Postural Thoracic Strain. Cardiac ischemia safely excluded with clinical exam and normal ECG.",
+      "physicianNotes": "Reassured patient regarding cardiac health. Prescribed short course oral NSAID with gastro-protection, posture ergonomics correction, and vitamin D replenishment.",
+      "clinicalAdvice": [
+        "Set up ergonomic desk setup: screen at eye level, lumbar support.",
+        "Take 5-minute movement break every 50 minutes of sitting.",
+        "Engage in 20-30 minutes daily aerobic walking or swimming."
+      ],
+      "investigationsOrdered": [
+        "Standard 12-Lead ECG (Completed — Normal Sinus Rhythm)",
+        "Serum 25-Hydroxy Vitamin D (Completed — 14 ng/mL, Deficient)"
+      ]
+    },
+    "prescriptions": [
+      {
+        "id": "rrx_1",
+        "name": "Etoricoxib Tablet",
+        "dosage": "60 mg",
+        "route": "Oral",
+        "frequency": "Once Daily (OD)",
+        "timing": "After lunch",
+        "duration": "5 Days",
+        "purpose": "Selective COX-2 inhibitor for costochondral joint inflammation",
+        "schedule": {
+          "morning": false,
+          "afternoon": true,
+          "night": false
+        },
+        "refillsRemaining": 0,
+        "prescribedBy": "Dr. S. Rao",
+        "prescribedDate": "10 Oct 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rrx_2",
+        "name": "Cholecalciferol (Vitamin D3) Chewable Tablet",
+        "dosage": "60,000 IU",
+        "route": "Oral",
+        "frequency": "Once Weekly",
+        "timing": "Every Sunday with milk after breakfast",
+        "duration": "8 Weeks",
+        "purpose": "Vitamin D replenishment for bone & musculoskeletal health",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 1,
+        "prescribedBy": "Dr. S. Rao",
+        "prescribedDate": "10 Oct 2026",
+        "status": "Active"
+      },
+      {
+        "id": "rrx_3",
+        "name": "Multivitamin with Zinc Capsule",
+        "dosage": "1 Capsule",
+        "route": "Oral",
+        "frequency": "Once Daily (OD)",
+        "timing": "Morning with water",
+        "duration": "30 Days",
+        "purpose": "General vitality and immune support",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 1,
+        "prescribedBy": "Dr. S. Rao",
+        "prescribedDate": "10 Oct 2026",
+        "status": "Active"
+      }
+    ],
+    "nextAppointment": {
+      "appointmentId": "apt_rajesh_003",
+      "date": "10 Nov 2026",
+      "time": "04:00 PM IST",
+      "relativeTime": "Scheduled in 18 days at 04:00 PM",
+      "mode": "Telehealth Video",
+      "doctorName": "Dr. Ananya Sharma",
+      "specialty": "General Medicine & Tele-triage",
+      "facility": "SwasthyaSetu Virtual Tele-Clinic",
+      "agenda": "Assess chest wall pain resolution, verify Vitamin D protocol, and lifestyle review.",
+      "status": "Confirmed by Patient",
+      "instructionsForPatient": [
+        "Complete the 5-day anti-inflammatory course before appointment."
+      ]
+    }
+  },
+  "pat_sunita_patil": {
+    "patientId": "pat_sunita_patil",
+    "fullName": "Sunita Patil (ಸುನೀತಾ ಪಾಟೀಲ್)",
+    "abhaAddress": "88-1120-4491-0012@abdm",
+    "abhaNumber": "33-9011-2244-9912",
+    "phoneNumber": "+91 99887 76655",
+    "gender": "Female",
+    "age": 42,
+    "dateOfBirth": "11 November 1983",
+    "bloodGroup": "AB+ (Positive)",
+    "preferredLanguage": "Kannada (ಕನ್ನಡ) / Marathi",
+    "occupation": "Primary School Teacher",
+    "district": "Belagavi, Karnataka",
+    "emergencyContact": {
+      "name": "Anand Patil",
+      "relation": "Husband",
+      "phone": "+91 99887 11223"
+    },
+    "chronicConditions": [
+      {
+        "id": "sc1",
+        "name": "Type 2 Diabetes Mellitus",
+        "icd10": "E11.9",
+        "diagnosedYear": 2022,
+        "status": "Managed",
+        "severity": "Mild",
+        "notes": "Well compensated (HbA1c 6.8% in Aug 2026). Compliant with diet & medication."
+      },
+      {
+        "id": "sc2",
+        "name": "Primary Hypothyroidism",
+        "icd10": "E03.9",
+        "diagnosedYear": 2017,
+        "status": "Managed",
+        "severity": "Mild",
+        "notes": "Euthyroid on Levothyroxine 50mcg daily. TSH 2.4 uIU/mL."
+      }
+    ],
+    "surgicalHistory": [
+      {
+        "id": "ss1",
+        "procedure": "Lower Segment Cesarean Section (LSCS x 2)",
+        "year": 2012,
+        "facility": "Belagavi District Hospital",
+        "notes": "Obstetric deliveries, healthy recovery."
+      }
+    ],
+    "allergies": [],
+    "familyHistory": [
+      {
+        "relation": "Father (Age 72)",
+        "conditions": [
+          "Type 2 Diabetes",
+          "Glaucoma"
+        ]
+      },
+      {
+        "relation": "Mother (Age 68)",
+        "conditions": [
+          "Hypothyroidism"
+        ]
+      }
+    ],
+    "socialHabits": {
+      "smoking": "Non-smoker",
+      "alcohol": "Non-drinker",
+      "physicalActivity": "Moderate (School teaching, walking 30 mins/day)",
+      "dailyHydration": "2.5 Liters/day",
+      "diet": "Vegetarian (Balanced, diabetic-friendly)"
+    },
+    "immunizations": [
+      {
+        "vaccine": "COVID-19 Full Course",
+        "date": "2021",
+        "status": "Verified"
+      },
+      {
+        "vaccine": "HPV Vaccine (Gardasil)",
+        "date": "2015",
+        "status": "Verified"
+      }
+    ],
+    "lastAppointment": {
+      "encounterId": "enc_belagavi_20260822_004",
+      "date": "22 Aug 2026",
+      "facility": "Belagavi District Hospital Telehealth Unit",
+      "doctorName": "Dr. V. Joshi",
+      "specialty": "Endocrinology & General Medicine",
+      "mode": "In-Person Warm Clinic",
+      "chiefComplaint": "Quarterly routine review of glycemic index and thyroid hormone status",
+      "historyOfPresentIllness": "Patient reports steady energy levels, no polyuria, polydipsia, or neuropathic tingling in feet. Compliant with morning Levothyroxine and Metformin.",
+      "vitals": {
+        "bp": "118/76 mmHg",
+        "heartRate": "74 bpm",
+        "temperature": "98.4°F",
+        "spo2": "99%",
+        "respiratoryRate": "16 /min",
+        "bmi": "23.4 kg/m²",
+        "bloodGlucose": "112 mg/dL (Fasting)"
+      },
+      "physicalExamFindings": [
+        "Thyroid gland soft, non-tender, no palpable nodules or bruits",
+        "Pedal pulses (dorsalis pedis) brisk and symmetric bilaterally",
+        "Monofilament sensory test 10/10 intact bilaterally",
+        "Eye fundus: No signs of diabetic retinopathy"
+      ],
+      "diagnosticAssessment": "Compensated Type 2 Diabetes Mellitus with optimal glycemic control. Euthyroid on current hormone replacement dose.",
+      "physicianNotes": "Excellent compliance and self-monitoring. Maintain current regimen. Refilled 90-day supply of Metformin SR and Levothyroxine.",
+      "clinicalAdvice": [
+        "Continue 40 minutes of daily morning brisk walking.",
+        "Schedule next HbA1c test in late November 2026.",
+        "Take Levothyroxine strictly 45 minutes before tea or breakfast."
+      ],
+      "investigationsOrdered": [
+        "Glycated Hemoglobin (HbA1c) (Completed — 6.8%)",
+        "Thyroid Stimulating Hormone (TSH) (Completed — 2.4 uIU/mL)",
+        "Lipid Profile (Completed — LDL 92 mg/dL, HDL 48 mg/dL)"
+      ]
+    },
+    "prescriptions": [
+      {
+        "id": "srx_1",
+        "name": "Metformin Hydrochloride SR Tablet",
+        "dosage": "500 mg",
+        "route": "Oral",
+        "frequency": "Twice Daily (BD)",
+        "timing": "With morning breakfast & dinner",
+        "duration": "90 Days",
+        "purpose": "Insulin sensitizer and glycemic maintenance for T2DM",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": true
+        },
+        "refillsRemaining": 2,
+        "prescribedBy": "Dr. V. Joshi",
+        "prescribedDate": "22 Aug 2026",
+        "status": "Active"
+      },
+      {
+        "id": "srx_2",
+        "name": "Levothyroxine Sodium Tablet",
+        "dosage": "50 mcg",
+        "route": "Oral",
+        "frequency": "Once Daily (OD)",
+        "timing": "Empty stomach 45 mins before breakfast",
+        "duration": "90 Days",
+        "purpose": "Thyroid hormone replacement",
+        "schedule": {
+          "morning": true,
+          "afternoon": false,
+          "night": false
+        },
+        "refillsRemaining": 2,
+        "prescribedBy": "Dr. V. Joshi",
+        "prescribedDate": "22 Aug 2026",
+        "status": "Active"
+      }
+    ],
+    "nextAppointment": {
+      "appointmentId": "apt_sunita_004",
+      "date": "22 Nov 2026",
+      "time": "09:30 AM IST",
+      "relativeTime": "Scheduled in 30 days at 09:30 AM",
+      "mode": "In-Person Warm Clinic",
+      "doctorName": "Dr. Ananya Sharma",
+      "specialty": "General Medicine & Tele-triage",
+      "facility": "Belagavi District Hospital Telehealth Unit",
+      "agenda": "Quarterly Fasting Blood Glucose, HbA1c, and annual microalbuminuria screening.",
+      "status": "Confirmed by Patient",
+      "instructionsForPatient": [
+        "Overnight 10-12 hour fasting required for blood draw.",
+        "Take morning thyroid tablet with sip of plain water only."
+      ]
+    }
+  }
+}
