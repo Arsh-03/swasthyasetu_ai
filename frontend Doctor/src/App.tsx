@@ -1,424 +1,302 @@
-import { useState, useEffect, useCallback } from 'react';
-import { DoctorHeader } from './components/DoctorHeader';
-import { PatientQueueView } from './components/PatientQueueView';
-import { PatientMedicalChartView } from './components/PatientMedicalChartView';
-import { ConsultationWorkspace } from './components/ConsultationWorkspace';
-import { ConsentRequestModal } from './components/ConsentRequestModal';
-import { ClinicalRecordsView } from './components/ClinicalRecordsView';
-import { AuditLedgerView } from './components/AuditLedgerView';
+// Doctor portal root: sign-in, then the portal (Home · My patients · Audit trail · Settings, plus the meeting room).
+// Holds what must survive page changes: the signed-in doctor, settings and language, notifications,
+// live events, and the consultation call (its room stays connected while the doctor moves around).
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DoctorLoginView } from './components/DoctorLoginView';
-import type { PatientSummary, DoctorProfile } from './services/api';
-import { api, WS_BASE_URL } from './services/api';
-import { type SupportedLanguage, t } from './utils/translations';
-import type { UpcomingAppointment } from './data/patientRecords';
-import { Icon } from './components/ui/Icon';
-import { useConsultationCall } from './services/call/useConsultationCall';
-import { useDoctorLobby } from './services/call/useDoctorLobby';
+import { ConsentRequestModal } from './components/ConsentRequestModal';
 import { ClinicalNotepad } from './components/ClinicalNotepad';
 import { CallPanel } from './components/call/CallPanel';
 import { CallWindow } from './components/call/CallWindow';
 import { IncomingCallCard } from './components/call/CallOverlays';
 import { RemoteAudio } from './components/call/RemoteAudio';
+import { Icon } from './components/ui/Icon';
+import { cx } from './components/ui/cx';
+import { api, WS_BASE_URL, type DoctorProfile, type PatientSummary } from './services/api';
+import { doctorApi, type DoctorSettings, type NotificationItem } from './services/doctorApi';
+import { useConsultationCall } from './services/call/useConsultationCall';
+import { useDoctorLobby } from './services/call/useDoctorLobby';
+import { PortalContext, type PortalState, type ToastTone } from './portal/PortalContext';
+import { Shell } from './portal/Shell';
+import { hrefFor, navigate, useRoute } from './portal/router';
+import { translate, type Lang, type StringKey } from './portal/i18n';
+import { DEFAULT_PREFS, makeFormatters, addDays } from './portal/time';
+import { HomeScreen } from './portal/screens/HomeScreen';
+import { PatientsScreen } from './portal/screens/PatientsScreen';
+import { PatientScreen } from './portal/screens/PatientScreen';
+import { VisitScreen } from './portal/screens/VisitScreen';
+import { MeetingScreen } from './portal/screens/MeetingScreen';
+import { AuditScreen } from './portal/screens/AuditScreen';
+import { SettingsScreen } from './portal/screens/SettingsScreen';
 
+const LANG_KEY = 'doctor_lang';
+const storedLang = (): Lang => {
+  try {
+    const v = localStorage.getItem(LANG_KEY);
+    return v === 'kn' || v === 'hi' || v === 'en' ? v : 'en';
+  } catch {
+    return 'en';
+  }
+};
+
+interface Toast { id: number; message: string; tone: ToastTone }
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => Boolean(api.getToken()));
-  const [activeTab, setActiveTab] = useState<
-    'patient-queue' | 'patient-chart' | 'active-consultation' | 'clinical-records' | 'audit-trail'
-  >('patient-queue');
-  const [patients, setPatients] = useState<PatientSummary[]>([]);
-  const [queueStatus, setQueueStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
-  // Bumped whenever consent/record state changes so record views refetch
-  const [recordsVersion, setRecordsVersion] = useState(0);
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'kn' | 'hi'>('kn');
-  // <html lang> drives per-script typography (base.css) and screen-reader pronunciation
-  useEffect(() => {
-    document.documentElement.lang = selectedLanguage;
-  }, [selectedLanguage]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [settings, setSettings] = useState<DoctorSettings | null>(null);
+  const [lang, setLangState] = useState<Lang>(storedLang);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [version, setVersion] = useState(0);
+  const [consultation, setConsultation] = useState<PortalState['consultation']>(null);
+  const [consentPatient, setConsentPatient] = useState<PatientSummary | null>(null);
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [speakerId, setSpeakerId] = useState('');
+  const route = useRoute();
 
-  const logout = () => {
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+
+  const t = useCallback((key: StringKey, vars?: Record<string, string | number>) => translate(lang, key, vars), [lang]);
+  const prefs = useMemo(() => ({ ...DEFAULT_PREFS, ...(settings?.prefs ?? {}), language: lang }), [settings, lang]);
+  const fmt = useMemo(() => makeFormatters(prefs), [prefs]);
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+
+  const toastId = useRef(0);
+  const toast = useCallback((message: string, tone: ToastTone = 'info') => {
+    const id = ++toastId.current;
+    setToasts((prev) => [...prev.slice(-2), { id, message, tone }]);
+    setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), tone === 'danger' ? 8000 : 4500);
+  }, []);
+
+  const logout = useCallback(() => {
     api.clearToken();
     setIsAuthenticated(false);
     setDoctor(null);
-    setPatients([]);
-    setSelectedPatient(null);
-  };
+    setSettings(null);
+    setConsultation(null);
+    setNotifications([]);
+    window.location.hash = '#/home';
+  }, []);
 
-  // Load the logged-in doctor's profile from the backend
+  // ---- Signed-in doctor and settings ----
   useEffect(() => {
     if (!isAuthenticated) return;
-    api
-      .getMe()
-      .then((me) => setDoctor(me))
-      .catch(() => logout()); // expired or invalid session
-  }, [isAuthenticated]);
+    api.getMe().then(setDoctor).catch(() => logout());
+    doctorApi.settings().then((s) => {
+      setSettings(s);
+      setLangState(s.prefs.language);
+      try { localStorage.setItem(LANG_KEY, s.prefs.language); } catch { /* */ }
+    }).catch(() => { /* older server: defaults */ });
+  }, [isAuthenticated, logout]);
 
-  const loadQueue = async () => {
-    try {
-      const queue = await api.getQueue();
-      setPatients(queue);
-      setQueueStatus('ready');
-      // Keep the current selection fresh; default to the first patient in the queue
-      setSelectedPatient((current) => {
-        if (current) return queue.find((p) => p.patient_id === current.patient_id) || current;
-        return queue[0] || null;
-      });
-    } catch {
-      setQueueStatus('error');
-    }
-  };
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    try { localStorage.setItem(LANG_KEY, next); } catch { /* */ }
+    doctorApi.saveSettings({ prefs: { language: next } }).then(setSettings).catch(() => { /* kept locally */ });
+  }, []);
 
+  const saveSettings = useCallback(async (patch: Parameters<PortalState['saveSettings']>[0]) => {
+    const saved = await doctorApi.saveSettings(patch);
+    setSettings(saved);
+    setLangState(saved.prefs.language);
+    setDoctor((d) => (d ? { ...d, display_name: saved.profile.display_name, specialty: saved.profile.specialty, facility: saved.profile.facility } : d));
+    return saved;
+  }, []);
+
+  // ---- Notifications ----
+  const loadNotifications = useCallback(() => {
+    doctorApi.notifications().then((n) => { setNotifications(n.items); setUnread(n.unread); }).catch(() => { /* bell stays as is */ });
+  }, []);
   useEffect(() => {
-    if (isAuthenticated) loadQueue();
-  }, [isAuthenticated]);
+    if (!isAuthenticated) return;
+    loadNotifications();
+    const id = setInterval(loadNotifications, 60000);
+    return () => clearInterval(id);
+  }, [isAuthenticated, loadNotifications]);
 
-  // ---- Consultation call (real WebRTC call; state here so it keeps running on every tab) ----
+  const markRead = useCallback((ids: string[] | 'all') => {
+    setNotifications((prev) => prev.map((n) => (ids === 'all' || ids.includes(n.notification_id) ? { ...n, read: true } : n)));
+    setUnread((u) => (ids === 'all' ? 0 : Math.max(0, u - ids.length)));
+    doctorApi.markRead(ids).catch(() => loadNotifications());
+  }, [loadNotifications]);
+
+  // ---- Live events (consent decisions, appointments, alerts) ----
+  const tRef = useRef(t);
+  tRef.current = t;
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry = 1000;
+    let timer: number | undefined;
+    const connect = () => {
+      ws = new WebSocket(`${WS_BASE_URL}?role=doctor`);
+      ws.onopen = () => { retry = 1000; ws?.send(JSON.stringify({ type: 'AUTH', token: api.getToken() })); };
+      ws.onmessage = (event) => {
+        let msg: Record<string, unknown>;
+        try { msg = JSON.parse(event.data); } catch { return; }
+        switch (msg.type) {
+          case 'notification': {
+            const n = msg as unknown as NotificationItem;
+            setNotifications((prev) => [n, ...prev.filter((x) => x.notification_id !== n.notification_id)].slice(0, 50));
+            setUnread((u) => u + 1);
+            toast(n.title, n.severity === 'critical' ? 'danger' : n.severity === 'warning' ? 'warning' : 'info');
+            setVersion((v) => v + 1);
+            break;
+          }
+          case 'ABHA_LINK_APPROVED':
+          case 'consent_granted':
+          case 'ABHA_LINK_REJECTED':
+          case 'queue_updated':
+          case 'appointment_event':
+          case 'recovery_checkin':
+            setVersion((v) => v + 1);
+            break;
+        }
+      };
+      ws.onclose = () => {
+        if (closed) return;
+        timer = window.setTimeout(connect, retry);
+        retry = Math.min(retry * 2, 15000);
+      };
+    };
+    connect();
+    return () => { closed = true; window.clearTimeout(timer); ws?.close(); };
+  }, [isAuthenticated, toast]);
+
+  // ---- Consultation call ----
   const [notepadText, setNotepadText] = useState('');
-  const [speakerOn, setSpeakerOn] = useState(true);
   const [lobbyAnswer, setLobbyAnswer] = useState<{ video: boolean } | null>(null);
-  const [pendingStart, setPendingStart] = useState<{ encounterId: string; video: boolean } | null>(null);
   const clearLobbyAnswer = useCallback(() => setLobbyAnswer(null), []);
+  const patient = consultation?.patient ?? null;
   const call = useConsultationCall({
     role: 'doctor',
-    encounterId: isAuthenticated ? selectedPatient?.encounter_id ?? null : null,
-    peerName: selectedPatient?.full_name || 'Patient',
+    encounterId: isAuthenticated ? patient?.encounter_id ?? null : null,
+    peerName: patient?.full_name || 'Patient',
     noteText: notepadText,
     autoAnswer: lobbyAnswer,
     onAutoAnswered: clearLobbyAnswer,
   });
   const lobby = useDoctorLobby(isAuthenticated);
-  // A patient calling on a consultation that isn't the one open here (the open one rings by itself)
-  const lobbyCall = lobby.ringing && lobby.ringing.encounterId !== selectedPatient?.encounter_id ? lobby.ringing : null;
+  const lobbyCall = lobby.ringing && lobby.ringing.encounterId !== patient?.encounter_id ? lobby.ringing : null;
   const inCall = call.callState === 'calling' || call.callState === 'in_call';
-  const callState: 'idle' | 'calling' | 'connected' | 'declined' =
-    call.callState === 'in_call' ? 'connected'
-      : call.callState === 'calling' ? 'calling'
-      : call.endReason === 'declined' || call.endReason === 'unavailable' || call.endReason === 'no_answer' ? 'declined'
-      : 'idle';
 
-  // Start a call once this patient's call room is connected (selecting a patient switches rooms).
-  useEffect(() => {
-    if (pendingStart && call.roomEncounterId === pendingStart.encounterId && call.callState === 'idle') {
-      void call.startCall(pendingStart.video);
-      setPendingStart(null);
-    }
-  }, [pendingStart, call]);
+  const openConsultation = useCallback((p: PatientSummary, appointmentId: string | null) => {
+    setConsultation((cur) => (cur && cur.patient.encounter_id === p.encounter_id && cur.appointmentId === appointmentId ? cur : { patient: p, appointmentId }));
+  }, []);
+  const closeConsultation = useCallback(() => setConsultation(null), []);
 
-  // A call that connects (answered here or from another page) opens the consultation.
-  const [wasInCall, setWasInCall] = useState(false);
-  if (inCall !== wasInCall) {
-    setWasInCall(inCall);
-    if (call.callState === 'in_call') setActiveTab('active-consultation');
-  }
-
-  // WebSocket signaling & consent listener
-  useEffect(() => {
-    if (!isAuthenticated) return;
-
-    const wsUrl = `${WS_BASE_URL}?role=doctor&session_id=doc_sess_${Date.now()}`;
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      // The server only delivers events to signed-in users, so identify first.
-      ws.send(JSON.stringify({ type: 'AUTH', token: api.getToken() }));
-      console.log('Doctor WebSocket signaling connected');
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        console.log('Doctor received WS message:', msg);
-
-        if (msg.type === 'consent_granted' || msg.type === 'ABHA_LINK_APPROVED') {
-          setNotification(`Consent Token GRANTED by ${msg.patient_name || 'Patient'} under DPDP Act!`);
-          setTimeout(() => setNotification(null), 4000);
-          setRecordsVersion((v) => v + 1);
-        } else if (msg.type === 'ABHA_LINK_REJECTED') {
-          setNotification('Patient declined the consent request.');
-          setTimeout(() => setNotification(null), 4000);
-        } else if (msg.type === 'queue_updated') {
-          loadQueue();
-        } else if (msg.type === 'recovery_checkin' && msg.status === 'worse') {
-          setNotification(`⚠️ ${msg.patient_name || 'A patient'} reported feeling worse and needs help.`);
-          setTimeout(() => setNotification(null), 6000);
-        }
-      } catch (err) {
-        console.error('Error handling WS message:', err);
-      }
-    };
-
-    ws.onerror = (err) => {
-      console.warn('Doctor WebSocket connection notice:', err);
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [isAuthenticated]);
-
-  // Open the consultation and ring the patient's app (video, or audio only).
-  const handleStartConsultation = (patient: PatientSummary, video = true) => {
-    if (!patient.encounter_id) {
-      setNotification(`${patient.full_name} has no open consultation to call into.`);
-      setTimeout(() => setNotification(null), 4000);
-      return;
-    }
-    setSelectedPatient(patient);
-    setActiveTab('active-consultation');
-    setPendingStart({ encounterId: patient.encounter_id, video });
-  };
-
-  // Hang up but stay on the consultation: the AI minutes (if on) are finished and added to the notes.
-  const handleEndConsultation = () => {
-    call.endCall();
-    setNotification('Call ended. Camera & microphone disconnected.');
-    setTimeout(() => setNotification(null), 3500);
-  };
-
-  // A patient calling from another consultation: open it and answer.
+  // A patient calling on another consultation: open it (and its meeting room when it has an appointment) and answer.
   const answerLobbyCall = async (video: boolean) => {
     if (!lobbyCall) return;
     const ringing = lobbyCall;
     lobby.clear();
-    let patient = patients.find((p) => p.encounter_id === ringing.encounterId || p.patient_id === ringing.patientId);
-    if (!patient) {
-      try {
-        const queue = await api.getQueue();
-        setPatients(queue);
-        patient = queue.find((p) => p.encounter_id === ringing.encounterId || p.patient_id === ringing.patientId);
-      } catch { /* handled below */ }
+    try {
+      const [queue, apts] = await Promise.all([
+        api.getQueue(),
+        doctorApi.appointments(fmt.fromLocal(addDays(fmt.today(), -1), '00:00').toISOString(), fmt.fromLocal(addDays(fmt.today(), 14), '00:00').toISOString()),
+      ]);
+      const p = queue.find((q) => q.encounter_id === ringing.encounterId || q.patient_id === ringing.patientId);
+      if (!p) throw new Error('not found');
+      const apt = apts.find((a) => a.encounter_id === ringing.encounterId);
+      setConsultation({ patient: { ...p, encounter_id: ringing.encounterId }, appointmentId: apt?.appointment_id ?? null });
+      setLobbyAnswer({ video });
+      if (apt) navigate({ page: 'meeting', appointmentId: apt.appointment_id });
+    } catch {
+      toast(t('loadError'), 'danger');
     }
-    if (!patient) {
-      setNotification(`Could not open ${ringing.callerName}'s consultation.`);
-      return;
-    }
-    setSelectedPatient({ ...patient, encounter_id: ringing.encounterId });
-    setLobbyAnswer({ video });            // answered automatically once that consultation's room connects
-    setActiveTab('active-consultation');
   };
 
-  const notepad = selectedPatient?.encounter_id ? (
+  const notepad = patient?.encounter_id ? (
     <ClinicalNotepad
-      key={selectedPatient.encounter_id}
-      encounterId={selectedPatient.encounter_id}
-      patientName={selectedPatient.full_name}
+      key={patient.encounter_id}
+      encounterId={patient.encounter_id}
+      patientName={patient.full_name}
       callMinutes={call.minutes}
       autoApplyCall={call.aiState === 'recording' || call.aiState === 'finishing'}
       onTextChange={setNotepadText}
     />
   ) : null;
 
-  const handleRescheduleAppointment = async (apt: UpcomingAppointment): Promise<UpcomingAppointment> => {
-    // Saved to the database; the backend notifies the patient app over WebSocket
-    const saved = await api.updateAppointment(apt);
-    const msg = `${t(selectedLanguage, 'rescheduleSuccessNotice')} (${saved.date} • ${saved.time})`;
-    setNotification(msg);
-    setTimeout(() => {
-      setNotification((curr) => (curr === msg ? null : curr));
-    }, 4500);
-    return saved;
-  };
-
-  const handleLanguageChange = (lang: SupportedLanguage) => {
-    setSelectedLanguage(lang);
-    const msg = t(lang, 'languageNotification');
-    setNotification(msg);
-    setTimeout(() => {
-      setNotification((curr) => (curr === msg ? null : curr));
-    }, 3500);
+  const portal: PortalState = {
+    doctor, settings, saveSettings, lang, setLang, t, fmt, notifications, unread, markRead, toast, version, refresh,
+    consultation, openConsultation, closeConsultation, call, speakerOn, setSpeakerOn, speakerId, setSpeakerId,
+    notepad, requestRecords: setConsentPatient, logout,
   };
 
   if (!isAuthenticated) {
     return (
       <DoctorLoginView
-        onLoginSuccess={(doc) => {
-          setDoctor(doc);
-          setIsAuthenticated(true);
-        }}
-        selectedLanguage={selectedLanguage}
+        onLoginSuccess={(doc) => { setDoctor(doc); setIsAuthenticated(true); }}
+        selectedLanguage={lang}
       />
     );
   }
 
   return (
-    <div className="min-h-screen bg-base flex flex-col font-sans antialiased text-ink">
-      {/* Top Clinical Header without Live Call in Navigation */}
-      <DoctorHeader
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        doctor={doctor}
-        selectedLanguage={selectedLanguage}
-        setSelectedLanguage={handleLanguageChange}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        selectedPatientName={selectedPatient?.full_name}
-        isCallActive={inCall}
-        onReturnToCall={() => setActiveTab('active-consultation')}
-        onLogout={logout}
-      />
+    <PortalContext.Provider value={portal}>
+      <Shell route={route}>
+        {route.page === 'home' && <HomeScreen />}
+        {route.page === 'patients' && <PatientsScreen />}
+        {route.page === 'patient' && <PatientScreen patientId={route.patientId} tab={route.tab} />}
+        {route.page === 'visit' && <VisitScreen patientId={route.patientId} encounterId={route.encounterId} />}
+        {route.page === 'meeting' && <MeetingScreen appointmentId={route.appointmentId} />}
+        {route.page === 'audit' && <AuditScreen />}
+        {route.page === 'settings' && <SettingsScreen section={route.section} />}
+      </Shell>
 
-      {/* Real-time Dynamic Toast Banner (macOS Notification Style) */}
-      {notification && (
-        <div className="fixed top-20 right-6 z-50 glass text-ink border border-ink/10 p-3 px-4 rounded-2xl shadow-lg flex items-center gap-2.5 animate-bounce">
-          <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
-          <Icon name="notification" size={18} tone="primary" weight="duotone" />
-          <span className="text-xs font-semibold">{notification}</span>
-        </div>
-      )}
+      {/* The patient's voice: one audio element for the whole portal (videos are muted). */}
+      {inCall && <RemoteAudio stream={call.remoteStream} muted={!speakerOn} sinkId={speakerId} />}
 
-      {/* Main Content Surfaces */}
-      <main className="w-full pt-[84px] flex-1 flex flex-col pb-16">
-        {activeTab !== 'audit-trail' && !selectedPatient && (
-          <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 py-16 flex flex-col items-center gap-3 text-center">
-            <Icon
-              name={queueStatus === 'error' ? 'offline' : queueStatus === 'loading' ? 'hourglass' : 'inbox'}
-              size={40}
-              tone="muted"
-              weight="duotone"
-            />
-            <p className="text-sm font-semibold text-ink">
-              {queueStatus === 'error'
-                ? 'Could not load the patient queue. Is the backend running?'
-                : queueStatus === 'loading'
-                ? 'Loading patient queue…'
-                : 'No patients are waiting right now.'}
-            </p>
-            {queueStatus === 'error' && (
-              <button
-                onClick={loadQueue}
-                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold"
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'patient-queue' && selectedPatient && (
-          <PatientQueueView
-            patients={patients}
-            selectedPatient={selectedPatient}
-            onSelectPatient={setSelectedPatient}
-            onOpenPatientChart={(p) => {
-              setSelectedPatient(p);
-              setActiveTab('patient-chart');
-            }}
-            onStartConsultation={handleStartConsultation}
-            searchQuery={searchQuery}
-            selectedLanguage={selectedLanguage}
-          />
-        )}
-
-        {/* Bigger Dedicated Page: Full Patient Medical Chart & Detailed History */}
-        {activeTab === 'patient-chart' && selectedPatient && (
-          <PatientMedicalChartView
-            patient={selectedPatient}
-            onBackToQueue={() => setActiveTab('patient-queue')}
-            onStartConsultation={handleStartConsultation}
-            onRequestConsent={() => setIsConsentModalOpen(true)}
-            onViewClinicalRecords={() => setActiveTab('clinical-records')}
-            selectedLanguage={selectedLanguage}
-            onRescheduleAppointment={handleRescheduleAppointment}
-          />
-        )}
-
-        {activeTab === 'active-consultation' && selectedPatient && (
-          <ConsultationWorkspace
-            patient={selectedPatient}
-            doctorName={doctor?.display_name || ''}
-            callState={callState}
-            callEndMessage={call.notice}
-            onStartCall={handleStartConsultation}
-            onEndCall={handleEndConsultation}
-            onConsultationSigned={loadQueue}
-            onRequestRecordAccess={() => setIsConsentModalOpen(true)}
-            onGoToQueue={() => setActiveTab('patient-chart')}
-            call={call}
-            notepad={notepad}
-            speakerOn={speakerOn}
-            onToggleSpeaker={() => setSpeakerOn((v) => !v)}
-          />
-        )}
-
-        {activeTab === 'clinical-records' && selectedPatient && (
-          <ClinicalRecordsView
-            patient={selectedPatient}
-            refreshKey={recordsVersion}
-            onRequestConsent={() => setIsConsentModalOpen(true)}
-            selectedLanguage={selectedLanguage}
-          />
-        )}
-
-        {activeTab === 'audit-trail' && <AuditLedgerView />}
-      </main>
-
-      {/* The other person's voice: one audio element for the whole portal */}
-      {inCall && <RemoteAudio stream={call.remoteStream} muted={!speakerOn} />}
-
-      {/* In a call but looking at another tab: a small floating call window */}
-      {inCall && activeTab !== 'active-consultation' && (
-        <CallWindow call={call} title={`Consultation · ${selectedPatient?.full_name ?? ''}`} panel={<CallPanel call={call} compact hideStart />}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('active-consultation')}
-            className="w-full py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold cursor-pointer"
+      {/* In a call but on another page: a small floating call window. */}
+      {inCall && route.page !== 'meeting' && (
+        <CallWindow call={call} title={patient?.full_name ?? ''} panel={<CallPanel call={call} compact hideStart />}>
+          <a
+            href={consultation?.appointmentId ? hrefFor({ page: 'meeting', appointmentId: consultation.appointmentId }) : '#/home'}
+            className="block w-full py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold text-center"
           >
-            Back to the consultation (notes &amp; AI minutes)
-          </button>
+            {t('backToMeeting')}
+          </a>
         </CallWindow>
       )}
 
-      {/* Ringing: the open consultation's patient, or a patient from another consultation */}
+      {/* Ringing: the open consultation's patient, or a patient from another consultation. */}
       {call.callState === 'incoming' && call.incoming && (
         <IncomingCallCard
           callerName={call.incoming.callerName}
           video={call.incoming.video}
-          onAccept={(video) => { setActiveTab('active-consultation'); void call.acceptCall(video); }}
+          onAccept={(video) => {
+            if (consultation?.appointmentId) navigate({ page: 'meeting', appointmentId: consultation.appointmentId });
+            void call.acceptCall(video);
+          }}
           onDecline={call.declineCall}
         />
       )}
       {lobbyCall && call.callState !== 'incoming' && !inCall && (
-        <IncomingCallCard
-          callerName={lobbyCall.callerName}
-          video={lobbyCall.video}
-          onAccept={(video) => void answerLobbyCall(video)}
-          onDecline={lobby.decline}
-        />
+        <IncomingCallCard callerName={lobbyCall.callerName} video={lobbyCall.video}
+          onAccept={(video) => void answerLobbyCall(video)} onDecline={lobby.decline} />
       )}
 
-      {/* Purpose-Bound Consent Modal */}
       <ConsentRequestModal
-        patient={selectedPatient}
-        isOpen={isConsentModalOpen}
-        onClose={() => setIsConsentModalOpen(false)}
-        onSuccess={() => {
-          setNotification('Consent request dispatched to Patient mobile app via WebSocket!');
-          setTimeout(() => setNotification(null), 5000);
-        }}
+        patient={consentPatient}
+        isOpen={consentPatient !== null}
+        onClose={() => setConsentPatient(null)}
+        onSuccess={() => { toast(t('consentRequestSent'), 'success'); refresh(); }}
       />
 
-      {/* macOS Minimal Footer Strip */}
-      <footer className="w-full bg-base py-3.5 border-t border-ink/5">
-        <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-ink-muted">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-success"></span>
-            <span>Ayushman Bharat Digital Mission (ABDM) Level-3 Tele-Triage Node</span>
+      {/* Toasts */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] flex flex-col items-center gap-2 pointer-events-none w-[min(480px,calc(100vw-2rem))]" aria-live="polite">
+        {toasts.map((x) => (
+          <div key={x.id} role={x.tone === 'danger' ? 'alert' : 'status'}
+            className={cx('pointer-events-auto w-full flex items-center gap-2.5 rounded-control px-4 py-3 text-sm font-semibold shadow-xl',
+              x.tone === 'danger' ? 'bg-danger-deep text-white' : x.tone === 'success' ? 'bg-success-deep text-white' : x.tone === 'warning' ? 'bg-warning-deep text-white' : 'bg-night text-white')}>
+            <Icon name={x.tone === 'danger' ? 'emergency' : x.tone === 'success' ? 'checkCircle' : 'notification'} size={18} />
+            <span className="flex-1">{x.message}</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span>DPDP Act 2023 Compliant</span>
-            <span>•</span>
-            <span>FHIR R4 Encrypted</span>
-            <span>•</span>
-            <span className="font-mono text-2xs">v2.4-AppleHIG</span>
-          </div>
-        </div>
-      </footer>
-    </div>
+        ))}
+      </div>
+    </PortalContext.Provider>
   );
 }
 export default App;

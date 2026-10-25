@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models.models import Encounter, ClinicalNote, Practitioner, AuditEvent, PatientProfile
+from app.models.models import Appointment, Encounter, ClinicalNote, Practitioner, AuditEvent, PatientProfile
 from app.schemas.schemas import ScribeGenerateIn, ClinicalNoteOut, ClinicalNoteSignIn
 from app.services.scribe_service import generate_soap_note_from_dialogue
 from app.services.auth_dependencies import require_doctor
@@ -138,6 +138,9 @@ async def sign_care_plan(
 
     enc.status = "completed"
     enc.end_time = now
+    # The appointment this consultation was opened for is done too.
+    for apt in (await db.execute(select(Appointment).where(Appointment.encounter_id == encounter_id))).scalars():
+        apt.visit_status = "completed"
 
     # New medicine from the signed plan goes onto the patient's chart (and care plan).
     medicine = (sign_data.plan or {}).get("medicine")

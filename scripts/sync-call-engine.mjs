@@ -28,7 +28,8 @@ let stale = 0;
 for (const { dir, skip } of targets) {
   for (const name of files) {
     if (skip.includes(name)) continue;
-    const wanted = header(name) + readFileSync(join(shared, name), 'utf8');
+    // Compare and write with LF line endings: Windows checkouts (core.autocrlf) may have CRLF on either side.
+    const wanted = header(name) + readFileSync(join(shared, name), 'utf8').replace(/\r\n/g, '\n');
     const path = join(dir, name);
     const have = existsSync(path) ? readFileSync(path, 'utf8').replace(/\r\n/g, '\n') : null;
     if (have === wanted) continue;

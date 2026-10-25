@@ -14,6 +14,14 @@ export const AUDIO_CONSTRAINTS: MediaTrackConstraints = { echoCancellation: true
 const VIDEO_CONSTRAINTS: MediaTrackConstraints = { width: { ideal: 480 }, height: { ideal: 270 }, frameRate: { ideal: 15, max: 20 } };
 const VIDEO_MAX_BITRATE = 300_000;
 
+/** Microphone / camera chosen before joining (e.g. the doctor's pre-join screen). Unset = browser default. */
+let preferredDevices: { audioInput?: string; videoInput?: string } = {};
+export function setPreferredDevices(devices: { audioInput?: string; videoInput?: string }) {
+  preferredDevices = { ...devices };
+}
+const withDevice = (base: MediaTrackConstraints, deviceId?: string): MediaTrackConstraints =>
+  deviceId ? { ...base, deviceId: { ideal: deviceId } } : base;
+
 // Messages from the server are loosely typed by design (one switch statement handles them).
 export type CallMessage = { type: string; [key: string]: any };
 
@@ -85,14 +93,17 @@ export class CallClient {
     if (this.localStream) return this.localStream;
     if (video) {
       try {
-        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: VIDEO_CONSTRAINTS });
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          audio: withDevice(AUDIO_CONSTRAINTS, preferredDevices.audioInput),
+          video: withDevice(VIDEO_CONSTRAINTS, preferredDevices.videoInput),
+        });
         for (const t of this.localStream.getVideoTracks()) {
           try { t.contentHint = 'motion'; } catch { /* not supported on every platform */ }
         }
         return this.localStream;
       } catch { /* fall through to audio only */ }
     }
-    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: false });
+    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: withDevice(AUDIO_CONSTRAINTS, preferredDevices.audioInput), video: false });
     return this.localStream;
   }
 

@@ -12,6 +12,7 @@ from app.schemas.schemas import (
 )
 from app.services.token_vault import token_vault
 from app.services.connection_manager import ws_manager
+from app.services.notifications import notify
 from app.services.auth_dependencies import require_doctor, require_patient, get_current_user
 from app.services.serializers import as_aware, consent_display_status, remaining_label
 
@@ -216,6 +217,10 @@ async def verify_otp_and_grant_consent(
         "status": "approved"
     }
     await ws_manager.send_to([consent.practitioner_id], approval_broadcast)   # only the doctor who asked
+    await notify(kind="consent", practitioner_ids=[consent.practitioner_id],
+                 title=f"{profile.full_name if profile else 'Patient'} approved record access",
+                 body="Verified with OTP. The records are open for 1 hour.",
+                 link={"page": "patient", "patient_id": consent.patient_id, "tab": "records"})
 
     return {
         "success": True,
@@ -442,6 +447,10 @@ async def decide_consent(
             "demographics": profile.demographics_json if profile else {},
             "status": "approved"
         })
+        await notify(kind="consent", practitioner_ids=[consent.practitioner_id],
+                     title=f"{profile.full_name if profile else 'Patient'} approved record access",
+                     body=consent.purpose or "",
+                     link={"page": "patient", "patient_id": consent.patient_id, "tab": "records"})
     else:
         await ws_manager.send_to([consent.practitioner_id], {
             "type": "ABHA_LINK_REJECTED",
@@ -449,6 +458,10 @@ async def decide_consent(
             "patient_id": consent.patient_id,
             "status": "declined"
         })
+        await notify(kind="consent", severity="warning", practitioner_ids=[consent.practitioner_id],
+                     title="A patient declined your record access request",
+                     body=consent.purpose or "",
+                     link={"page": "patient", "patient_id": consent.patient_id, "tab": "records"})
 
     return ConsentOut(
         consent_id=consent.consent_id,

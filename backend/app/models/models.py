@@ -206,6 +206,12 @@ class Appointment(Base):
     instructions_json = Column(JSONType, default=list)
     is_rescheduled = Column(Boolean, default=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    # Real start time for calendars and "next appointment" (the *_label columns are display text).
+    scheduled_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    duration_minutes = Column(Integer, default=20)
+    # The consultation (call room, notes) this appointment opens; set when the doctor opens it.
+    encounter_id = Column(String(36), nullable=True)
+    visit_status = Column(String(20), default="scheduled")  # 'scheduled', 'completed', 'cancelled', 'no_show'
 
 
 class DoseLog(Base):
@@ -229,3 +235,30 @@ class RecoveryCheckin(Base):
     patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
     status = Column(String(20), nullable=False)  # 'better', 'same', 'worse'
     created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class Notification(Base):
+    """Bell notifications for a doctor; `link` says which page a click opens."""
+    __tablename__ = "notifications"
+
+    notification_id = Column(String(36), primary_key=True, default=generate_uuid)
+    practitioner_id = Column(String(36), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)  # 'appointment', 'alert', 'consent', 'call', 'system'
+    severity = Column(String(20), default="info")  # 'info', 'warning', 'critical'
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link_json = Column(JSONType, default=dict)  # {"page": "patient", "patient_id": ..., "tab": ...}
+    audit_event_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PractitionerSettings(Base):
+    """Doctor preferences and working hours (profile fields live on Practitioner)."""
+    __tablename__ = "practitioner_settings"
+
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), primary_key=True)
+    prefs_json = Column(JSONType, default=dict)  # {"language", "date_format", "time_format", "timezone"}
+    # {"weekly": {"mon": [{"start": "09:00", "end": "13:00"}], ...}, "leaves": [{"id", "start", "end", "reason"}]}
+    availability_json = Column(JSONType, default=dict)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

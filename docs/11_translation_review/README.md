@@ -30,6 +30,12 @@ File: `frontend Patient/src/utils/translations.ts`, in the `kn` and `hi` blocks,
 
 Keep the `{name}` and `{minutes}` placeholders exactly as they are.
 
+## 3. Doctor portal (all screens)
+
+File: `frontend Doctor/src/portal/i18n.ts`, the `kn` and `hi` blocks (about 310 texts: navigation, home, schedule, meeting room, patients, visit summary, audit trail, settings).
+
+Doctors read these, so clinical words may stay in English where that is what doctors use (e.g. "ABHA", "OTP", "BMI"). Keep `{name}`, `{n}`, `{time}`, `{when}`, `{reason}`, `{total}`, `{locked}`, `{shown}`, `{year}` exactly as they are. An English text with `|` ("one|many") has a singular and a plural form; Kannada and Hindi use one form.
+
 ## Status
 
 | Language | Reviewed by | Date |

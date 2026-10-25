@@ -37,11 +37,58 @@ async def reset_database():
     print("Dropped all tables.")
 
 
-async def seed_database():
-    async with migration_engine.begin() as conn:
-        # Create all tables (direct connection, not the pooler)
-        await conn.run_sync(Base.metadata.create_all)
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], start=1)}
+_IST = timezone(timedelta(hours=5, minutes=30))
 
+
+def parse_appointment_labels(date_label: str, time_label: str):
+    """'2026-11-02' / 'Monday, 26 Oct 2026' / '10 Nov 2026' + '10:00 AM IST' -> UTC datetime (labels are IST)."""
+    import re
+    d = None
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", date_label or "")
+    if m:
+        d = (int(m[1]), int(m[2]), int(m[3]))
+    else:
+        m = re.search(r"(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{4})", date_label or "")
+        if m and m[2].lower() in _MONTHS:
+            d = (int(m[3]), _MONTHS[m[2].lower()], int(m[1]))
+    t = re.search(r"(\d{1,2}):(\d{2})\s*([AaPp][Mm])?", time_label or "")
+    if not d or not t:
+        return None
+    hour = int(t[1]) % 12 + (12 if (t[3] or "").lower() == "pm" else 0) if t[3] else int(t[1])
+    return datetime(d[0], d[1], d[2], hour, int(t[2]), tzinfo=_IST).astimezone(timezone.utc)
+
+
+async def backfill_appointment_times():
+    """Give appointments made before `scheduled_at` existed a real start time (from their labels)."""
+    async with AsyncSessionLocal() as session:
+        rows = (await session.execute(select(Appointment).where(Appointment.scheduled_at.is_(None)))).scalars().all()
+        for apt in rows:
+            apt.scheduled_at = parse_appointment_labels(apt.date_label, apt.time_label)
+            apt.duration_minutes = apt.duration_minutes or 20
+            apt.visit_status = apt.visit_status or "scheduled"
+        if rows:
+            await session.commit()
+
+
+async def seed_database():
+    from app.demo_schedule import ensure_demo_schedule
+    from app.services.migrations import add_missing_columns
+
+    async with migration_engine.begin() as conn:
+        # Create all tables (direct connection, not the pooler), then add any newer columns.
+        await conn.run_sync(Base.metadata.create_all)
+        added = await conn.run_sync(add_missing_columns)
+        if added:
+            print("Added database columns:", ", ".join(added))
+
+    await _seed_base_data()
+    await backfill_appointment_times()
+    await ensure_demo_schedule()
+
+
+async def _seed_base_data():
     async with AsyncSessionLocal() as session:
         check = await session.execute(select(User))
         if check.scalars().first():

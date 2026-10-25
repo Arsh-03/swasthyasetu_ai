@@ -8,6 +8,7 @@ from app.models.models import Encounter, PatientProfile, Practitioner, Represent
 from app.schemas.schemas import AuditEventOut, SymptomIntakeIn
 from app.services.auth_dependencies import get_current_user, require_patient
 from app.services.connection_manager import ws_manager
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/encounters", tags=["encounters"])
 
@@ -69,6 +70,10 @@ async def submit_symptom_intake(
     ))
     await db.commit()
 
+    await notify(kind="appointment", severity="info", patient_id=patient_id,
+                 title=f"New consultation request from {profile.full_name}",
+                 body=(complaint or "Symptoms submitted from the patient app.")[:300],
+                 link={"page": "patient", "patient_id": patient_id})
     await ws_manager.send_to_role("doctor", {"type": "queue_updated", "patient_id": patient_id, "encounter_id": enc.encounter_id})
     return {"encounter_id": enc.encounter_id, "status": enc.status, "complaint": enc.symptoms_text}
 

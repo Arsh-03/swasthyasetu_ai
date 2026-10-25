@@ -204,6 +204,9 @@ function PatientApp() {
             showToast(tr('toastConsentRequest', { name: data.practitioner_name || tr('yourDoctor') }), 'warning');
           }
 
+          // The doctor opened a meeting room for a new consultation: join its call room.
+          if (data.type === 'call_room_ready') void refreshCallRoom();
+
           // When Doctor reschedules next appointment, update in real-time
           if (
             (data.type === 'appointment_event' &&
