@@ -1,0 +1,177 @@
+/*
+ * Design tokens V2, "Harbor Calm" — Doctor portal (web).
+ * Values are copied 1:1 from the Patient app (frontend Patient/src/theme/palette.ts + tokens.ts);
+ * see docs/05_ui_ux/design_system_tokens.md § 11 "Web (Doctor portal)".
+ *
+ * This file is the ONLY place raw colour values live in the Doctor portal.
+ * scripts/check-contrast.ts parses it, so keep one `--name: value;` declaration per line.
+ */
+
+@theme {
+  /* Tailwind's default palette is removed: only Harbor Calm roles exist as classes. */
+  --color-*: initial;
+
+  /* ---------- Approved base palette ---------- */
+  --color-ink: #1F3A4C; /* primary text; the only text colour on glass */
+  --color-primary: #3E6985; /* actions, links, selected state */
+  --color-primary-soft: #8FA8B5; /* fills / borders only, never text */
+  --color-fog: #C7D6DB; /* fills / borders only, never text */
+  --color-ice: #D6EBF3; /* ambient blob; muted text on night only */
+  /* base = canvas + neumorphic surface. Exposed as a BACKGROUND / BORDER / GRADIENT colour only:
+     a plain --color-base would turn Tailwind's `text-base` font-size into a colour (see :root below). */
+  --background-color-base: var(--color-base);
+  --border-color-base: var(--color-base);
+  --color-card: #F7F9FA; /* card / sheet tint */
+  --color-sand: #EDEBE4; /* muted / locked surface, ambient blob */
+  --color-gold: #A58D66; /* verified badges only */
+  --color-success: #2F9E6E; /* tints, fills, dots — text uses success-deep */
+  --color-warning: #E0953A; /* tints, fills, dots — text and icons use warning-deep */
+  --color-danger: #D64545; /* tints, fills, dots — text uses danger-deep */
+
+  /* ---------- Derived for contrast (same hue, darker) ---------- */
+  --color-ink-muted: #576771; /* secondary text on canvas, panels, soft wells */
+  --color-ink-inset: #525F68; /* placeholder / idle icon inside strong insets */
+  --color-primary-deep: #335870; /* = Patient primaryPressed: hover / pressed solid primary */
+  --color-success-deep: #22714F; /* success text and icons, solid success fill */
+  --color-success-pressed: #1B5C40;
+  --color-warning-deep: #8E5816; /* warning text and icons, solid warning fill */
+  --color-danger-deep: #C02A2A; /* danger text, solid danger fill */
+  --color-danger-pressed: #A32424;
+  --color-gold-deep: #756245; /* verified badge text / icon */
+  --color-night: #13242F; /* immersive call surface, dark glass */
+  --color-white: #FFFFFF;
+  --color-on-primary: #FFFFFF; /* text / icons on solid primary, success, danger, warning fills */
+
+  /* Accessibility audio badge (kept from V1) */
+  --color-audio-bg: #ECFDF5;
+  --color-audio-text: #047857;
+
+  /* ---------- Tints behind status text / icons (Patient V2.1 values; deep text stays ≥ 4.5:1) ---------- */
+  --color-primary-tint: rgba(62, 105, 133, 0.06);
+  --color-success-tint: rgba(47, 158, 110, 0.1);
+  --color-warning-tint: rgba(224, 149, 58, 0.12);
+  --color-danger-tint: rgba(214, 69, 69, 0.06);
+  --color-gold-tint: rgba(165, 141, 102, 0.09);
+  --color-ink-tint: rgba(31, 58, 76, 0.045);
+
+  /* ---------- Lines (ink-tinted) ---------- */
+  --color-hairline: rgba(31, 58, 76, 0.08);
+  --color-separator: rgba(31, 58, 76, 0.12);
+  --color-border: rgba(31, 58, 76, 0.14);
+
+  /* ---------- Liquid glass fills ---------- */
+  --color-glass: rgba(247, 249, 250, 0.55); /* card @ 55% */
+  --color-glass-toolbar: rgba(234, 240, 244, 0.54); /* base @ 54% (toolbar, sidebar) */
+  --color-glass-sheet: rgba(247, 249, 250, 0.66); /* card @ 66% */
+  --color-glass-night: rgba(19, 36, 47, 0.7); /* night @ 70% */
+  --color-scrim: rgba(19, 36, 47, 0.4);
+  --color-scrim-strong: rgba(19, 36, 47, 0.68);
+
+  /* ---------- Typography ---------- */
+  /* Latin first: the browser falls back per glyph, so digits and English words stay DM Sans / Fraunces in kn / hi. */
+  --font-sans: 'DM Sans', 'Noto Sans Kannada', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif;
+  --font-serif: 'Fraunces', 'Noto Serif Kannada', 'Noto Serif Devanagari', ui-serif, Georgia, serif;
+  --font-mono: 'DM Mono', 'Noto Sans Kannada', 'Noto Sans Devanagari', ui-monospace, Menlo, Consolas, monospace;
+
+  /* Dense clinician sizes below Tailwind's xs (English only — the Indic floor lifts them to 14px, see base.css) */
+  --text-4xs: 0.5625rem; /* 9px */
+  --text-4xs--line-height: 1.25;
+  --text-3xs: 0.625rem; /* 10px */
+  --text-3xs--line-height: 1.3;
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-2xs--line-height: 1.35;
+  --text-footnote: 0.8125rem; /* 13px, Patient "footnote" */
+  --text-footnote--line-height: 1.4;
+  --text-subhead: 0.9375rem; /* 15px, Patient "subhead" */
+  --text-subhead--line-height: 1.4;
+
+  /* ---------- Radii (Patient xs / sm / md / lg / xl / sheet) ---------- */
+  --radius-tight: 8px; /* xs */
+  --radius-chip: 12px; /* sm: segmented thumb, chips */
+  --radius-control: 14px; /* md: inputs, buttons */
+  --radius-panel: 20px; /* lg: cards, panels, critical buttons */
+  --radius-hero: 28px; /* xl: hero panels, dialogs */
+  --radius-sheet: 32px;
+
+  /* ---------- Flat ink-tinted elevation (glass and overlays only) ---------- */
+  --shadow-*: initial;
+  --shadow-2xs: 0 1px 0 rgba(31, 58, 76, 0.05);
+  --shadow-xs: 0 1px 2px rgba(31, 58, 76, 0.05);
+  --shadow-sm: 0 1px 6px rgba(31, 58, 76, 0.06); /* Patient shadows.sm */
+  --shadow-md: 0 4px 24px rgba(31, 58, 76, 0.08); /* Patient shadows.md */
+  --shadow-lg: 0 12px 56px rgba(31, 58, 76, 0.12); /* Patient shadows.lg */
+  --shadow-xl: 0 16px 64px rgba(31, 58, 76, 0.14);
+  --shadow-2xl: 0 24px 80px rgba(31, 58, 76, 0.18);
+  --shadow: 0 1px 6px rgba(31, 58, 76, 0.06);
+  --shadow-inner: inset 0 2px 4px rgba(31, 58, 76, 0.05);
+
+  /* ---------- Motion ---------- */
+  --ease-calm: cubic-bezier(0.16, 1, 0.3, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root {
+  /* Patient `base` role (#EAF0F4). Kept out of @theme's --color-* so `text-base` stays a font size; bg-base works via --background-color-base. */
+  --color-base: #EAF0F4;
+  /* Glass elevation (Patient shadows.glass); outside @theme so `shadow-glass` can't clash with the `glass` colour */
+  --shadow-glass: 0 8px 48px rgba(31, 58, 76, 0.08);
+
+  /* Motion tokens (motion_and_illustration.md) */
+  --duration-press: 150ms;
+  --duration-transition: 250ms;
+  --duration-signature: 400ms;
+
+  /* ---------- Neumorphism: light source top-left ---------- */
+  /* STRONG = controls; SOFT (~58%) = panels, wells, rows */
+  --neu-raised-hi: #F4F8FA;
+  --neu-raised-lo: #E3EAEF;
+  --neu-raised-soft-hi: #F2F6F8;
+  --neu-raised-soft-lo: #E6EDF1;
+  --neu-inset-hi: #DFE7EC;
+  --neu-inset-lo: #F2F6F8;
+  --neu-inset-soft-hi: #E3EAEF;
+  --neu-inset-soft-lo: #EFF4F6;
+  --neu-dark: rgba(86, 116, 136, 0.42);
+  --neu-dark-soft: rgba(86, 116, 136, 0.24);
+  --neu-inset-dark: rgba(86, 116, 136, 0.35);
+  --neu-inset-dark-soft: rgba(86, 116, 136, 0.2);
+  --neu-inset-residual: rgba(86, 116, 136, 0.09);
+  --neu-light: #FFFFFF;
+  --neu-light-soft: rgba(255, 255, 255, 0.6);
+  --neu-light-inset: rgba(255, 255, 255, 0.9);
+  --neu-light-inset-soft: rgba(255, 255, 255, 0.55);
+  --neu-groove-dark: rgba(86, 116, 136, 0.25);
+  --neu-groove-light: rgba(255, 255, 255, 0.9);
+
+  /* Composed shadows (CSS blur = 2 × RN shadowRadius). *-sm = small elements < 48px: halved offsets, 60% inset depth */
+  --neu-shadow-raised: -8px -8px 16px var(--neu-light), 8px 8px 18px var(--neu-dark);
+  --neu-shadow-raised-sm: -4px -4px 8px var(--neu-light), 4px 4px 9px var(--neu-dark);
+  --neu-shadow-panel: -5px -5px 10px var(--neu-light-soft), 5px 5px 10px var(--neu-dark-soft);
+  --neu-shadow-panel-sm: -3px -3px 6px var(--neu-light-soft), 3px 3px 6px var(--neu-dark-soft);
+  --neu-shadow-inset: inset 4px 4px 10px var(--neu-inset-dark), inset -4px -4px 7px var(--neu-light-inset);
+  --neu-shadow-inset-sm: inset 2px 2px 6px var(--neu-inset-dark), inset -2px -2px 4px var(--neu-light-inset);
+  --neu-shadow-well: inset 3px 3px 6px var(--neu-inset-dark-soft), inset -3px -3px 4px var(--neu-light-inset-soft);
+  --neu-shadow-well-sm: inset 2px 2px 4px var(--neu-inset-dark-soft), inset -2px -2px 3px var(--neu-light-inset-soft);
+
+  /* ---------- Critical (solid) actions ---------- */
+  --critical-sheen: rgba(255, 255, 255, 0.08);
+  --critical-inset-dark: rgba(19, 36, 47, 0.32);
+  --critical-edge-light: rgba(255, 255, 255, 0.45);
+  --critical-light-shadow: rgba(255, 255, 255, 0.9);
+
+  /* ---------- Glass ---------- */
+  --specular-hi: rgba(255, 255, 255, 0.9);
+  --specular-lo: rgba(255, 255, 255, 0.2);
+  --glass-highlight: rgba(255, 255, 255, 0.35);
+  --glass-night-border: rgba(255, 255, 255, 0.14);
+  --glass-blur: blur(30px) saturate(170%);
+
+  /* ---------- Ambient background peaks (capped so ink-muted canvas text stays ≥ 4.5:1) ---------- */
+  --ambient-ice: rgba(214, 235, 243, 0.7);
+  --ambient-primary-soft: rgba(143, 168, 181, 0.16);
+  --ambient-sand: rgba(237, 235, 228, 0.7);
+
+  /* Per-script line height (base.css switches it on <html lang>) */
+  --lh-script: 1.45;
+}
