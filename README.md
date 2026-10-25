@@ -202,8 +202,10 @@ pip install -r requirements.txt
 # Optional: copy the env template and set SECRET_KEY / DATABASE_URL
 cp ../.env.example .env
 
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+`--host 0.0.0.0` is needed for the patient app on a real phone (Expo Go): it calls the backend at your computer's LAN IP, which a `localhost`-only server refuses.
 
 - API: **`http://localhost:8000`**
 - Swagger docs: **`http://localhost:8000/docs`**
@@ -245,6 +247,27 @@ Then:
 > ⚠️ The app reaches the backend at `localhost` (or `10.0.2.2` on the Android emulator), set in `src/services/api.ts`. On a physical phone, change `API_HOST` to your computer's LAN IP address.
 
 > 💡 If code changes don't show up (common when the project is on an external drive), restart with `npx expo start --clear`.
+
+### 4. Live video consultations (WebRTC)
+
+Doctor and patient see and hear each other live. Video and audio go directly between the two devices (WebRTC); the backend WebSocket only passes the connection set-up messages, delivered to the one user they are meant for.
+
+**Patient in a browser** (quickest to test):
+- On the same computer as the doctor portal: run `npx expo start --web` and open `http://localhost:8081`.
+- On a phone's browser: browsers only allow the camera on `https://` or `localhost` pages. For local testing in Android Chrome, open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<your-LAN-IP>:8081`, and relaunch Chrome.
+
+**Patient as a phone app:** video calls use `react-native-webrtc`, which is **not available in Expo Go**. Build a development app once with EAS (free Expo account):
+
+```bash
+cd "frontend Patient"
+npx eas-cli@latest login
+npx eas-cli@latest build --profile development --platform android   # installable APK
+npx expo start                                                        # then open the installed app
+```
+
+Installing `expo-dev-client` makes `npx expo start` target that development app. To keep using Expo Go for everything except calls, run `npx expo start --go`.
+
+**Different networks** (patient on mobile data, doctor on clinic Wi-Fi) usually need a TURN relay server. Set `EXPO_PUBLIC_TURN_URL`, `EXPO_PUBLIC_TURN_USERNAME`, `EXPO_PUBLIC_TURN_CREDENTIAL` for the patient app and `VITE_TURN_URL`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL` for the doctor portal. On the same Wi-Fi, no TURN server is needed.
 
 ---
 
@@ -330,7 +353,10 @@ All REST routes are under `/api/v1`. The live, complete list is always at **`htt
 ### WebSocket
 **`ws://localhost:8000/ws/telehealth`** carries live events between the two apps:
 - `consent_request` / `consent_approved`: record access requests and approvals
-- `call_invitation`, `call_accepted`, `call_declined`, `call_ended`: video call signalling
+- `call_invitation`, `call_accepted`, `call_declined`, `call_ended`: call ringing and hang-up
+- `webrtc` (`ready` / `offer` / `answer` / `candidate` / `media`): WebRTC connection set-up for the live video
+
+Connect with `?token=<login token>`. Frames that carry a `"to": "<user id>"` field are delivered only to that user, and the server stamps the sender's id as `"from"`.
 - `appointment_rescheduled`: doctor changes the next appointment; the patient's home screen updates live
 
 ---

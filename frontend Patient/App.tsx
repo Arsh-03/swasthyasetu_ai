@@ -7,7 +7,7 @@ import { FontsProvider } from './src/theme/FontsProvider';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import {
   patientApi,
-  WS_BASE_URL,
+  telehealthSocketUrl,
   PatientUser,
   ConsentRequestData,
   NextAppointment,
@@ -20,7 +20,8 @@ import { HomeView } from './src/components/HomeView';
 import { type AppointmentStatus, type PatientAppointmentInfo } from './src/components/HeroAppointmentCard';
 import { formatDateLabel } from './src/utils/dates';
 import { ConsentGateModal } from './src/components/ConsentGateModal';
-import { PatientTelehealthCall } from './src/components/PatientTelehealthCall';
+import { PatientTelehealthCall, type CallSignaling } from './src/components/PatientTelehealthCall';
+import type { SignalMessage } from './src/services/rtc/callSession';
 import { CarePlanView } from './src/components/CarePlanView';
 import { WhoSawMyRecordsView } from './src/components/WhoSawMyRecordsView';
 import { RecordsLockerView } from './src/components/RecordsLockerView';
@@ -31,6 +32,7 @@ import { IncomingCallModal } from './src/components/IncomingCallModal';
 
 type TabType = 'home' | 'careplan' | 'records' | 'whosaw';
 type ScreenType = 'home' | 'call' | 'careplan' | 'whosaw' | 'records';
+type IncomingCall = { caller: string; call_id: string; doctor_id: string };
 
 // Dev-only design reference. A conditional require (folded away when __DEV__ is false)
 // keeps it out of production bundles, which a static import would not.
@@ -69,13 +71,39 @@ function PatientApp() {
   const [isIntakeVisible, setIsIntakeVisible] = useState(false);
   const [isEmergencyVisible, setIsEmergencyVisible] = useState(false);
   const [incomingConsent, setIncomingConsent] = useState<ConsentRequestData | null>(null);
-  const [incomingCall, setIncomingCall] = useState<{
-    caller: string;
-    patient_id: string;
-    call_id: string;
-  } | null>(null);
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
+  // The accepted call (null in the waiting room or when no call is on)
+  const [activeCall, setActiveCall] = useState<{ callId: string; doctorId: string } | null>(null);
+  // The socket handler is created once per login, so it reads these through refs
+  const activeCallRef = useRef(activeCall);
+  const currentScreenRef = useRef<ScreenType>(currentScreen);
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+    currentScreenRef.current = currentScreen;
+  }, [activeCall, currentScreen]);
   // Socket lives in a ref: it's only used to send, never rendered
   const wsRef = useRef<WebSocket | null>(null);
+  // WebRTC frames go to whichever call screen is listening
+  const signalListeners = useRef(new Set<(msg: SignalMessage) => void>());
+  const [signaling] = useState<CallSignaling>(() => ({
+    send: (msg) => sendSignal(msg),
+    subscribe: (handler) => {
+      signalListeners.current.add(handler);
+      return () => {
+        signalListeners.current.delete(handler);
+      };
+    },
+  }));
+  function sendSignal(msg: Record<string, unknown>) {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch (e) {
+        console.warn('Error sending call frame:', e);
+      }
+    }
+  }
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (text: string, tone: ToastTone = 'info') => {
@@ -133,7 +161,7 @@ function PatientApp() {
     if (!user) return;
     let socket: WebSocket | null = null;
     try {
-      socket = new WebSocket(WS_BASE_URL);
+      socket = new WebSocket(telehealthSocketUrl(patientApi.getToken()));
       socket.onopen = () => {
         // Connected to telehealth WebSocket
       };
@@ -141,6 +169,11 @@ function PatientApp() {
         try {
           const data = JSON.parse(event.data);
           const tr = tRef.current;
+          // WebRTC signaling for the live call (routed to this patient by the backend)
+          if (data.type === 'webrtc') {
+            signalListeners.current.forEach((handler) => handler(data));
+            return;
+          }
           // Events are broadcast to every client; only handle the ones for this patient
           if (data.patient_id && data.patient_id !== user.user_id) return;
           // When Doctor requests consent, open modal immediately
@@ -161,18 +194,31 @@ function PatientApp() {
 
           // When Doctor initiates call, show incoming call screen
           if (data.type === 'call_invitation' || data.event === 'incoming_call') {
-            setIncomingCall({
+            if (!data.from) return; // a call needs the doctor's id to send video back
+            const invite: IncomingCall = {
               caller: data.doctor_name || '',
-              patient_id: data.patient_id || user.user_id,
               call_id: data.call_id || 'call_' + Date.now(),
-            });
+              doctor_id: data.from,
+            };
+            // Already waiting in the call room after sending symptoms: join straight away
+            if (currentScreenRef.current === 'call' && !activeCallRef.current) {
+              acceptCallRef.current(invite);
+              return;
+            }
+            setIncomingCall(invite);
             showToast(tr('toastIncomingCall', { name: data.doctor_name || tr('yourDoctor') }), 'call');
           }
 
           // When Doctor ends the call, auto-transition patient to Care Plan
           if (data.event === 'call_ended' || data.type === 'call_ended') {
-            setCurrentScreen('careplan');
-            showToast(tr('toastCallEnded'), 'success');
+            const current = activeCallRef.current;
+            if (data.call_id && current && data.call_id !== current.callId) return;
+            setActiveCall(null);
+            setIncomingCall(null);
+            if (currentScreenRef.current === 'call') {
+              setCurrentScreen('careplan');
+              showToast(tr('toastCallEnded'), 'success');
+            }
           }
 
           // When Doctor reschedules next appointment, update in real-time
@@ -211,46 +257,54 @@ function PatientApp() {
 
   const errorText = (err: unknown) => (err instanceof Error ? err.message : t('networkError'));
 
-  const handleAcceptCall = () => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_accepted',
-            patient_id: user?.user_id,
-            patient_name: user?.full_name,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call acceptance:', e);
-      }
-    }
-    setCallDoctorName(incomingCall?.caller || null);
+  const acceptCall = (invite: IncomingCall) => {
+    sendSignal({
+      type: 'call_event',
+      event: 'call_accepted',
+      to: invite.doctor_id,
+      call_id: invite.call_id,
+      patient_id: user?.user_id,
+      patient_name: user?.full_name,
+    });
+    setCallDoctorName(invite.caller || null);
+    setActiveCall({ callId: invite.call_id, doctorId: invite.doctor_id });
     setIncomingCall(null);
     setCurrentScreen('call');
     showToast(t('toastCallConnected'), 'call');
   };
+  // The socket handler is created once per login, so it calls the latest version through a ref
+  const acceptCallRef = useRef(acceptCall);
+  useEffect(() => {
+    acceptCallRef.current = acceptCall;
+  });
+
+  const handleAcceptCall = () => {
+    if (incomingCall) acceptCall(incomingCall);
+  };
 
   const handleDeclineCall = () => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_declined',
-            patient_id: user?.user_id,
-            patient_name: user?.full_name,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call decline:', e);
-      }
+    if (incomingCall) {
+      sendSignal({
+        type: 'call_event',
+        event: 'call_declined',
+        to: incomingCall.doctor_id,
+        call_id: incomingCall.call_id,
+        patient_id: user?.user_id,
+        patient_name: user?.full_name,
+      });
     }
     setIncomingCall(null);
     showToast(t('toastCallDeclined'));
+  };
+
+  // Patient hangs up: tell the doctor, then show the care plan
+  const handleEndCall = () => {
+    const current = activeCallRef.current;
+    if (current) {
+      sendSignal({ type: 'call_event', event: 'call_ended', by: 'patient', to: current.doctorId, call_id: current.callId });
+    }
+    setActiveCall(null);
+    setCurrentScreen('careplan');
   };
 
   // The backend saves the grant and notifies the doctor portal over WebSocket
@@ -317,7 +371,9 @@ function PatientApp() {
         <StatusBar style="light" />
         <PatientTelehealthCall
           doctorName={callDoctorName || appointmentInfo?.doctorName || t('yourDoctor')}
-          onEndCall={() => setCurrentScreen('careplan')}
+          call={activeCall}
+          signaling={signaling}
+          onEndCall={handleEndCall}
         />
         {consentGate}
         <Toast message={toastMessage} />

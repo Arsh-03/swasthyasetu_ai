@@ -1,6 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { PatientSummary } from '../services/api';
 import { api } from '../services/api';
+import { buildIceServers, CallSession, type CallConnection, type SignalMessage } from '../services/callSession';
+
+/** Sends frames over the portal's telehealth socket and lets the call listen for `webrtc` frames. */
+export interface CallSignaling {
+  send: (msg: Record<string, unknown>) => void;
+  subscribe: (handler: (msg: SignalMessage) => void) => () => void;
+}
+
+// Optional TURN relay (VITE_TURN_URL / VITE_TURN_USERNAME / VITE_TURN_CREDENTIAL) for calls across networks
+const ICE_SERVERS = buildIceServers({
+  url: import.meta.env.VITE_TURN_URL,
+  username: import.meta.env.VITE_TURN_USERNAME,
+  credential: import.meta.env.VITE_TURN_CREDENTIAL,
+});
+
+/** Plays a remote MediaStream (muted: the patient's audio plays through one hidden <audio> element). */
+const StreamVideo: React.FC<{ stream: MediaStream | null; className?: string }> = ({ stream, className }) => {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current && ref.current.srcObject !== stream) ref.current.srcObject = stream;
+  }, [stream]);
+  return <video ref={ref} autoPlay playsInline muted className={className} />;
+};
 
 interface ConsultationWorkspaceProps {
   patient: PatientSummary | null;
@@ -8,6 +31,9 @@ interface ConsultationWorkspaceProps {
   /** Called after the note is signed so the queue can refresh. */
   onConsultationSigned?: () => void;
   callState: 'idle' | 'calling' | 'connected' | 'declined';
+  /** Id of the call placed to the patient (null when no call). */
+  callId: string | null;
+  signaling: CallSignaling;
   onStartCall: (patient: PatientSummary) => void;
   onEndCall: () => void;
   onRequestRecordAccess: () => void;
@@ -20,6 +46,8 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   doctorName,
   onConsultationSigned,
   callState,
+  callId,
+  signaling,
   onStartCall,
   onEndCall,
   onRequestRecordAccess,
@@ -42,6 +70,13 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const fullVideoRef = useRef<HTMLVideoElement>(null);
+
+  // Live link to the patient (WebRTC)
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [connection, setConnection] = useState<CallConnection>('connecting');
+  const [remoteMedia, setRemoteMedia] = useState({ video: true, audio: true });
+  const sessionRef = useRef<CallSession | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
 
   // AI Scribe Items
   // SOAP note fields, filled in by the doctor during the call
@@ -91,6 +126,8 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
       fullVideoRef.current.srcObject = null;
     }
     setLocalStream(null);
+    // The next call asks for the camera again before connecting
+    setMediaPermission('prompt');
   };
 
   // Request Camera & Microphone Permissions and stream video
@@ -155,6 +192,65 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
     };
   }, [callState]);
 
+  // Start the peer connection once the patient has accepted and our camera step has finished.
+  // The patient's app signals "ready"; we answer with an offer (see callSession.ts).
+  const mediaSettled = mediaPermission !== 'prompt';
+  const sendVideo = isCamOn && networkTier === 'hd';
+  const mediaRef = useRef({ video: sendVideo, audio: isMicOn });
+  useEffect(() => {
+    mediaRef.current = { video: sendVideo, audio: isMicOn };
+    sessionRef.current?.setLocalMedia({ video: sendVideo, audio: isMicOn });
+  }, [sendVideo, isMicOn]);
+
+  const patientId = patient?.patient_id;
+  useEffect(() => {
+    if (callState !== 'connected' || !callId || !patientId || !mediaSettled) return;
+    const session = new CallSession({
+      rtc: { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription },
+      role: 'caller',
+      callId,
+      localStream: streamRef.current,
+      iceServers: ICE_SERVERS,
+      send: (msg) => signaling.send({ ...msg, to: patientId }),
+      onRemoteStream: setRemoteStream,
+      onConnection: setConnection,
+      onRemoteMedia: setRemoteMedia,
+    });
+    sessionRef.current = session;
+    const unsubscribe = signaling.subscribe((msg) => session.handleSignal(msg));
+    session.start();
+    session.setLocalMedia(mediaRef.current);
+    return () => {
+      unsubscribe();
+      session.close();
+      sessionRef.current = null;
+      setRemoteStream(null);
+      setConnection('connecting');
+      setRemoteMedia({ video: true, audio: true });
+    };
+  }, [callState, callId, patientId, mediaSettled, signaling]);
+
+  // Patient audio: one element, muted by the speaker toggle
+  useEffect(() => {
+    const el = remoteAudioRef.current;
+    if (!el) return;
+    if (el.srcObject !== remoteStream) el.srcObject = remoteStream;
+    el.muted = !isSpeakerOn;
+    if (remoteStream) el.play().catch(() => {});
+  }, [remoteStream, isSpeakerOn]);
+
+  const patientLive = !!remoteStream && connection === 'connected' && remoteMedia.video;
+  const patientStatus =
+    connection === 'failed'
+      ? 'Connection lost. End the call and call again.'
+      : connection === 'reconnecting'
+        ? 'Weak connection. Reconnecting…'
+        : connection !== 'connected'
+          ? 'Connecting to patient…'
+          : !remoteMedia.video
+            ? 'Patient camera is off'
+            : '';
+
   // Outgoing ringing timer
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -197,31 +293,15 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   }, [localStream, isSwappedView, isCamOn, callState]);
 
   // Handle Mute / Unmute Microphone
-  const toggleMic = () => {
-    const nextState = !isMicOn;
-    setIsMicOn(nextState);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream) {
-      activeStream.getAudioTracks().forEach((track) => {
-        track.enabled = nextState;
-      });
-    }
-  };
+  // Track on/off is applied (and told to the patient) by the effect on isMicOn / isCamOn
+  const toggleMic = () => setIsMicOn((on) => !on);
 
   // Handle Camera On / Off
-  const toggleCam = () => {
-    const nextState = !isCamOn;
-    setIsCamOn(nextState);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream) {
-      activeStream.getVideoTracks().forEach((track) => {
-        track.enabled = nextState;
-      });
-    }
-  };
+  const toggleCam = () => setIsCamOn((on) => !on);
 
   // Safe End Call with camera track cleanup
   const handleEndCall = () => {
+    sessionRef.current?.close();
     stopTracks();
     onEndCall();
   };
@@ -569,6 +649,8 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
         {/* 2. Centre Column: Adaptive Telehealth Suite (5 cols) */}
         <section className="lg:col-span-5 flex flex-col gap-3">
           <div className="relative w-full aspect-[4/3] bg-[#000000] rounded-3xl overflow-hidden shadow-apple-lg border border-black/10 flex items-center justify-center">
+            {/* Patient's voice */}
+            <audio ref={remoteAudioRef} autoPlay className="hidden" />
             {/* MAIN STAGE VIDEO: Swappable between Patient Feed and Doctor Webcam */}
             {isSwappedView ? (
               /* Doctor Webcam is on Main Stage */
@@ -587,17 +669,21 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 </div>
               )
             ) : (
-              /* Patient Feed is on Main Stage */
-              networkTier !== 'async' ? (
-                <img
-                  src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                  alt="Patient video feed"
+              /* Patient's live video is on Main Stage */
+              patientLive ? (
+                <StreamVideo
+                  stream={remoteStream}
                   className={`absolute inset-0 w-full h-full object-cover ${networkTier === 'audio' ? 'blur-md opacity-40' : ''}`}
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center gap-2 text-white">
-                  <span className="material-symbols-outlined text-4xl text-[#8E8E93]">cloud_sync</span>
-                  <span className="text-xs text-[#8E8E93]">Store & Forward Offline Mode</span>
+                <div className="flex flex-col items-center justify-center gap-3 text-white px-6 text-center">
+                  <img
+                    src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
+                    alt={patient.full_name}
+                    className="w-20 h-20 rounded-full object-cover ring-2 ring-white/30"
+                  />
+                  <span className="text-sm font-semibold">{patient.full_name}</span>
+                  <span className="text-xs text-[#8E8E93]" aria-live="polite">{patientStatus}</span>
                 </div>
               )
             )}
@@ -640,6 +726,12 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
             {/* Audio Live Indicator */}
             <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+              {connection === 'connected' && !remoteMedia.audio && (
+                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-md text-[11px] font-semibold border border-white/10">
+                  <span className="material-symbols-outlined text-[14px] text-[#FF9500]">mic_off</span>
+                  <span className="text-[10px] text-[#FF9500]">Patient muted</span>
+                </div>
+              )}
               {isMicOn && (
                 <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-md text-[11px] font-semibold border border-white/10">
                   <span className="material-symbols-outlined text-[14px] text-[#34C759]">mic</span>
@@ -673,12 +765,15 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                   </div>
                 )
               ) : (
-                /* Patient Feed in PIP when swapped */
-                <img
-                  src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                  alt="Patient feed"
-                  className="w-full h-full object-cover"
-                />
+                /* Patient's live video in PIP when swapped */
+                patientLive ? (
+                  <StreamVideo stream={remoteStream} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-[#1C1C1E] text-white/70 p-2 text-center">
+                    <span className="material-symbols-outlined text-2xl text-[#8E8E93]">videocam_off</span>
+                    <span className="text-[10px] mt-1 font-medium leading-tight">{patientStatus || 'Patient'}</span>
+                  </div>
+                )
               )}
 
               {/* PIP Label badge with status */}

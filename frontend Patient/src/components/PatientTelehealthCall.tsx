@@ -1,28 +1,47 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Image, Platform, Pressable } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { haptic } from '../utils/haptics';
+import { TURN_CONFIG } from '../services/api';
+import { buildIceServers, CallSession, type CallConnection, type SignalMessage } from '../services/rtc/callSession';
+import { getLocalMedia, rtc } from '../services/rtc/platform';
+import type { TranslationKey } from '../utils/translations';
 import { GlassSurface } from './glass';
+import { StreamView } from './call/StreamView';
 import { AppText, CriticalButton, Icon, IconButton } from './ui';
+
+/** Sends frames over the app's telehealth socket and lets the call listen for `webrtc` frames. */
+export interface CallSignaling {
+  send: (msg: Record<string, unknown>) => void;
+  subscribe: (handler: (msg: SignalMessage) => void) => () => void;
+}
 
 interface PatientTelehealthCallProps {
   doctorName: string;
+  /** The accepted call; null while the patient waits in the room for the doctor to call. */
+  call: { callId: string; doctorId: string } | null;
+  signaling: CallSignaling;
   onEndCall: () => void;
 }
 
 type NetworkTier = 'hd' | 'audio' | 'async';
-
-const DOCTOR_FEED_URL =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuCNL4BMuLtJ2i8g6NTnwHeQCHuAOBoVH2a0-_LYQNHlpps-NYI7Zm0kJOS83_2mfT6iW0VmrLR_Ws1XWJQkqFvMdbLIdoytlvHdKWy4oymsMvJiix6ZCfnabbIW2pz4OVbBjAvjRwZlJrf3ptnODgtdPMIvvwU5TOI47tgVHvDdfaHFPeZZKaZ1uf0iQ6sHQIuhtUA6yt256idRVh9J47qEBF8ZhGzRWVzPeff2xX0xQ_aOPSGolBYQfw';
-const SELF_PIP_URL =
-  'https://lh3.googleusercontent.com/aida-public/AB6AXuAMknnrL1azNBnB58uMox-l1CcLlCOqWvUimLBiLkJDaWKKrtkqvKnzs2xdOeVF8iSMHpTSk0ENugY-yF1k0JbvFHTOYCtzwJVjaqx9vKZdAogAGrJm1fLfa22lW6sdm1aSSRYxv0craALN6s1BZNS6itFWOoWj_QWMP-wF772FTz5PEDVqxhkesTSt97veSZTFlDJhJgLUmUjUgo1fQDzUqUL_PXosFUri_P1ve9yPukx2vFxzlUA5NQ';
+type MediaProblem = 'unavailable' | 'blocked' | 'insecure' | null;
 
 const NEXT_TIER: Record<NetworkTier, NetworkTier> = { hd: 'audio', audio: 'async', async: 'hd' };
 const TIER_COLOR: Record<NetworkTier, string> = { hd: colors.success, audio: colors.warning, async: colors.danger };
+const PROBLEM_TEXT: Record<Exclude<MediaProblem, null>, TranslationKey> = {
+  unavailable: 'callNeedsAppBuild',
+  blocked: 'callCameraBlocked',
+  insecure: 'callNeedsHttps',
+};
 
-export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ onEndCall, doctorName }) => {
+/**
+ * Live 1:1 video consultation (WebRTC). The patient is the callee: once the camera is up it
+ * signals "ready", the doctor's portal sends an offer, and the two connect peer-to-peer.
+ */
+export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ onEndCall, doctorName, call, signaling }) => {
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const [callSeconds, setCallSeconds] = useState(0);
@@ -30,98 +49,101 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
   const [isCamOn, setIsCamOn] = useState(true);
   const [networkTier, setNetworkTier] = useState<NetworkTier>('hd');
 
-  // WebRTC Local Media Stream for Patient
   const [localStream, setLocalStream] = useState<any>(null);
+  // Without WebRTC there is no camera step to wait for
+  const [mediaSettled, setMediaSettled] = useState(!rtc);
+  const [mediaProblem, setMediaProblem] = useState<MediaProblem>(rtc ? null : 'unavailable');
+  const [remoteStream, setRemoteStream] = useState<any>(null);
+  const [remoteMedia, setRemoteMedia] = useState({ video: true, audio: true });
+  const [connection, setConnection] = useState<CallConnection>('connecting');
+  const sessionRef = useRef<CallSession | null>(null);
   const streamRef = useRef<any>(null);
-  const videoRef = useRef<any>(null);
-
-  const stopTracks = () => {
-    if (streamRef.current && typeof streamRef.current.getTracks === 'function') {
-      streamRef.current.getTracks().forEach((track: any) => {
-        try {
-          track.stop();
-          track.enabled = false;
-        } catch (e) {
-          console.warn('Track stop error:', e);
-        }
-      });
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setLocalStream(null);
-  };
-
-  // Request camera and microphone permissions on call start
+  // Latest toggles, read when a session starts
+  const sendVideo = isCamOn && networkTier === 'hd';
+  const mediaRef = useRef({ video: sendVideo, audio: isMicOn });
+  const signalingRef = useRef(signaling);
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: true,
-        })
-        .then((stream) => {
-          streamRef.current = stream;
-          setLocalStream(stream);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-          }
-        })
-        .catch((err) => {
-          console.warn('Patient camera/mic permission not granted:', err);
-        });
-    }
+    mediaRef.current = { video: sendVideo, audio: isMicOn };
+    signalingRef.current = signaling;
+  }, [sendVideo, isMicOn, signaling]);
 
+  // 1. Camera + microphone
+  useEffect(() => {
+    let cancelled = false;
+    if (!rtc) return;
+    getLocalMedia()
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((track: any) => track.stop());
+          return;
+        }
+        streamRef.current = stream;
+        setLocalStream(stream);
+      })
+      .catch((err: any) => {
+        console.warn('Patient camera/mic unavailable:', err);
+        setMediaProblem(err?.message === 'insecure-context' ? 'insecure' : 'blocked');
+      })
+      .finally(() => !cancelled && setMediaSettled(true));
     return () => {
-      stopTracks();
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((track: any) => track.stop());
+      streamRef.current = null;
     };
   }, []);
 
-  // Sync stream to video ref
+  // 2. Peer connection, once the doctor's call is accepted and the camera step has finished.
+  // Without a camera the patient still sees and hears the doctor.
   useEffect(() => {
-    const activeStream = streamRef.current || localStream;
-    if (activeStream && videoRef.current && videoRef.current.srcObject !== activeStream) {
-      videoRef.current.srcObject = activeStream;
-    }
-  }, [localStream, isCamOn]);
+    if (!rtc || !call || !mediaSettled) return;
+    const session = new CallSession({
+      rtc,
+      role: 'callee',
+      callId: call.callId,
+      localStream: streamRef.current,
+      iceServers: buildIceServers(TURN_CONFIG),
+      send: (msg) => signalingRef.current.send({ ...msg, to: call.doctorId }),
+      onRemoteStream: setRemoteStream,
+      onConnection: setConnection,
+      onRemoteMedia: setRemoteMedia,
+    });
+    sessionRef.current = session;
+    const unsubscribe = signalingRef.current.subscribe((msg) => session.handleSignal(msg));
+    session.start();
+    session.setLocalMedia(mediaRef.current);
+    return () => {
+      unsubscribe();
+      session.close();
+      sessionRef.current = null;
+      setRemoteStream(null);
+    };
+  }, [call?.callId, call?.doctorId, mediaSettled]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleToggleMic = () => {
-    const next = !isMicOn;
-    setIsMicOn(next);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream && typeof activeStream.getAudioTracks === 'function') {
-      activeStream.getAudioTracks().forEach((track: any) => {
-        track.enabled = next;
-      });
-    }
-  };
+  // Apply mic / camera / bandwidth-tier changes to the live call
+  useEffect(() => {
+    if (sessionRef.current) sessionRef.current.setLocalMedia({ video: sendVideo, audio: isMicOn });
+    else streamRef.current?.getVideoTracks().forEach((track: any) => (track.enabled = sendVideo));
+  }, [sendVideo, isMicOn]);
 
-  const handleToggleCam = () => {
-    const next = !isCamOn;
-    setIsCamOn(next);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream && typeof activeStream.getVideoTracks === 'function') {
-      activeStream.getVideoTracks().forEach((track: any) => {
-        track.enabled = next;
-      });
-    }
-  };
+  // Call timer runs while connected
+  const isConnected = connection === 'connected';
+  useEffect(() => {
+    if (!isConnected) return;
+    const timer = setInterval(() => setCallSeconds((prev) => prev + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isConnected]);
+
+  const handleToggleMic = () => setIsMicOn((on) => !on);
+  const handleToggleCam = () => setIsCamOn((on) => !on);
 
   const handleEnd = () => {
     haptic.warning();
-    stopTracks();
+    sessionRef.current?.close();
+    streamRef.current?.getTracks().forEach((track: any) => track.stop());
     onEndCall();
   };
 
   const cycleNetworkTier = () => setNetworkTier(NEXT_TIER[networkTier]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCallSeconds((prev) => prev + 1);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const formatTimer = (totalSeconds: number) => {
     const m = Math.floor(totalSeconds / 60);
@@ -132,33 +154,44 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
   const tierLabel = networkTier === 'hd' ? t('networkHd') : networkTier === 'audio' ? t('networkAudio') : t('networkOffline');
   const overlayTop = insets.top + spacing.md;
 
+  const showRemoteVideo = !!remoteStream && isConnected && remoteMedia.video;
+  // What the stage says while there is no doctor video to show
+  const stageStatus: string = !call
+    ? t('callWaitingForDoctor')
+    : connection === 'failed'
+      ? t('callFailed')
+      : connection === 'reconnecting'
+        ? t('callReconnecting')
+        : !isConnected
+          ? t('callConnecting')
+          : !remoteMedia.video
+            ? t('callDoctorCameraOff')
+            : '';
+
   return (
     <View style={styles.callContainer}>
       {/* Video stage */}
       <View style={styles.videoStage}>
-        {networkTier !== 'async' ? (
-          <Image
-            source={{ uri: DOCTOR_FEED_URL }}
-            style={[styles.doctorFeedImage, networkTier === 'audio' && styles.dimmedImage]}
-            accessibilityIgnoresInvertColors
-          />
-        ) : (
-          <View style={styles.cameraOffPlaceholder}>
+        {/* Always mounted while there is a stream so the doctor's audio keeps playing */}
+        {remoteStream && <StreamView stream={remoteStream} style={StyleSheet.absoluteFill} />}
+
+        {!showRemoteVideo && (
+          <View style={[StyleSheet.absoluteFill, styles.cameraOffPlaceholder]}>
             <View style={styles.avatarPlaceholder}>
-              <Icon name="person" size={44} color={colors.onPrimary} />
+              <Icon name="doctor" size={44} color={colors.onPrimary} />
             </View>
-            <AppText variant="title" color="onPrimary">
+            <AppText variant="title" color="onPrimary" align="center">
               {doctorName}
             </AppText>
-            <AppText variant="footnote" weight={500} color="onNightMuted">
-              {t('audioPrioritized')}
+            <AppText variant="footnote" weight={500} color="onNightMuted" align="center" accessibilityLiveRegion="polite">
+              {stageStatus}
             </AppText>
           </View>
         )}
 
-        {/* Weak-network audio waveform */}
+        {/* Weak-network: own video paused, audio only */}
         {networkTier === 'audio' && (
-          <View style={styles.audioWaveOverlay}>
+          <View style={styles.audioWaveOverlay} pointerEvents="none">
             <View style={styles.waveRow}>
               {[20, 38, 26, 48, 24].map((h, i) => (
                 <View key={i} style={[styles.waveBar, { height: h }]} />
@@ -189,7 +222,7 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
           </Pressable>
 
           <GlassSurface material="night" style={styles.glassPill}>
-            <View style={[styles.statusDot, styles.recordingDot]} />
+            <View style={[styles.statusDot, isConnected ? styles.recordingDot : styles.idleDot]} />
             <AppText variant="mono" color="onPrimary" style={styles.tabular}>
               {formatTimer(callSeconds)}
             </AppText>
@@ -201,23 +234,18 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
           <AppText variant="subhead" weight={700} color="onPrimary" numberOfLines={1}>
             {doctorName}
           </AppText>
-          <AppText variant="caption" color="onNightMuted" numberOfLines={1}>
-            {t('telehealthBrand')}
-          </AppText>
+          <View style={styles.infoRow}>
+            {isConnected && !remoteMedia.audio && <Icon name="micOff" size={14} color={colors.onNightMuted} />}
+            <AppText variant="caption" color="onNightMuted" numberOfLines={1}>
+              {isConnected && !remoteMedia.audio ? t('callDoctorMuted') : t('telehealthBrand')}
+            </AppText>
+          </View>
         </GlassSurface>
 
-        {/* Self picture-in-picture with the live camera on web */}
+        {/* Self picture-in-picture: your live camera */}
         <View style={[styles.selfPip, { top: overlayTop + 48 }]}>
-          {Platform.OS === 'web' && localStream && isCamOn ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
-            />
-          ) : isCamOn ? (
-            <Image source={{ uri: SELF_PIP_URL }} style={styles.pipImage} accessibilityIgnoresInvertColors />
+          {localStream && sendVideo ? (
+            <StreamView stream={localStream} mirror muted overlay />
           ) : (
             <View style={styles.pipOff}>
               <Icon name="videoOff" size={28} color={colors.onNightMuted} />
@@ -230,17 +258,18 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
           </View>
         </View>
 
-        {/* Live translated caption */}
-        <View style={styles.captionContainer}>
-          <GlassSurface material="night" style={styles.captionBanner}>
-            <Icon name="sparkle" size={18} color={colors.onNightMuted} active />
-            <AppText variant="subhead" weight={500} color="onPrimary" style={styles.captionText}>
-              {t('liveCaption')}
-            </AppText>
-          </GlassSurface>
-        </View>
+        {/* Camera / WebRTC problem */}
+        {mediaProblem && (
+          <View style={styles.captionContainer}>
+            <GlassSurface material="night" style={styles.captionBanner}>
+              <Icon name="warning" size={18} color={colors.warning} active />
+              <AppText variant="subhead" weight={500} color="onPrimary" style={styles.captionText}>
+                {t(PROBLEM_TEXT[mediaProblem])}
+              </AppText>
+            </GlassSurface>
+          </View>
+        )}
       </View>
-
       {/* Floating call controls */}
       <View style={[styles.controlsContainer, { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.sm }]}>
         <GlassSurface material="night" style={styles.controlsPill}>
@@ -290,16 +319,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.night,
     overflow: 'hidden',
   },
-  doctorFeedImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  dimmedImage: {
-    opacity: 0.25,
-  },
   cameraOffPlaceholder: {
-    flex: 1,
+    backgroundColor: colors.night,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xxl,
@@ -356,6 +377,14 @@ const styles = StyleSheet.create({
   recordingDot: {
     backgroundColor: colors.danger,
   },
+  idleDot: {
+    backgroundColor: colors.onNightMuted,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   tabular: {
     fontVariant: ['tabular-nums'],
     fontSize: 12,
@@ -380,10 +409,6 @@ const styles = StyleSheet.create({
     borderColor: tints.whiteStrong,
     backgroundColor: colors.night,
     ...shadows.lg,
-  },
-  pipImage: {
-    width: '100%',
-    height: '100%',
   },
   pipOff: {
     flex: 1,
