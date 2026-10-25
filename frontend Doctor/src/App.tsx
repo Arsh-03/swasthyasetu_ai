@@ -10,6 +10,8 @@ import { DoctorLoginView } from './components/DoctorLoginView';
 import type { PatientSummary, DoctorProfile } from './services/api';
 import { api, WS_BASE_URL } from './services/api';
 import { type SupportedLanguage, t } from './utils/translations';
+import type { SignalMessage } from './services/callSession';
+import type { CallSignaling } from './components/ConsultationWorkspace';
 import type { UpcomingAppointment } from './data/patientRecords';
 
 
@@ -67,12 +69,34 @@ export function App() {
 
   const [callState, setCallState] = useState<'idle' | 'calling' | 'connected' | 'declined'>('idle');
   const wsRef = useRef<WebSocket | null>(null);
+  // The call being placed / in progress, so stale events from older calls are ignored
+  const [activeCall, setActiveCall] = useState<{ callId: string; patientId: string } | null>(null);
+  const activeCallRef = useRef(activeCall);
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+  // WebRTC frames go to whichever consultation screen is listening
+  const signalListeners = useRef(new Set<(msg: SignalMessage) => void>());
+  const [signaling] = useState<CallSignaling>(() => ({
+    send: (msg) => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    },
+    subscribe: (handler) => {
+      signalListeners.current.add(handler);
+      return () => {
+        signalListeners.current.delete(handler);
+      };
+    },
+  }));
 
   // WebSocket signaling & consent listener
   useEffect(() => {
     if (!isAuthenticated) return;
 
-    const wsUrl = `${WS_BASE_URL}?role=doctor&session_id=doc_sess_${Date.now()}`;
+    // The login token tells the backend who this socket belongs to, so call frames reach only us
+    const token = api.getToken();
+    const wsUrl = token ? `${WS_BASE_URL}?token=${encodeURIComponent(token)}` : WS_BASE_URL;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -85,7 +109,15 @@ export function App() {
         const msg = JSON.parse(event.data);
         console.log('Doctor received WS message:', msg);
 
+        if (msg.type === 'webrtc') {
+          signalListeners.current.forEach((handler) => handler(msg));
+          return;
+        }
+
         if (msg.type === 'call_event') {
+          const current = activeCallRef.current;
+          // Only react to the call we placed
+          if (!current || (msg.call_id && msg.call_id !== current.callId)) return;
           if (msg.event === 'call_accepted') {
             setCallState('connected');
             setNotification('Patient accepted tele-consultation! Live video connected.');
@@ -93,12 +125,14 @@ export function App() {
           } else if (msg.event === 'call_declined') {
             setCallState('declined');
             setNotification('Patient declined the call invitation.');
+            setActiveCall(null);
             setTimeout(() => {
               setCallState('idle');
               setActiveTab('patient-chart');
               setNotification(null);
             }, 3000);
           } else if (msg.event === 'call_ended') {
+            setActiveCall(null);
             setCallState('idle');
             setActiveTab('patient-chart');
             setNotification('Call terminated by patient.');
@@ -137,21 +171,20 @@ export function App() {
     setActiveTab('active-consultation');
     setNotification(`Calling ${patient.full_name}... Ringing.`);
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'call_invitation',
-            event: 'incoming_call',
-            patient_id: patient.patient_id,
-            patient_name: patient.full_name,
-            doctor_name: doctor?.display_name || 'Your doctor',
-            call_id: `call_${Date.now()}`,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call invitation:', e);
-      }
+    const callId = `call_${Date.now()}`;
+    setActiveCall({ callId, patientId: patient.patient_id });
+    try {
+      signaling.send({
+        type: 'call_invitation',
+        event: 'incoming_call',
+        to: patient.patient_id,
+        patient_id: patient.patient_id,
+        patient_name: patient.full_name,
+        doctor_name: doctor?.display_name || 'Your doctor',
+        call_id: callId,
+      });
+    } catch (e) {
+      console.warn('Error sending call invitation:', e);
     }
   };
 
@@ -161,17 +194,13 @@ export function App() {
     setNotification('Call ended. Camera & microphone disconnected.');
     setTimeout(() => setNotification(null), 3500);
 
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    const current = activeCallRef.current;
+    setActiveCall(null);
+    if (current) {
       try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_ended',
-            by: 'doctor',
-          })
-        );
+        signaling.send({ type: 'call_event', event: 'call_ended', by: 'doctor', to: current.patientId, call_id: current.callId });
       } catch (e) {
-        console.warn('Error broadcasting call end:', e);
+        console.warn('Error sending call end:', e);
       }
     }
   };
@@ -292,15 +321,12 @@ export function App() {
             patient={selectedPatient}
             doctorName={doctor?.display_name || ''}
             callState={callState}
+            callId={activeCall?.callId ?? null}
+            signaling={signaling}
             onStartCall={handleStartConsultation}
             onEndCall={handleEndConsultation}
             onConsultationSigned={loadQueue}
             onRequestRecordAccess={() => setIsConsentModalOpen(true)}
-            onPatientAccept={() => {
-              setCallState('connected');
-              setNotification(`${selectedPatient.full_name} answered call. Connected!`);
-              setTimeout(() => setNotification(null), 3000);
-            }}
             onGoToQueue={() => setActiveTab('patient-chart')}
           />
         )}

@@ -56,6 +56,7 @@ import { ThermometerIcon } from 'phosphor-react-native/src/icons/Thermometer';
 import { TimerIcon } from 'phosphor-react-native/src/icons/Timer';
 import { TranslateIcon } from 'phosphor-react-native/src/icons/Translate';
 import { UserIcon } from 'phosphor-react-native/src/icons/User';
+import { UserPlusIcon } from 'phosphor-react-native/src/icons/UserPlus';
 import { UsersIcon } from 'phosphor-react-native/src/icons/Users';
 import { VideoCameraIcon } from 'phosphor-react-native/src/icons/VideoCamera';
 import { VideoCameraSlashIcon } from 'phosphor-react-native/src/icons/VideoCameraSlash';
@@ -127,6 +128,7 @@ const REGISTRY = {
 
   // People & places
   person: UserIcon,
+  personAdd: UserPlusIcon,
   people: UsersIcon,
   doctor: StethoscopeIcon,
   building: BuildingsIcon,
