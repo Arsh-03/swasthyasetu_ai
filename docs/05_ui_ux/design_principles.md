@@ -1,7 +1,7 @@
 # Design Principles & Design QA Checklist
 
 **Document ID:** UI-PRINCIPLES-SS-2026-V1
-**Applies to:** Patient app (`frontend Patient/`). The Doctor portal still follows its previous Apple-style system; aligning it is an open decision (see [design_system_tokens.md](design_system_tokens.md)).
+**Applies to:** Patient app (`frontend Patient/`) and Doctor portal (`frontend Doctor/`). Both use Harbor Calm ([design_system_tokens.md](design_system_tokens.md)); the Doctor interpretation and the desktop QA checklist are at the end of this document.
 
 Our users include first-time smartphone users, people who read Kannada or Hindi better than English, and patients deciding about sensitive medical data. Every screen is judged against these four principles. When two principles conflict, the lower number wins.
 
@@ -95,3 +95,83 @@ The same components, tokens and wording everywhere, in all three languages.
 - [ ] Critical actions use `CriticalButton` and are the highest-contrast element on the screen.
 - [ ] Pressed state of every raised control goes to inset.
 - [ ] No raw colours outside `src/theme/` (grep for `#[0-9A-Fa-f]{3,8}` and `rgba(`).
+
+---
+
+## Doctor portal: how the four principles apply
+
+Clinicians use the portal on a desktop for many consultations a day, often on slow clinic networks, while switching between English, Kannada and Hindi. The principles are the same; the reading is denser and keyboard-first. Token and component details: [design_system_tokens.md § 11](design_system_tokens.md#11-web-doctor-portal).
+
+### 1. Calm over clever (clinician reading)
+
+| Do | Don't |
+|---|---|
+| Keep the queue, chart and records on SOFT panels with grooved rows; reserve STRONG depth for controls, filters, tabs and critical actions | Give every card and row its own strong shadow; it turns a dense screen into noise |
+| Use one toast at a time, worded plainly, without bouncing; status updates (consent granted, patient answered) appear in place | Ping, pulse or bounce for attention (reduced motion turns these off, but they should not be needed) |
+| Load everything from the app's own bundle: self-hosted fonts and icons, no CDN | Depend on third-party font / icon / script CDNs that stall on a clinic network |
+
+### 2. Show, don't tell (clinician reading)
+
+| Do | Don't |
+|---|---|
+| Lead each row with an icon + status colour + one word (Urgent, Follow-up, Locked, Decrypted), then the detail | Put the triage level or consent state in a sentence |
+| Use `Badge` with the tone's tint and deep text; dots only next to a word | Rely on a coloured dot alone |
+| Show loading, empty and error states with a small illustration and one sentence (Phase 2) | Leave a blank panel or a raw server error |
+
+### 3. Consent is sacred (clinician reading)
+
+| Do | Don't |
+|---|---|
+| Send consent requests, start / end calls and sign notes with `CriticalButton` (solid deep fill, white icon + label, the highest-contrast element) | Make "Send consent request" or "End call" a ghost or tinted button |
+| State patient, record, purpose and duration before the action; purpose is logged and visible to the patient | Hide the purpose or duration behind a disclosure |
+| Keep dialogs keyboard-safe: focus moves in, Tab stays inside, Esc cancels, focus returns to the button that opened it | Let focus wander behind a modal, or close a consent dialog on a stray click without the clinician noticing |
+| Show locked records as locked (sand surface, lock icon, "Consent required"), never blurred previews of the content | Hint at protected content before consent is granted |
+
+### 4. One look everywhere (clinician reading)
+
+| Do | Don't |
+|---|---|
+| Build with `src/components/ui` and the `neu-*` / `glass*` / `critical*` classes | Re-create depth with ad-hoc shadows on a screen |
+| Use token classes only (`text-ink-muted`, `bg-success-tint`); no hex anywhere outside `src/styles/` | Paste a hex value or an Apple colour "just for this screen" |
+| Use the `<Icon>` registry; regular = inactive, duotone = active | Import Phosphor in a screen, or use an emoji as an icon |
+| Put every string in `src/utils/translations.ts` and test en / kn / hi | Hard-code English (screen readers then read it with a Kannada or Hindi voice, because `<html lang>` follows the selected language) |
+
+---
+
+## Desktop QA checklist (Doctor portal, run for every screen change)
+
+**Contrast**
+- [ ] `npm run check:contrast` passes; any new text / icon / focus pair is added to `src/styles/contrastPairs.ts`.
+- [ ] No `primary-soft` / `fog` text; status text and icons use `*-deep`; status fills behind text use `*-tint`.
+- [ ] On `night` surfaces: white / `ice` text, base `success` / `warning` / `danger` icons (the deep colours are too dark there).
+- [ ] `grep -rnE "#[0-9A-Fa-f]{3,8}\b|rgba?\(" src --include=*.ts --include=*.tsx` finds nothing outside `src/styles/`.
+
+**Language switch**
+- [ ] Switch EN → ಕನ್ನಡ → हिंदी with the header button: `<html lang>` changes, nothing clips (matras, conjuncts), labels wrap instead of truncating, the header does not shift.
+- [ ] Indic text is ≥ 14px and weight ≥ 500; no letter-spacing on Indic text.
+- [ ] Latin names, drug names and numbers inside kn / hi screens render in DM Sans (Fraunces in display text).
+- [ ] Serif only on `h1` / `h2` / hero numbers.
+
+**Widths**
+- [ ] 1024, 1280, 1440 and 1920 px wide: no horizontal page scroll and no clipped controls (header included).
+- [ ] 768 px: content reflows without horizontal scroll.
+
+**Keyboard-only pass**
+- [ ] Every action is reachable with Tab and works with Enter / Space; the order follows the visual order.
+- [ ] Dialogs: focus moves in on open, Tab is trapped, Esc closes, focus returns to the opener.
+- [ ] Segmented controls use the arrow keys; rows in a `DataTable` open with Enter.
+
+**Focus visible**
+- [ ] A 2px primary ring with a 2px offset on every focused control (ice on night surfaces); never hidden by `outline-none`.
+
+**Names and targets**
+- [ ] Every icon-only button has an `aria-label`; toggles expose `aria-pressed` / `aria-checked`; the active nav item has `aria-current`.
+- [ ] Every form field has a visible, linked label.
+- [ ] Click targets ≥ 36px (critical ≥ 44px).
+
+**Reduced motion / transparency**
+- [ ] With `prefers-reduced-motion: reduce`, nothing slides, pings or bounces, and the state is still clear.
+- [ ] With `prefers-reduced-transparency: reduce` (or no `backdrop-filter`), glass becomes a solid fill and text stays readable.
+
+**Network**
+- [ ] DevTools → Network shows no requests to third-party hosts (fonts, icons and CSS are bundled).
