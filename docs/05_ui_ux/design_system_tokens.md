@@ -1,12 +1,11 @@
 # Design System Tokens V2 — "Harbor Calm"
 
 **Document ID:** UI-TOKENS-SS-2026-V2.1
-**Applies to:** Patient app (`frontend Patient/`, Expo SDK 58 / React Native)
-**Source of truth in code:** `frontend Patient/src/theme/` (`palette.ts`, `tokens.ts`, `fonts.ts`, `motion.ts`, `contrastPairs.ts`) and `src/components/ui/Neu.tsx`
+**Applies to:** Patient app (`frontend Patient/`, Expo SDK 58 / React Native) and Doctor portal (`frontend Doctor/`, Vite + React 19 web, see [§ 11](#11-web-doctor-portal))
+**Source of truth in code:** `frontend Patient/src/theme/` (`palette.ts`, `tokens.ts`, `fonts.ts`, `motion.ts`, `contrastPairs.ts`) and `src/components/ui/Neu.tsx`. The Doctor portal copies the same values into `frontend Doctor/src/styles/tokens.css`.
 **Supersedes:** UI-TOKENS-CB-2026-V1 (the `#0b63e5` "Trust Clinical Blue" / `#0d9488` teal palette with Inter). V1 is retired; do not use its values.
 **Changes in V2.1:** full depth language (raised / inset with strength tiers, grooves, panels), IconDisc / EmbossedIcon, glassier glass with an ambient background, soft-tactile CriticalButton.
-
-> **Open decision:** the Doctor portal (`frontend Doctor/`) still uses the previous Apple palette (`#007AFF`, `#5856D6`, Material Symbols, Inter / SF). Whether to align it with Harbor Calm has not been decided. Until then the two apps intentionally look different.
+**Changes in V2.2:** the Doctor portal moved from the Apple palette (`#007AFF`, `#5856D6`, Material Symbols, Inter / SF) to Harbor Calm as a denser clinician variant (§ 11). Both apps now share one design system; § 1–10 describe the shared values and the Patient implementation.
 
 Related: [design_principles.md](design_principles.md) · [motion_and_illustration.md](motion_and_illustration.md)
 
@@ -48,7 +47,7 @@ Nesting: at most two levels. Raised or inset controls inside a raised panel are 
 | `warning` | `#E0953A` | Tints, fills | Use `warningDeep` (also for icons) |
 | `danger` | `#D64545` | Tints, fills, icons | Use `dangerDeep` |
 
-No purple, pink, indigo, teal or Apple system blue anywhere in the Patient app. The brand gradient is `primary → ink`.
+No purple, pink, indigo, teal or Apple system blue anywhere in either app. The brand gradient is `primary → ink`.
 
 ### 2.2 Derived values — for approval
 
@@ -351,3 +350,186 @@ See [motion_and_illustration.md](motion_and_illustration.md).
 - [ ] Touch targets ≥ 48.
 - [ ] No raw colour values outside `src/theme/` (grep for `#[0-9A-Fa-f]{3,8}` and `rgba(`).
 - [ ] Checked in the dev Style Guide in all three languages.
+
+---
+
+## 11. Web (Doctor portal)
+
+The Doctor portal (`frontend Doctor/`, Vite 8 + React 19 + Tailwind CSS 4) uses the **same Harbor Calm values** as the Patient app, as a denser clinician variant for desktop. Everything in § 1–10 applies; this section covers only how the web build expresses it and where it differs.
+
+### 11.1 Where things live
+
+| File | Holds |
+|---|---|
+| `src/styles/tokens.css` | The only place raw colour values exist. Tailwind `@theme` (colour roles, tints, font stacks, type scale, radii, flat shadows, motion) + `:root` variables (neumorphic fills and shadows, critical, glass, ambient peaks) |
+| `src/styles/fonts.css` | Self-hosted `@font-face` rules (Fontsource woff2 files, bundled by Vite) |
+| `src/styles/base.css` | Canvas, focus ring, per-script typography, scrollbars, reduced motion |
+| `src/styles/utilities.css` | Depth classes (`neu-*`, `groove*`), `critical*`, `glass*`, `ambient*`, and their fallbacks |
+| `src/styles/contrast.ts`, `contrastPairs.ts` | WCAG maths + every checked pair, read straight from `tokens.css` |
+| `scripts/check-contrast.ts` | `npm run check:contrast` (exits 1 on any failure; `-- --md` prints a Markdown table) |
+| `src/components/ui/` | UI kit + `Icon` registry (`iconRegistry.ts`) |
+| `src/dev/StyleGuide.tsx` | Dev-only Style Guide: `npm run dev`, open `/?styleguide` (removed from production builds) |
+
+### 11.2 Token → CSS variable → Tailwind class
+
+Tailwind's default palette is removed (`--color-*: initial`), so only these roles exist as classes. Opacity modifiers (`bg-primary/10`) work on every role.
+
+| Patient role | CSS variable | Tailwind classes | Value |
+|---|---|---|---|
+| ink | `--color-ink` | `text-ink`, `bg-ink`, `border-ink/5` … | `#1F3A4C` |
+| inkMuted | `--color-ink-muted` | `text-ink-muted` | `#576771` |
+| inkInset | `--color-ink-inset` | `text-ink-inset` (placeholders) | `#525F68` |
+| primary | `--color-primary` | `text-primary`, `bg-primary`, `ring-primary/40` | `#3E6985` |
+| primaryPressed | `--color-primary-deep` | `bg-primary-deep` (hover / pressed solid primary) | `#335870` |
+| primarySoft, fog | `--color-primary-soft`, `--color-fog` | fills / borders only | `#8FA8B5`, `#C7D6DB` |
+| ice, card, sand | `--color-ice`, `--color-card`, `--color-sand` | `bg-card`, `bg-sand` (locked), `text-ice` (muted text on night) | `#D6EBF3`, `#F7F9FA`, `#EDEBE4` |
+| base | `--color-base` (in `:root`, see below) | `bg-base`, `border-base`, `via-base` | `#EAF0F4` |
+| success, successDeep, successPressed | `--color-success`, `-success-deep`, `-success-pressed` | `bg-success` (dots), `text-success-deep`, `bg-success-deep` | `#2F9E6E`, `#22714F`, `#1B5C40` |
+| warning, warningDeep | `--color-warning`, `-warning-deep` | `bg-warning` (dots), `text-warning-deep`, `bg-warning-deep` | `#E0953A`, `#8E5816` |
+| danger, dangerDeep, dangerPressed | `--color-danger`, `-danger-deep`, `-danger-pressed` | `bg-danger` (dots), `text-danger-deep`, `bg-danger-deep` | `#D64545`, `#C02A2A`, `#A32424` |
+| gold, goldDeep | `--color-gold`, `-gold-deep` | verified only | `#A58D66`, `#756245` |
+| night | `--color-night` | `bg-night` (call screen, video, login panel) | `#13242F` |
+| onPrimary | `--color-on-primary` | `text-on-primary` (= white) | `#FFFFFF` |
+| tints (§ 2.3) | `--color-{primary,success,warning,danger,gold,ink}-tint` | `bg-success-tint` etc., behind status text | 6 / 10 / 12 / 6 / 9 / 4.5 % |
+| hairline, separator, border | `--color-hairline`, `-separator`, `-border` | `border-hairline` …; the default border colour is `separator` | ink @ 8 / 12 / 14 % |
+| glass fills, scrims | `--color-glass`, `-glass-toolbar`, `-glass-sheet`, `-glass-night`, `--color-scrim`, `-scrim-strong` | used by the `glass*` classes, `bg-scrim` | § 7 |
+
+- **`base` is the one naming exception.** A theme colour called `base` would turn Tailwind's `text-base` font-size utility into a colour. So `--color-base` lives in `:root`, and Tailwind sees it only as `--background-color-base` / `--border-color-base`: `bg-base` works and `text-base` stays 16px.
+- **Radii** keep the Patient values under descriptive names, so Tailwind's own `rounded-xl` etc. are untouched: `rounded-tight` 8 · `rounded-chip` 12 · `rounded-control` 14 · `rounded-panel` 20 · `rounded-hero` 28 · `rounded-sheet` 32.
+- **Flat shadows** (`shadow-sm/md/lg`) are the Patient `shadows.sm/md/lg` in CSS (blur = 2 × RN radius), ink-tinted. `--shadow-glass` is used by the glass classes.
+
+### 11.3 Depth, glass and critical classes
+
+Light source top-left; values are § 5 translated to CSS `box-shadow` (real inset shadows instead of RN gradient strips).
+
+| Class | Use | CSS |
+|---|---|---|
+| `neu-raised`, `neu-raised-sm` | STRONG raised (controls); `-sm` for < 48px | gradient `#F4F8FA → #E3EAEF`; `-8 -8 16 #FFF, 8 8 18 rgba(86,116,136,.42)` (sm: halved offsets) |
+| `neu-panel`, `neu-panel-sm` | SOFT raised panel (cards, tables) | `#F2F6F8 → #E6EDF1`; `-5 -5 10 white@60%, 5 5 10 rgba(86,116,136,.24)` |
+| `neu-inset`, `neu-inset-sm` | STRONG inset (inputs, tracks) | `#DFE7EC → #F2F6F8`; `inset 4 4 10 rgba(86,116,136,.35), inset -4 -4 7 white@90%` |
+| `neu-well`, `neu-well-sm` | SOFT inset (text wells, trays, informational discs) | `#E3EAEF → #EFF4F6`; `inset 3 3 6 rgba(86,116,136,.2), inset -3 -3 4 white@55%` |
+| `neu-press` | Interactive raised: hover lifts 1px; `:active`, `aria-pressed`, `aria-selected`, `aria-current="page"` = inset | only transform animates; the shadow swap is instant |
+| `groove`, `groove-v`, `groove-rows` | Debossed divider; divided list or table rows | 1px `rgba(86,116,136,.25)` + 1px white @ 90% |
+| `critical` + `critical-success` / `critical-danger` | § 6 | solid fill, 8% sheen, glow `6 8 24 fill@45%` + `-6 -6 14 white@90%`; pressed = darker fill + `inset 6 6 12 rgba(19,36,47,.32)`; disabled = `primarySoft` fill, ink label |
+| `glass`, `glass-toolbar`, `glass-sidebar`, `glass-sheet`, `glass-night` | § 7 | `backdrop-filter: blur(30px) saturate(170%)` (sheet 32px / 180%); fills card @ 55%, base @ 54%, card @ 66%, night @ 70%; 1px specular edge white @ 90% top-left → 20% bottom-right; inner top highlight white @ 35% → 0 over 45% |
+| `ambient`, `ambient-blob-*` | Background behind glass | fixed, static radial-gradient blobs (ice 70%, primarySoft 16%, sand 70%) with `filter: blur(40px)` |
+
+Fallbacks: without `backdrop-filter` support, and under `prefers-reduced-transparency: reduce`, every glass class switches to its solid fill (`card`, `base`, `night`).
+
+### 11.4 Typography on the web
+
+- **Self-hosted** with Fontsource (`@fontsource/*` 5.3) and bundled by Vite: no Google Fonts and no third-party requests, so it works on poor clinic networks. Weights: Fraunces / Noto Serif 600 + 700; DM Sans / Noto Sans 400–700; DM Mono 400 + 500. `font-display: swap`.
+- **Font stacks, Latin first** (the browser falls back per glyph):
+  - sans `'DM Sans', 'Noto Sans Kannada', 'Noto Sans Devanagari', sans-serif`
+  - serif `'Fraunces', 'Noto Serif Kannada', 'Noto Serif Devanagari', serif`
+  - mono `'DM Mono', 'Noto Sans Kannada', 'Noto Sans Devanagari', monospace`
+
+  The Noto faces carry **only their own script's** `unicode-range`, so patient names, drug names, digits and backend text inside kn / hi UI always render in DM Sans / Fraunces. This is the web equivalent of the Patient app's mixed-script rule (§ 3), with no extra component. A font file is downloaded only when a glyph in its range is drawn.
+- **Script size:** the Noto Kannada / Devanagari faces have `size-adjust: 110%` / `105%`, the per-glyph version of the Patient ×1.1 / ×1.05 multiplier (Latin runs keep their size).
+- **Per-script rules**, switched by `<html lang>` (set from the language selector) or by any element with `lang="kn"` / `lang="hi"`:
+  - line-height 1.75 (kn) / 1.70 (hi) / 1.45 (en) on every text size and `leading-*` utility;
+  - **Indic floor:** `text-4xs/3xs/2xs/xs/footnote` lift to 14px and weights below 500 lift to 500 (≈ 15.4px kn / 14.7px hi after size-adjust). `font-mono` keeps the dense English sizes, because IDs and timestamps are always Latin;
+  - no letter-spacing (`tracking-*` = 0). Uppercase has no effect on Indic scripts and stays on Latin labels.
+- **Serif only for display:** `h1`, `h2` and hero numbers (`font-serif`). Everything else is sans.
+- **Type scale:** Tailwind's sizes plus dense clinician sizes `text-4xs` 9 · `text-3xs` 10 · `text-2xs` 11 · `text-footnote` 13 · `text-subhead` 15. The 9–11px sizes exist only for the migrated screens; new UI uses ≥ 12px, with body text at 14–16px.
+
+### 11.5 Icons
+
+- `<Icon name tone weight size label?>` from `src/components/ui`. The semantic registry is `src/components/ui/iconRegistry.ts`; names match the Patient registry where the meaning is the same. Screens never import Phosphor directly.
+- `@phosphor-icons/react` 2.1 (supports React 19) with **per-icon imports** (`@phosphor-icons/react/dist/csr/<Name>`), so Vite dev never pre-bundles the 1,500-icon barrel. A small build transform in `vite.config.ts` keeps only the `regular` and `duotone` weights in each icon module (about ⅔ smaller).
+- `weight`: `regular` = inactive, `duotone` = active / emphasis. `tone`: `inherit` (default, follows the label colour), `ink`, `muted`, `primary`, `success` / `warning` / `danger` / `gold` (their `*Deep` colours), `onPrimary`, `ice` (on night).
+- Icons are decorative (`aria-hidden`) unless `label` is passed. An icon-only button must have an `aria-label` (`NeuButton` enforces this in its type).
+
+### 11.6 UI kit (`src/components/ui/`)
+
+| Component | Depth | Notes |
+|---|---|---|
+| `NeuPanel`, `NeuRaised`, `NeuInset` (`strength` soft / strong), `Groove` | primitives | `compact` = halved shadows for < 48px |
+| `NeuButton` | raised strong, presses to inset | `sm` 36px / `md` 44px; `pressed` latches inset + duotone primary icon |
+| `CriticalButton` | critical | `tone` primary / success / danger; always icon + label; min 44px; `loading`, `sublabel` |
+| `IconDisc`, `EmbossedIcon` | raised (tappable) / inset (informational); emboss = decorative ≥ 32px | glyph ≥ 3:1 on both disc fills |
+| `SegmentedControl` | inset track + raised thumb | radio group: ←/→/Home/End; thumb slides with transform over 250 ms |
+| `TextField` | strong inset | visible label, leading icon (duotone primary on focus), 2px primary focus ring, error = icon + text |
+| `Toggle` | inset track + raised knob | `role="switch"`, optional On / Off text |
+| `Badge`, `Chip` | tint + soft edge / raised filter that latches inset | icon + status colour + one word |
+| `DataTable` | one soft panel, grooved rows | keyboard rows (Enter / Space); selected = tint + 3px primary bar |
+| `GlassToolbar`, `GlassSidebar`, `GlassSheet` | glass | the sheet is a modal dialog: focus moves in, Tab is trapped, Esc closes, focus returns |
+| `AmbientBackground` | — | static CSS blobs; place once behind a `relative isolate` page |
+
+### 11.7 Clinician density rules
+
+- Tables and long lists sit on **one soft panel** with **debossed groove dividers**, never per-row shadows.
+- **Soft** depth only in the chart, records and queue (panels, wells, rows). **Strong** depth on controls, filters, tabs and critical actions.
+- Minimum click target **36px** (44px for critical actions). Body text 14–16px.
+- Indic text never below 14px / weight 500, with no uppercase or letter-spacing (enforced in `base.css`).
+- Visual first: icon + status colour + short label before any sentence.
+
+### 11.8 Desktop accessibility
+
+- **Focus:** every interactive element shows a 2px primary outline with a 2px offset on `:focus-visible` (ice on `night` surfaces). The rule is unlayered CSS, so a utility like `outline-none` cannot remove it.
+- **Pointer:** hover = raised lifts 1px; active = inset. Buttons get `cursor: pointer`.
+- **Keyboard:** Tab order follows the DOM; Enter / Space activate (clickable cards and the PIP tile have `role="button"` + key handlers). Dialogs (`ConsentRequestModal`, scan viewer, reschedule, `GlassSheet`) use `useDialogA11y` for focus-in, focus trap, Esc and focus return.
+- **Names:** every icon-only button has an `aria-label`; toggles expose `aria-pressed` / `aria-checked`; the active nav tab has `aria-current="page"`; form labels are linked to their fields.
+- **Motion and transparency:** `prefers-reduced-motion` collapses transitions and animations; `prefers-reduced-transparency` makes glass solid.
+- **Responsive:** checked at 1024 / 1280 / 1440 / 1920 (no horizontal page scroll) and 768.
+
+### 11.9 Contrast (web-only pairs)
+
+`npm run check:contrast` checks 148 pairs: the § 2.5 pairs that apply on the web, plus the ones below. Where a pair is the same as in § 2.5 the ratio is identical, because the values are.
+
+| Pair | Ratio | Needs |
+|---|---|---|
+| ink-muted on base / card / sand | 5.10 / 5.55 / 4.91 | 4.5 |
+| ink-muted tab label on `fog/40` track (card / toolbar) | 4.86 / 4.62 | 4.5 |
+| status text on its `*-tint` over card | 5.06–5.14 | 4.5 |
+| hover tints on card: primary/10, danger/10, success/15 | 4.90 / 4.84 / 4.79 | 4.5 |
+| white on primary / primary-deep / success-deep / warning-deep / danger-deep | 5.89 / 7.58 / 5.93 / 5.90 / 5.82 | 4.5 |
+| white on `night/70` video overlay (worst case: over a white frame) | 6.10 | 4.5 |
+| white @ 70% / 60% on night | 8.39 / 6.54 | 4.5 |
+| success text / icon on night | 4.72 | 4.5 |
+| focus ring: primary on base / card / raised / inset | 5.13 / 5.58 / 4.85 / 4.71 | 3 |
+| focus ring: ice on night | 12.90 | 3 |
+
+### 11.10 Apple → Harbor Calm mapping (Doctor migration, V2.2)
+
+| Old (Apple) | New | Notes |
+|---|---|---|
+| `#007AFF` (all uses) | `primary` | |
+| `#0062CC` (hover) | `primary-deep` | = Patient `primaryPressed` |
+| `#1C1C1E` text / dark surfaces | `ink` / `night` | |
+| `#8E8E93`, `#636366` text | `ink-muted` | the grey failed 4.5:1 |
+| `#C7C7CC` placeholder | `ink-inset` | |
+| `#D1D1D6` text on dark | `ice` | |
+| `#F2F2F7` | `base` | |
+| `#E5E5EA` fills | `fog` (`fog/40` behind muted tab labels) | |
+| `#F9F9FB` (locked record card) | `sand` | |
+| `#34C759` | text / icons → `success-deep`; fill under a white label → `success-deep`; dots / bars → `success` | |
+| `#248A3D` / `#2FB350` | `success-deep` / `success-pressed` | |
+| `#FF3B30` | text → `danger-deep`; fill under a white label → `danger-deep`; dots → `danger` | |
+| `#D70015` / `#FFF2F2` | `danger-pressed` / `danger/6` | |
+| `#FF9500`, `#C97700` | text / icons → `warning-deep`; fill under a white label → `warning-deep`; dots → `warning` | |
+| `#E08500` (hover) | `warning-deep/90` | |
+| `#5856D6` indigo | `primary` (text, dots, tints); `ink` as gradient end | brand gradient `primary → ink` |
+| `#30B0C7` teal | `ice` | |
+| `#000000`, `black` fills ≥ 40% | `night` | |
+| `black/5…/10` lines and fills | `ink/5…/10` | |
+| `bg-white` | `bg-card` | |
+| status `X/10…/15` fills behind deep text | `X-tint` | Patient V2.1 tints; the Apple 15% tints failed 4.5:1 |
+| on night surfaces: muted text / success / primary | `ice` / `success` / `ice` | the deep colours are too dark on night |
+| `shadow-apple-sm/md/lg` | `shadow-sm/md/lg` | Patient flat shadows |
+| `liquid-glass`, `liquid-glass-toolbar` | `glass`, `glass-toolbar` | |
+| Material Symbols (98 uses, 63 ligature names) and emoji used as icons | `<Icon>` registry | |
+
+### 11.11 Differences from the Patient app (and why)
+
+| Area | Patient | Doctor | Why |
+|---|---|---|---|
+| Touch / click target | 48 (44 dense) | 36 (44 critical) | Mouse and keyboard on desktop; clinician density |
+| Script size | Every Indic run × 1.1 / × 1.05 via `AppText` | `size-adjust` on the Noto faces + 14px floor on small text | Same visual result per glyph, without a text component |
+| Inset rendering | Gradient strips (RN has no inset shadow) | Real `box-shadow: inset` | Native on the web |
+| Pressed state | Opacity cross-fade raised → inset | Instant shadow swap; only transform animates | Same rule (never animate shadows) in plain CSS |
+| Glass | `expo-blur` intensity 80–100 | `backdrop-filter` blur 28–32px + saturate | Web equivalent |
+| Ambient blobs | SVG radial gradients, no blur filter | CSS radial gradients + static `blur(40px)` | Cheap on desktop GPUs; peaks unchanged, so contrast is unchanged |
+| Critical button | min height 56, full width | min height 44, sized to content | Desktop density |
+| `base` class name | `colors.base` | `bg-base` via `--background-color-base` | Avoids the Tailwind `text-base` clash |
+| Badge text size | 12px | 11px in migrated screens (14px in kn / hi) | Kept from the old layout until each screen is restyled in Phase 2 |

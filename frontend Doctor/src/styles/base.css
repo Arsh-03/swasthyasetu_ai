@@ -1,0 +1,171 @@
+/*
+ * Base layer: canvas, typography per script, focus, scrollbars, reduced motion / transparency.
+ * Rules that must beat Tailwind utilities (focus ring, Indic overrides) are deliberately UNLAYERED:
+ * unlayered CSS wins over every @layer, so `outline-none` or `tracking-wider` in a screen cannot undo them.
+ */
+
+@layer base {
+  /* Tailwind v4 defaults borders to currentColor; keep the v3 behaviour (a light line) with the Harbor separator. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-separator);
+  }
+
+  html {
+    background-color: var(--color-base);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    line-height: var(--lh-script);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--color-fog) transparent;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--color-base);
+    color: var(--color-ink);
+  }
+
+  /* Serif only for display-level headings (page titles); h3 and below stay sans. */
+  h1,
+  h2 {
+    font-family: var(--font-serif);
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
+    color: var(--color-ink);
+  }
+
+  ::placeholder {
+    color: var(--color-ink-inset);
+    opacity: 1;
+  }
+
+  /* Visible, thin scrollbars (desktop users need to see scroll position) */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-fog);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  label[for] {
+    cursor: pointer;
+  }
+}
+
+/* ---------- Focus: 2px primary ring + offset on every interactive element (unlayered) ---------- */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* On dark surfaces the ring switches to ice (primary is < 3:1 on night) */
+:where(.bg-night, .glass-night, .surface-night) :focus-visible {
+  outline-color: var(--color-ice);
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/*
+ * ---------- Per-script typography ----------
+ * Switched by the lang attribute: <html lang> (set from the language selector) for the app,
+ * or any block with lang="kn|hi" (the Style Guide shows the three side by side).
+ */
+[lang='kn'] {
+  --lh-script: 1.75;
+}
+[lang='hi'] {
+  --lh-script: 1.7;
+}
+
+/*
+ * Indic floor: Kannada / Devanagari glyphs never render below 14px or weight 500.
+ * Small text tokens are lifted to 14px (the font's size-adjust then scales the Indic glyphs ×1.1 / ×1.05,
+ * ≈ 15.4px kn, 14.7px hi, same as the Patient app). Line heights follow the script, letter-spacing is removed.
+ */
+:is([lang='kn'], [lang='hi']) {
+  line-height: var(--lh-script);
+  font-weight: 500;
+
+  --text-4xs: 0.875rem;
+  --text-3xs: 0.875rem;
+  --text-2xs: 0.875rem;
+  --text-xs: 0.875rem;
+  --text-footnote: 0.875rem;
+
+  --text-4xs--line-height: var(--lh-script);
+  --text-3xs--line-height: var(--lh-script);
+  --text-2xs--line-height: var(--lh-script);
+  --text-xs--line-height: var(--lh-script);
+  --text-footnote--line-height: var(--lh-script);
+  --text-sm--line-height: var(--lh-script);
+  --text-subhead--line-height: var(--lh-script);
+  --text-base--line-height: var(--lh-script);
+  --text-lg--line-height: var(--lh-script);
+  --text-xl--line-height: var(--lh-script);
+  --text-2xl--line-height: var(--lh-script);
+  --text-3xl--line-height: var(--lh-script);
+  --text-4xl--line-height: var(--lh-script);
+  --text-5xl--line-height: var(--lh-script);
+
+  --leading-tight: var(--lh-script);
+  --leading-snug: var(--lh-script);
+  --leading-normal: var(--lh-script);
+  --leading-relaxed: var(--lh-script);
+
+  --font-weight-thin: 500;
+  --font-weight-extralight: 500;
+  --font-weight-light: 500;
+  --font-weight-normal: 500;
+
+  --tracking-tighter: 0em;
+  --tracking-tight: 0em;
+  --tracking-wide: 0em;
+  --tracking-wider: 0em;
+  --tracking-widest: 0em;
+}
+:is([lang='kn'], [lang='hi']) .leading-none {
+  line-height: var(--lh-script);
+}
+:is([lang='kn'], [lang='hi']) :is(h1, h2, h3, h4, h5, h6) {
+  letter-spacing: 0;
+}
+
+/* Mono (IDs, timestamps, hashes) is always Latin: keep the dense English sizes there. */
+:is([lang='kn'], [lang='hi']) .font-mono {
+  --text-4xs: 0.5625rem;
+  --text-3xs: 0.625rem;
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-footnote: 0.8125rem;
+}
+
+/* ---------- Reduced motion: no non-essential animation ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

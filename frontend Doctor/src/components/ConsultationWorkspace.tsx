@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { PatientSummary } from '../services/api';
 import { api } from '../services/api';
+import { Icon } from './ui/Icon';
 import { buildIceServers, CallSession, type CallConnection, type SignalMessage } from '../services/callSession';
 
 /** Sends frames over the portal's telehealth socket and lets the call listen for `webrtc` frames. */
@@ -369,14 +370,14 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   if (callState === 'idle' || !patient) {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-full bg-white rounded-3xl p-8 sm:p-12 shadow-apple-md border border-black/5 flex flex-col items-center text-center gap-6">
-          <div className="w-20 h-20 rounded-3xl bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center ring-1 ring-[#007AFF]/20">
-            <span className="material-symbols-outlined text-4xl">video_camera_front</span>
+        <div className="w-full bg-card rounded-3xl p-8 sm:p-12 shadow-md border border-ink/5 flex flex-col items-center text-center gap-6">
+          <div className="w-20 h-20 rounded-3xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
+            <Icon name="video" size={36} />
           </div>
 
           <div className="flex flex-col gap-2 max-w-md">
-            <h2 className="text-2xl font-bold text-[#1C1C1E] tracking-tight">No Active Consultation</h2>
-            <p className="text-sm text-[#636366] leading-relaxed">
+            <h2 className="text-2xl font-bold text-ink tracking-tight">No Active Consultation</h2>
+            <p className="text-sm text-ink-muted leading-relaxed">
               Consultations do not connect automatically. Select a triage patient from the queue to start an outgoing call.
             </p>
           </div>
@@ -385,14 +386,14 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             <div className="flex flex-col sm:flex-row items-center gap-3 mt-2">
               <button
                 onClick={() => onStartCall(patient)}
-                className="px-6 py-3 rounded-2xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-sm flex items-center gap-2.5 shadow-apple-sm transition-all active:scale-95 cursor-pointer"
+                className="px-6 py-3 rounded-2xl bg-primary hover:bg-primary-deep text-white font-semibold text-sm flex items-center gap-2.5 shadow-sm transition-all active:scale-95 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[20px]">call</span>
+                <Icon name="call" size={20} />
                 <span>Call {patient.full_name}</span>
               </button>
               <button
                 onClick={onGoToQueue}
-                className="px-6 py-3 rounded-2xl bg-[#E5E5EA]/80 hover:bg-[#E5E5EA] text-[#1C1C1E] font-medium text-sm transition-all cursor-pointer"
+                className="px-6 py-3 rounded-2xl bg-fog/80 hover:bg-fog text-ink font-medium text-sm transition-all cursor-pointer"
               >
                 Return to Patient Queue
               </button>
@@ -400,9 +401,9 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           ) : (
             <button
               onClick={onGoToQueue}
-              className="px-6 py-3 rounded-2xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-sm flex items-center gap-2 shadow-apple-sm transition-all active:scale-95 cursor-pointer mt-2"
+              className="px-6 py-3 rounded-2xl bg-primary hover:bg-primary-deep text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer mt-2"
             >
-              <span className="material-symbols-outlined text-[20px]">group</span>
+              <Icon name="people" size={20} />
               <span>Go to Patient Queue</span>
             </button>
           )}
@@ -415,14 +416,14 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   if (callState === 'calling') {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col items-center justify-center min-h-[70vh]">
-        <div className="w-full bg-[#1C1C1E] rounded-3xl p-8 sm:p-14 shadow-apple-lg border border-white/10 flex flex-col items-center text-center gap-8 text-white relative overflow-hidden">
+        <div className="w-full bg-night rounded-3xl p-8 sm:p-14 shadow-lg border border-white/10 flex flex-col items-center text-center gap-8 text-white relative overflow-hidden">
           {/* Subtle Ambient Glow */}
-          <div className="absolute inset-0 bg-radial from-[#007AFF]/20 via-transparent to-transparent opacity-60 pointer-events-none" />
+          <div className="absolute inset-0 bg-radial from-primary/20 via-transparent to-transparent opacity-60 pointer-events-none" />
 
           {/* Patient Avatar with Animated Calling Rings */}
           <div className="relative my-4">
-            <span className="absolute -inset-4 rounded-full bg-[#007AFF]/20 animate-ping opacity-75" />
-            <span className="absolute -inset-8 rounded-full bg-[#007AFF]/10 animate-pulse" />
+            <span className="absolute -inset-4 rounded-full bg-primary/20 animate-ping opacity-75" />
+            <span className="absolute -inset-8 rounded-full bg-primary/10 animate-pulse" />
             <img
               src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
               alt={patient.full_name}
@@ -431,13 +432,13 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           </div>
 
           <div className="flex flex-col gap-1.5 z-10">
-            <span className="text-xs uppercase tracking-widest text-[#34C759] font-bold">
+            <span className="text-xs uppercase tracking-widest text-success font-bold">
               Outgoing Telehealth Video Call
             </span>
             <h2 className="text-3xl font-bold tracking-tight text-white">{patient.full_name}</h2>
             <span className="text-sm text-white/60 font-mono mt-1">{patient.abha_address}</span>
             <div className="inline-flex items-center justify-center gap-2 mt-3 px-3.5 py-1 rounded-full bg-white/10 backdrop-blur-md self-center text-xs font-medium text-white/90">
-              <span className="w-2 h-2 rounded-full bg-[#34C759] animate-ping" />
+              <span className="w-2 h-2 rounded-full bg-success animate-ping" />
               <span>Ringing patient's app... ({formatTimer(callingSeconds)})</span>
             </div>
           </div>
@@ -447,10 +448,11 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             {/* Cancel Call Button */}
             <button
               onClick={handleEndCall}
-              className="w-16 h-16 rounded-full bg-[#FF3B30] hover:bg-[#D70015] text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+              className="w-16 h-16 rounded-full bg-danger-deep hover:bg-danger-pressed text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
               title="Cancel Call"
+              aria-label="Cancel call"
             >
-              <span className="material-symbols-outlined text-3xl">call_end</span>
+              <Icon name="callEnd" size={30} />
             </button>
             <span className="text-xs text-white/70 font-medium">Cancel Call</span>
 
@@ -460,7 +462,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 onClick={onPatientAccept}
                 className="mt-4 px-4 py-2 rounded-full bg-white/15 hover:bg-white/25 text-xs text-white/90 font-medium border border-white/20 transition-all cursor-pointer backdrop-blur-md"
               >
-                📱 Simulate Patient Answering Call (Demo)
+                <Icon name="mobile" size={14} className="inline-block align-[-2px]" /> Simulate Patient Answering Call (Demo)
               </button>
             )}
           </div>
@@ -473,26 +475,26 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   if (callState === 'declined') {
     return (
       <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-full bg-white rounded-3xl p-8 sm:p-12 shadow-apple-md border border-black/5 flex flex-col items-center text-center gap-5">
-          <div className="w-16 h-16 rounded-full bg-[#FF3B30]/10 text-[#FF3B30] flex items-center justify-center">
-            <span className="material-symbols-outlined text-3xl">phone_disabled</span>
+        <div className="w-full bg-card rounded-3xl p-8 sm:p-12 shadow-md border border-ink/5 flex flex-col items-center text-center gap-5">
+          <div className="w-16 h-16 rounded-full bg-danger/10 text-danger-deep flex items-center justify-center">
+            <Icon name="callDeclined" size={30} />
           </div>
           <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-bold text-[#1C1C1E]">Call Declined by Patient</h2>
-            <p className="text-sm text-[#636366]">
+            <h2 className="text-2xl font-bold text-ink">Call Declined by Patient</h2>
+            <p className="text-sm text-ink-muted">
               {patient.full_name} declined or was unavailable for the consultation.
             </p>
           </div>
           <div className="flex items-center gap-3 mt-3">
             <button
               onClick={() => onStartCall(patient)}
-              className="px-5 py-2.5 rounded-xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-xs transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-deep text-white font-semibold text-xs transition-all cursor-pointer"
             >
               Retry Call
             </button>
             <button
               onClick={onGoToQueue}
-              className="px-5 py-2.5 rounded-xl bg-[#E5E5EA] text-[#1C1C1E] font-medium text-xs transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-fog text-ink font-medium text-xs transition-all cursor-pointer"
             >
               Return to Queue
             </button>
@@ -506,22 +508,22 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-4">
       {/* Top Active Patient Status Bar */}
-      <div className="w-full bg-white rounded-2xl p-3 px-5 shadow-apple-sm border border-black/5 flex items-center justify-between gap-4">
+      <div className="w-full bg-card rounded-2xl p-3 px-5 shadow-sm border border-ink/5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative shrink-0">
             <img
               src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
               alt={patient.full_name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-black/5"
+              className="w-10 h-10 rounded-full object-cover ring-2 ring-ink/5"
             />
-            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#34C759] ring-2 ring-white"></span>
+            <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success ring-2 ring-white"></span>
           </div>
           <div className="flex items-center gap-2 truncate">
-            <span className="text-base font-bold text-[#1C1C1E] tracking-tight truncate">
+            <span className="text-base font-bold text-ink tracking-tight truncate">
               {patient.full_name}, {patient.demographics.age || 54} yrs
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#34C759]/15 text-[#248A3D] text-[11px] font-semibold shrink-0">
-              <span className="material-symbols-outlined text-[14px]">verified</span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-success-tint text-success-deep text-2xs font-semibold shrink-0">
+              <Icon name="verified" size={14} />
               Call Connected (Live)
             </span>
           </div>
@@ -529,21 +531,21 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
         <div className="flex items-center gap-2.5 shrink-0">
           {/* Live Call Duration */}
-          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F2F2F7] text-[#1C1C1E] font-mono text-[13px] font-semibold border border-black/5">
-            <span className="w-2 h-2 rounded-full bg-[#34C759] animate-ping"></span>
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-base text-ink font-mono text-footnote font-semibold border border-ink/5">
+            <span className="w-2 h-2 rounded-full bg-success animate-ping"></span>
             <span>{formatTimer(secondsElapsed)}</span>
           </div>
 
-          <div className="hidden sm:flex items-center gap-1 text-[#636366] text-xs font-medium bg-[#F2F2F7] px-2.5 py-1 rounded-full border border-black/5">
-            <span className="material-symbols-outlined text-[#007AFF] text-[15px]">lock</span>
+          <div className="hidden sm:flex items-center gap-1 text-ink-muted text-xs font-medium bg-base px-2.5 py-1 rounded-full border border-ink/5">
+            <Icon name="lock" size={15} tone="primary" weight="duotone" />
             <span>ABDM Encrypted</span>
           </div>
 
           <button
             onClick={onRequestRecordAccess}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#007AFF]/10 hover:bg-[#007AFF]/20 text-[#007AFF] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-tint hover:bg-primary/10 text-primary text-xs font-semibold transition-all active:scale-95 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px]">key</span>
+            <Icon name="key" size={16} />
             <span>Request Diagnostic Record</span>
           </button>
         </div>
@@ -551,16 +553,16 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
       {/* Permission Notification Banner if Denied */}
       {mediaPermission === 'denied' && (
-        <div className="w-full bg-[#FF9500]/10 border border-[#FF9500]/30 rounded-2xl p-3 px-4 flex items-center justify-between text-xs text-[#1C1C1E]">
+        <div className="w-full bg-warning/10 border border-warning/30 rounded-2xl p-3 px-4 flex items-center justify-between text-xs text-ink">
           <div className="flex items-center gap-2.5">
-            <span className="material-symbols-outlined text-[#FF9500] text-xl">videocam_off</span>
+            <Icon name="videoOff" size={20} tone="warning" weight="duotone" />
             <span className="font-medium">
               {mediaError || 'Camera & microphone permission needed for telehealth video stream.'}
             </span>
           </div>
           <button
             onClick={requestMediaAccess}
-            className="px-3 py-1 rounded-lg bg-[#FF9500] text-white font-semibold text-xs hover:bg-[#E08500] active:scale-95 transition-all cursor-pointer shadow-xs"
+            className="px-3 py-1 rounded-lg bg-warning-deep text-white font-semibold text-xs hover:bg-warning-deep/90 active:scale-95 transition-all cursor-pointer shadow-xs"
           >
             Grant Camera Access
           </button>
@@ -570,85 +572,85 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
       {/* Main 3-Column Consultation Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* 1. Left Column: Patient Clinical Summary (3 cols) */}
-        <aside className="lg:col-span-3 bg-white rounded-2xl p-4 shadow-apple-sm border border-black/5 flex flex-col gap-3.5">
-          <div className="flex flex-col items-center text-center pb-2 border-b border-black/5">
+        <aside className="lg:col-span-3 bg-card rounded-2xl p-4 shadow-sm border border-ink/5 flex flex-col gap-3.5">
+          <div className="flex flex-col items-center text-center pb-2 border-b border-ink/5">
             <div className="relative w-16 h-16 mb-2">
               <img
                 src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
                 alt={patient.full_name}
-                className="w-16 h-16 rounded-full object-cover shadow-apple-sm ring-1 ring-black/10"
+                className="w-16 h-16 rounded-full object-cover shadow-sm ring-1 ring-ink/10"
               />
-              <span className="absolute -bottom-1 right-0 bg-[#007AFF] text-white p-1 rounded-full shadow-apple-sm flex items-center justify-center">
-                <span className="material-symbols-outlined text-[13px]">person</span>
+              <span className="absolute -bottom-1 right-0 bg-primary text-white p-1 rounded-full shadow-sm flex items-center justify-center">
+                <Icon name="person" size={13} />
               </span>
             </div>
-            <h2 className="text-lg font-bold text-[#1C1C1E] tracking-tight leading-tight">{patient.full_name}</h2>
-            <span className="text-[11px] font-mono text-[#8E8E93] mt-0.5">{patient.abha_address}</span>
+            <h2 className="text-lg font-bold text-ink tracking-tight leading-tight">{patient.full_name}</h2>
+            <span className="text-2xs font-mono text-ink-muted mt-0.5">{patient.abha_address}</span>
           </div>
 
           {/* Metric Badges Stack */}
           <div className="flex flex-col gap-2">
             {/* Complaint */}
-            <div className="p-2.5 rounded-xl bg-[#F2F2F7] flex items-center gap-2.5 border border-black/5">
-              <span className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#007AFF] shrink-0 shadow-2xs">
-                <span className="material-symbols-outlined text-[18px]">coronavirus</span>
+            <div className="p-2.5 rounded-xl bg-base flex items-center gap-2.5 border border-ink/5">
+              <span className="w-8 h-8 rounded-lg bg-card flex items-center justify-center text-primary shrink-0 shadow-2xs">
+                <Icon name="symptom" size={18} />
               </span>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-semibold text-[#8E8E93] uppercase tracking-wider">Chief Complaint</span>
-                <span className="text-[12px] font-semibold text-[#1C1C1E] truncate">{patient.complaint || 'Not recorded'}</span>
+                <span className="text-4xs font-semibold text-ink-muted uppercase tracking-wider">Chief Complaint</span>
+                <span className="text-xs font-semibold text-ink truncate">{patient.complaint || 'Not recorded'}</span>
               </div>
             </div>
 
             {/* Critical Allergy */}
             {patient.allergies && patient.allergies.length > 0 && (
-              <div className="p-2.5 rounded-xl bg-[#FF3B30]/10 text-[#FF3B30] flex items-center gap-2.5 border border-[#FF3B30]/20">
-                <span className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#FF3B30] shrink-0 shadow-2xs">
-                  <span className="material-symbols-outlined text-[18px]">warning</span>
+              <div className="p-2.5 rounded-xl bg-danger-tint text-danger-deep flex items-center gap-2.5 border border-danger/20">
+                <span className="w-8 h-8 rounded-lg bg-card flex items-center justify-center text-danger-deep shrink-0 shadow-2xs">
+                  <Icon name="warning" size={18} />
                 </span>
                 <div className="flex flex-col min-w-0">
-                  <span className="text-[9px] font-semibold uppercase tracking-wider">Documented Allergy</span>
-                  <span className="text-[12px] font-semibold truncate">{patient.allergies.join(', ')}</span>
+                  <span className="text-4xs font-semibold uppercase tracking-wider">Documented Allergy</span>
+                  <span className="text-xs font-semibold truncate">{patient.allergies.join(', ')}</span>
                 </div>
               </div>
             )}
 
             {/* Active Rx */}
-            <div className="p-2.5 rounded-xl bg-[#F2F2F7] flex items-center gap-2.5 border border-black/5">
-              <span className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#5856D6] shrink-0 shadow-2xs">
-                <span className="material-symbols-outlined text-[18px]">medication</span>
+            <div className="p-2.5 rounded-xl bg-base flex items-center gap-2.5 border border-ink/5">
+              <span className="w-8 h-8 rounded-lg bg-card flex items-center justify-center text-primary shrink-0 shadow-2xs">
+                <Icon name="medication" size={18} />
               </span>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-semibold text-[#8E8E93] uppercase tracking-wider">Current Meds</span>
-                <span className="text-[12px] font-semibold text-[#1C1C1E] truncate">
+                <span className="text-4xs font-semibold text-ink-muted uppercase tracking-wider">Current Meds</span>
+                <span className="text-xs font-semibold text-ink truncate">
                   {patient.active_rx?.join(', ') || 'None recorded'}
                 </span>
               </div>
             </div>
 
             {/* Vitals */}
-            <div className="p-2.5 rounded-xl bg-[#F2F2F7] flex items-center gap-2.5 border border-black/5">
-              <span className="w-8 h-8 rounded-lg bg-white flex items-center justify-center text-[#34C759] shrink-0 shadow-2xs">
-                <span className="material-symbols-outlined text-[18px]">vital_signs</span>
+            <div className="p-2.5 rounded-xl bg-base flex items-center gap-2.5 border border-ink/5">
+              <span className="w-8 h-8 rounded-lg bg-card flex items-center justify-center text-success-deep shrink-0 shadow-2xs">
+                <Icon name="vitals" size={18} />
               </span>
               <div className="flex flex-col min-w-0">
-                <span className="text-[9px] font-semibold text-[#8E8E93] uppercase tracking-wider">Vitals Recorded</span>
-                <span className="text-[12px] font-semibold text-[#1C1C1E] truncate">{patient.vitals || 'Not recorded'}</span>
+                <span className="text-4xs font-semibold text-ink-muted uppercase tracking-wider">Vitals Recorded</span>
+                <span className="text-xs font-semibold text-ink truncate">{patient.vitals || 'Not recorded'}</span>
               </div>
             </div>
           </div>
 
           <button
             onClick={onRequestRecordAccess}
-            className="w-full py-2 px-3 rounded-xl bg-[#F2F2F7] hover:bg-[#E5E5EA] text-[#1C1C1E] text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-black/5 cursor-pointer"
+            className="w-full py-2 px-3 rounded-xl bg-base hover:bg-fog text-ink text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors border border-ink/5 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px]">history_edu</span>
+            <Icon name="history" size={16} />
             <span>Inspect Health Records</span>
           </button>
         </aside>
 
         {/* 2. Centre Column: Adaptive Telehealth Suite (5 cols) */}
         <section className="lg:col-span-5 flex flex-col gap-3">
-          <div className="relative w-full aspect-[4/3] bg-[#000000] rounded-3xl overflow-hidden shadow-apple-lg border border-black/10 flex items-center justify-center">
+          <div className="relative w-full aspect-[4/3] bg-night rounded-3xl overflow-hidden shadow-lg border border-ink/10 flex items-center justify-center">
             {/* Patient's voice */}
             <audio ref={remoteAudioRef} autoPlay className="hidden" />
             {/* MAIN STAGE VIDEO: Swappable between Patient Feed and Doctor Webcam */}
@@ -664,8 +666,8 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center gap-2 text-white">
-                  <span className="material-symbols-outlined text-4xl text-[#8E8E93]">videocam_off</span>
-                  <span className="text-xs text-[#8E8E93]">Your Camera is Off</span>
+                  <Icon name="videoOff" size={36} tone="ice" weight="duotone" />
+                  <span className="text-xs text-ice">Your Camera is Off</span>
                 </div>
               )
             ) : (
@@ -683,22 +685,22 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                     className="w-20 h-20 rounded-full object-cover ring-2 ring-white/30"
                   />
                   <span className="text-sm font-semibold">{patient.full_name}</span>
-                  <span className="text-xs text-[#8E8E93]" aria-live="polite">{patientStatus}</span>
+                  <span className="text-xs text-ice" aria-live="polite">{patientStatus}</span>
                 </div>
               )
             )}
 
             {/* Audio Waveform Overlay when in Audio mode */}
             {networkTier === 'audio' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-black/60 backdrop-blur-xs">
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-night/70 backdrop-blur-xs">
                 <div className="flex items-center gap-1.5 mb-2">
-                  <span className="w-1.5 h-6 bg-[#34C759] rounded-full animate-bounce"></span>
-                  <span className="w-1.5 h-12 bg-[#007AFF] rounded-full animate-pulse"></span>
-                  <span className="w-1.5 h-8 bg-[#FF9500] rounded-full animate-bounce"></span>
-                  <span className="w-1.5 h-14 bg-[#34C759] rounded-full animate-pulse"></span>
-                  <span className="w-1.5 h-6 bg-[#007AFF] rounded-full animate-bounce"></span>
+                  <span className="w-1.5 h-6 bg-success rounded-full animate-bounce"></span>
+                  <span className="w-1.5 h-12 bg-primary rounded-full animate-pulse"></span>
+                  <span className="w-1.5 h-8 bg-warning rounded-full animate-bounce"></span>
+                  <span className="w-1.5 h-14 bg-success rounded-full animate-pulse"></span>
+                  <span className="w-1.5 h-6 bg-primary rounded-full animate-bounce"></span>
                 </div>
-                <span className="text-[11px] font-semibold text-white bg-black/70 px-3 py-1 rounded-full">
+                <span className="text-2xs font-semibold text-white bg-night/70 px-3 py-1 rounded-full">
                   Audio Priority Mode (50 kbps)
                 </span>
               </div>
@@ -706,20 +708,21 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
             {/* Network Tier Selector Badge */}
             <div className="absolute top-3 left-3 z-30">
-              <div className="inline-flex items-center gap-1.5 p-1 px-2.5 rounded-full bg-black/60 backdrop-blur-md shadow-md text-xs font-semibold text-white border border-white/10">
+              <div className="inline-flex items-center gap-1.5 p-1 px-2.5 rounded-full bg-night/70 backdrop-blur-md shadow-md text-xs font-semibold text-white border border-white/10">
                 <span
                   className={`w-2 h-2 rounded-full ${
-                    networkTier === 'hd' ? 'bg-[#34C759]' : networkTier === 'audio' ? 'bg-[#FF9500]' : 'bg-[#FF3B30]'
+                    networkTier === 'hd' ? 'bg-success' : networkTier === 'audio' ? 'bg-warning' : 'bg-danger'
                   }`}
                 ></span>
                 <select
+                  aria-label="Network mode"
                   value={networkTier}
                   onChange={(e) => setNetworkTier(e.target.value as any)}
-                  className="bg-transparent font-medium text-[11px] focus:outline-none cursor-pointer text-white"
+                  className="bg-transparent font-medium text-2xs focus:outline-none cursor-pointer text-white"
                 >
-                  <option value="hd" className="text-black">HD Video (450 kbps)</option>
-                  <option value="audio" className="text-black">Audio Priority (50 kbps)</option>
-                  <option value="async" className="text-black">Store & Forward (5 kbps)</option>
+                  <option value="hd" className="text-ink">HD Video (450 kbps)</option>
+                  <option value="audio" className="text-ink">Audio Priority (50 kbps)</option>
+                  <option value="async" className="text-ink">Store & Forward (5 kbps)</option>
                 </select>
               </div>
             </div>
@@ -727,15 +730,15 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             {/* Audio Live Indicator */}
             <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
               {connection === 'connected' && !remoteMedia.audio && (
-                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-md text-[11px] font-semibold border border-white/10">
-                  <span className="material-symbols-outlined text-[14px] text-[#FF9500]">mic_off</span>
-                  <span className="text-[10px] text-[#FF9500]">Patient muted</span>
+                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-night/70 text-white backdrop-blur-md text-2xs font-semibold border border-white/10">
+                  <Icon name="micOff" size={14} weight="duotone" className="text-warning" />
+                  <span className="text-3xs text-warning">Patient muted</span>
                 </div>
               )}
               {isMicOn && (
-                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/60 text-white backdrop-blur-md text-[11px] font-semibold border border-white/10">
-                  <span className="material-symbols-outlined text-[14px] text-[#34C759]">mic</span>
-                  <span className="text-[10px] text-[#34C759]">Live</span>
+                <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-night/70 text-white backdrop-blur-md text-2xs font-semibold border border-white/10">
+                  <Icon name="mic" size={14} weight="duotone" className="text-success" />
+                  <span className="text-3xs text-success-deep">Live</span>
                 </div>
               )}
             </div>
@@ -743,7 +746,16 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             {/* PIP Self-View (Interactive & Click to Swap View) */}
             <div
               onClick={() => setIsSwappedView(!isSwappedView)}
-              className="absolute bottom-16 right-3 w-28 h-36 rounded-2xl overflow-hidden shadow-apple-lg z-30 border-2 border-white/40 bg-[#1C1C1E] cursor-pointer group transition-transform hover:scale-105"
+              role="button"
+              tabIndex={0}
+              aria-label="Swap main view and picture-in-picture"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.currentTarget.click();
+                }
+              }}
+              className="absolute bottom-16 right-3 w-28 h-36 rounded-2xl overflow-hidden shadow-lg z-30 border-2 border-white/40 bg-night cursor-pointer group transition-transform hover:scale-105"
               title="Click to swap main view and PIP"
             >
               {!isSwappedView ? (
@@ -757,9 +769,9 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                     className="w-full h-full object-cover transform -scale-x-100"
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-[#1C1C1E] text-white/70 p-2 text-center">
-                    <span className="material-symbols-outlined text-2xl text-[#8E8E93]">videocam_off</span>
-                    <span className="text-[10px] mt-1 font-medium leading-tight">
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-night text-white/70 p-2 text-center">
+                    <Icon name="videoOff" size={24} tone="ice" weight="duotone" />
+                    <span className="text-3xs mt-1 font-medium leading-tight">
                       {mediaPermission === 'denied' ? 'Cam Blocked' : 'Camera Off'}
                     </span>
                   </div>
@@ -769,118 +781,126 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 patientLive ? (
                   <StreamVideo stream={remoteStream} className="w-full h-full object-cover" />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-[#1C1C1E] text-white/70 p-2 text-center">
-                    <span className="material-symbols-outlined text-2xl text-[#8E8E93]">videocam_off</span>
-                    <span className="text-[10px] mt-1 font-medium leading-tight">{patientStatus || 'Patient'}</span>
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-night text-white/70 p-2 text-center">
+                    <Icon name="videoOff" size={24} tone="ice" weight="duotone" />
+                    <span className="text-3xs mt-1 font-medium leading-tight">{patientStatus || 'Patient'}</span>
                   </div>
                 )
               )}
 
               {/* PIP Label badge with status */}
-              <div className="absolute bottom-1.5 left-2 flex items-center gap-1 bg-black/70 px-1.5 py-0.5 rounded text-[10px] font-semibold text-white backdrop-blur-xs">
+              <div className="absolute bottom-1.5 left-2 flex items-center gap-1 bg-night/70 px-1.5 py-0.5 rounded text-3xs font-semibold text-white backdrop-blur-xs">
                 <span>{!isSwappedView ? 'You (Doc)' : 'Patient'}</span>
-                {!isMicOn && <span className="text-[#FF3B30] text-[9px]">🔇</span>}
+                {!isMicOn && <Icon name="micOff" size={11} weight="duotone" className="text-danger" label="Microphone muted" />}
               </div>
 
               {/* Hover swap icon */}
-              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 bg-black/60 p-1 rounded-full text-white transition-opacity">
-                <span className="material-symbols-outlined text-[13px]">swap_horiz</span>
+              <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 bg-night/70 p-1 rounded-full text-white transition-opacity">
+                <Icon name="swap" size={13} />
               </div>
             </div>
 
             {/* In-Call Floating Liquid Glass Control Bar */}
-            <div className="absolute bottom-3 inset-x-0 mx-auto w-fit z-30 px-3 py-1.5 rounded-full liquid-glass shadow-apple-lg flex items-center gap-2.5">
+            <div className="absolute bottom-3 inset-x-0 mx-auto w-fit z-30 px-3 py-1.5 rounded-full glass shadow-lg flex items-center gap-2.5">
               {/* Mic Toggle */}
               <button
                 onClick={toggleMic}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                  isMicOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
+                  isMicOn ? 'bg-fog/80 text-ink hover:bg-fog' : 'bg-danger-deep text-white'
                 }`}
                 title={isMicOn ? 'Mute Microphone' : 'Unmute Microphone'}
+                aria-label="Mute microphone"
+                aria-pressed={!isMicOn}
               >
-                <span className="material-symbols-outlined text-[18px]">{isMicOn ? 'mic' : 'mic_off'}</span>
+                <Icon name={isMicOn ? 'mic' : 'micOff'} size={18} />
               </button>
 
               {/* Camera Toggle */}
               <button
                 onClick={toggleCam}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                  isCamOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
+                  isCamOn ? 'bg-fog/80 text-ink hover:bg-fog' : 'bg-danger-deep text-white'
                 }`}
                 title={isCamOn ? 'Turn Video Off' : 'Turn Video On'}
+                aria-label="Turn camera off"
+                aria-pressed={!isCamOn}
               >
-                <span className="material-symbols-outlined text-[18px]">{isCamOn ? 'videocam' : 'videocam_off'}</span>
+                <Icon name={isCamOn ? 'video' : 'videoOff'} size={18} />
               </button>
 
               {/* Speaker Toggle */}
               <button
                 onClick={() => setIsSpeakerOn(!isSpeakerOn)}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                  isSpeakerOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
+                  isSpeakerOn ? 'bg-fog/80 text-ink hover:bg-fog' : 'bg-danger-deep text-white'
                 }`}
                 title="Toggle Speaker"
+                aria-label="Mute speaker"
+                aria-pressed={!isSpeakerOn}
               >
-                <span className="material-symbols-outlined text-[18px]">{isSpeakerOn ? 'volume_up' : 'volume_off'}</span>
+                <Icon name={isSpeakerOn ? 'listen' : 'speakerOff'} size={18} />
               </button>
 
               {/* Swap View Button */}
               <button
                 onClick={() => setIsSwappedView(!isSwappedView)}
-                className="w-9 h-9 rounded-full bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA] flex items-center justify-center transition-all cursor-pointer"
+                className="w-9 h-9 rounded-full bg-fog/80 text-ink hover:bg-fog flex items-center justify-center transition-all cursor-pointer"
                 title="Swap Full Screen & PIP"
+                aria-label="Swap main view and picture-in-picture"
               >
-                <span className="material-symbols-outlined text-[18px]">cameraswitch</span>
+                <Icon name="cameraSwitch" size={18} />
               </button>
 
               {/* Hangup Call */}
               <button
                 onClick={handleEndCall}
-                className="w-9 h-9 rounded-full bg-[#FF3B30] hover:bg-[#D70015] text-white flex items-center justify-center transition-all shadow-apple-sm active:scale-95 cursor-pointer"
+                className="w-9 h-9 rounded-full bg-danger-deep hover:bg-danger-pressed text-white flex items-center justify-center transition-all shadow-sm active:scale-95 cursor-pointer"
                 title="End Consultation"
+                aria-label="End consultation"
               >
-                <span className="material-symbols-outlined text-[18px]">call_end</span>
+                <Icon name="callEnd" size={18} />
               </button>
             </div>
           </div>
 
           {/* Vernacular Bhashini Transcription Banner */}
-          <div className="w-full bg-white p-2.5 px-3.5 rounded-xl flex items-center justify-between text-xs border border-black/5 shadow-apple-sm">
-            <div className="flex items-center gap-2 text-[#1C1C1E] font-medium">
-              <span className="material-symbols-outlined text-[#007AFF] text-[18px]">hearing</span>
+          <div className="w-full bg-card p-2.5 px-3.5 rounded-xl flex items-center justify-between text-xs border border-ink/5 shadow-sm">
+            <div className="flex items-center gap-2 text-ink font-medium">
+              <Icon name="hearing" size={18} tone="primary" weight="duotone" />
               <span>Bhashini Multilingual Speech Engine (Kannada / Hindi)</span>
             </div>
-            <span className="text-[10px] font-semibold text-[#248A3D] bg-[#34C759]/15 px-2 py-0.5 rounded-full">
+            <span className="text-3xs font-semibold text-success-deep bg-success-tint px-2 py-0.5 rounded-full">
               98% Clinical Accuracy
             </span>
           </div>
         </section>
 
         {/* 3. Right Column: AI Ambient Scribe & CDSS Panel (4 cols) */}
-        <section className="lg:col-span-4 bg-white rounded-2xl p-4 shadow-apple-sm border border-black/5 flex flex-col justify-between min-h-[500px]">
+        <section className="lg:col-span-4 bg-card rounded-2xl p-4 shadow-sm border border-ink/5 flex flex-col justify-between min-h-[500px]">
           <div className="flex flex-col gap-3">
             {/* AI Draft Header Banner (Apple Intelligence Style) */}
-            <div className="w-full rounded-xl bg-gradient-to-r from-[#5856D6]/10 via-[#007AFF]/10 to-[#30B0C7]/10 border border-[#007AFF]/20 text-[#1C1C1E] p-2.5 px-3.5 flex items-center justify-between shadow-2xs">
+            <div className="w-full rounded-xl bg-gradient-to-r from-primary/10 via-primary/10 to-ice/10 border border-primary/20 text-ink p-2.5 px-3.5 flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-1.5 font-semibold text-xs">
-                <span className="material-symbols-outlined text-[18px] text-[#5856D6]">auto_awesome</span>
+                <Icon name="aiAssist" size={18} tone="primary" weight="duotone" />
                 <span>Ambient Clinical Scribe</span>
               </div>
-              <span className="w-2 h-2 rounded-full bg-[#34C759] animate-pulse"></span>
+              <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
             </div>
 
             {/* CDSS Safety Alert */}
             {ddiWarning && (
-              <div className="p-2.5 rounded-xl bg-[#FF3B30]/10 border border-[#FF3B30]/20 text-[#FF3B30] flex flex-col gap-0.5">
+              <div className="p-2.5 rounded-xl bg-danger-tint border border-danger/20 text-danger-deep flex flex-col gap-0.5">
                 <div className="flex items-center gap-1 font-semibold text-xs">
-                  <span className="material-symbols-outlined text-[16px]">gpp_maybe</span>
+                  <Icon name="drugAlert" size={16} />
                   <span>Safety Contraindication (CDSS)</span>
                 </div>
-                <span className="text-[11px] leading-tight">{ddiWarning}</span>
+                <span className="text-2xs leading-tight">{ddiWarning}</span>
               </div>
             )}
 
             {/* SOAP Scribe Items */}
             <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-semibold text-[#8E8E93] uppercase tracking-wider">
+              <span className="text-3xs font-semibold text-ink-muted uppercase tracking-wider">
                 Generated SOAP Draft Elements
               </span>
               <div className="flex flex-col gap-2">
@@ -889,29 +909,31 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                     key={item.id}
                     className={`p-2.5 rounded-xl border text-xs flex items-center justify-between transition-all ${
                       item.confirmed
-                        ? 'bg-[#34C759]/5 border-[#34C759]/30 text-[#1C1C1E]'
-                        : 'bg-[#F2F2F7] border-black/5 text-[#636366]'
+                        ? 'bg-success/5 border-success/30 text-ink'
+                        : 'bg-base border-ink/5 text-ink-muted'
                     }`}
                   >
                     <label className="flex flex-col min-w-0 pr-2 flex-1">
-                      <span className="text-[10px] font-bold text-[#8E8E93] uppercase">{item.label}</span>
+                      <span className="text-3xs font-bold text-ink-muted uppercase">{item.label}</span>
                       <input
                         value={item.value}
                         placeholder={item.placeholder}
                         onChange={(e) => updateScribeValue(item.id, e.target.value)}
                         disabled={consultationCompleted}
-                        className="font-medium bg-transparent outline-none min-w-0 placeholder:text-[#C7C7CC]"
+                        className="font-medium bg-transparent outline-none min-w-0 placeholder:text-ink-inset"
                       />
                     </label>
                     <button
                       type="button"
                       onClick={() => item.value.trim() && toggleConfirm(item.id)}
                       title={item.confirmed ? 'Exclude from signed note' : 'Include in signed note'}
+                      aria-label="Include in signed note"
+                      aria-pressed={item.confirmed}
                       className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 cursor-pointer ${
-                        item.confirmed ? 'bg-[#34C759] text-white' : 'bg-black/10 text-transparent'
+                        item.confirmed ? 'bg-success-deep text-white' : 'bg-ink/10 text-transparent'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[14px]">check</span>
+                      <Icon name="check" size={14} />
                     </button>
                   </div>
                 ))}
@@ -920,22 +942,22 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           </div>
 
           {/* Bottom Actions: Sign Note & Complete */}
-          <div className="pt-4 border-t border-black/5 flex flex-col gap-2">
+          <div className="pt-4 border-t border-ink/5 flex flex-col gap-2">
             {signError && (
-              <div className="text-[11px] text-[#FF3B30] bg-[#FF3B30]/10 px-3 py-2 rounded-xl">{signError}</div>
+              <div className="text-2xs text-danger-deep bg-danger-tint px-3 py-2 rounded-xl">{signError}</div>
             )}
             {consultationCompleted ? (
-              <div className="w-full py-3 bg-[#34C759]/15 text-[#248A3D] font-bold text-center rounded-xl text-xs flex items-center justify-center gap-1.5 animate-pulse">
-                <span className="material-symbols-outlined text-[18px]">verified</span>
+              <div className="w-full py-3 bg-success-tint text-success-deep font-bold text-center rounded-xl text-xs flex items-center justify-center gap-1.5 animate-pulse">
+                <Icon name="verified" size={18} />
                 <span>SOAP Note Digitally Signed • Synchronized to ABDM Vault</span>
               </div>
             ) : (
               <button
                 onClick={handleCompleteConsultation}
                 disabled={isSigning}
-                className="disabled:opacity-60 w-full h-11 rounded-xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-apple-sm active:scale-95 cursor-pointer"
+                className="disabled:opacity-60 w-full h-11 rounded-xl bg-primary hover:bg-primary-deep text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[16px]">draw</span>
+                <Icon name="sign" size={16} />
                 <span>{isSigning ? 'Signing…' : 'Sign SOAP Note & Complete Consultation'}</span>
               </button>
             )}

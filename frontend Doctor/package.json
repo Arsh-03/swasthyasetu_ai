@@ -7,19 +7,29 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:contrast": "node scripts/check-contrast.ts"
   },
   "dependencies": {
-    "lucide-react": "^1.61.0",
+    "@fontsource/dm-mono": "^5.3.0",
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/fraunces": "^5.3.0",
+    "@fontsource/noto-sans-devanagari": "^5.3.0",
+    "@fontsource/noto-sans-kannada": "^5.3.0",
+    "@fontsource/noto-serif-devanagari": "^5.3.0",
+    "@fontsource/noto-serif-kannada": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.88.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "^8.3.4"
   }
