@@ -158,3 +158,14 @@ class AuditEvent(Base):
     outcome = Column(String(20), nullable=False)  # 'SUCCESS', 'DENIED', 'EXPIRED', 'REVOKED'
     ip_hash = Column(String(64), default="sha256:192.168.1.104")
     timestamp = Column(DateTime(timezone=True), default=utc_now)
+
+
+class ConsultationNotepad(Base):
+    """Doctor's live IntelliSense notepad draft for an encounter (saved explicitly, never per keystroke)."""
+    __tablename__ = "consultation_notepads"
+
+    encounter_id = Column(String(36), ForeignKey("encounters.encounter_id"), primary_key=True)
+    practitioner_id = Column(String(36), nullable=False)
+    content = Column(Text, default="")
+    coded_terms_json = Column(JSON, default=list)  # [{start, end, original, name, codes, category, severity, confidence}]
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

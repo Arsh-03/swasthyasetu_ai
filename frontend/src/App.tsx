@@ -6,7 +6,8 @@ import { ModernAuthView } from './components/ModernAuthView';
 import { ConsentModal } from './components/ConsentModal';
 import { AuditModal } from './components/AuditModal';
 import type { Language, UserRole, NetworkTier, HealthRecord, ConsentRequest, ClinicalNote, AuditEvent, AuthSession } from './types';
-import { authFetch, verifyCurrentSession } from './services/apiClient';
+import { authFetch, verifyCurrentSession, SESSION_EXPIRED_EVENT } from './services/apiClient';
+import { openRealtime } from './services/realtime';
 
 // Default Baseline Records for Demo
 const INITIAL_RECORDS: HealthRecord[] = [
@@ -125,13 +126,7 @@ export const App: React.FC = () => {
   }, [currentRole]);
 
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws/telehealth`);
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
+    const closeRealtime = openRealtime((msg) => {
           if (msg.type === 'ABHA_LINK_REQUEST') {
             // ONLY patient accounts should receive incoming consent link requests!
             if (currentRole === 'patient') {
@@ -145,9 +140,7 @@ export const App: React.FC = () => {
           } else if (msg.type === 'PATIENT_HISTORY_UPDATED') {
             fetchAuditLogs();
           }
-        } catch {}
-      };
-    } catch {}
+    });
 
     // Polling fallback to check pending consent requests ONLY for patient
     const pollPending = async () => {
@@ -176,7 +169,7 @@ export const App: React.FC = () => {
     const interval = setInterval(pollPending, 4000);
 
     return () => {
-      if (socket) socket.close();
+      closeRealtime();
       clearInterval(interval);
     };
   }, [isConsentModalOpen, currentRole]);
@@ -250,6 +243,16 @@ export const App: React.FC = () => {
     setIsAuthView(true);
   };
 
+  // Rejected login token (expired or server key changed): back to the login screen.
+  useEffect(() => {
+    const onExpired = () => {
+      if (!localStorage.getItem('carebridge_session')) return;
+      handleSignOut();
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, []);
+
   // Doctor initiates consent request
   const handleRequestConsent = async (recordId: string, purpose: string, durationMinutes: number) => {
     try {
@@ -321,7 +324,7 @@ export const App: React.FC = () => {
     } catch {}
   };
 
-  // Accept notification from banner -> opens Consent Form with OTP verification
+  // Accept notification from banner -> opens the consent form (one-click allow / decline)
   const handleAcceptIncomingNotification = () => {
     if (!incomingLinkNotification) return;
     setActiveConsentId(incomingLinkNotification.consent_id);
@@ -342,38 +345,27 @@ export const App: React.FC = () => {
     setIsConsentModalOpen(true);
   };
 
-  // Patient responds to consent request with OTP verification
-  const handleConsentDecision = async (approved: boolean, otpCode?: string) => {
+  // Patient allows or declines with one click: they are already signed in, so no OTP is needed.
+  // The server only accepts the decision from the patient the request was sent to.
+  const handleConsentDecision = async (approved: boolean) => {
     setIsConsentModalOpen(false);
 
     if (activeConsentId) {
       try {
-        let res: Response;
-        if (approved && otpCode) {
-          res = await authFetch(`/api/v1/consents/${activeConsentId}/verify-otp-and-grant`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              otp_code: otpCode,
-              decided_by_role: isRepresentative ? 'representative' : 'patient'
-            })
-          });
-        } else {
-          res = await authFetch(`/api/v1/consents/${activeConsentId}/decision`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              approved,
-              decided_by_role: isRepresentative ? 'representative' : 'patient'
-            })
-          });
-        }
+        const res = await authFetch(`/api/v1/consents/${activeConsentId}/decision`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            approved,
+            decided_by_role: isRepresentative ? 'representative' : 'patient'
+          })
+        });
 
         if (res.ok) {
           const result = await res.json();
           if (approved && result.grant_token) {
             setActiveConsentToken(result.grant_token);
-            alert("✅ Purpose-Bound Consent Verified with OTP!\nSingle-use HMAC token issued in vault under DPDP Act 2023. Doctor granted access to your ABHA health record & medical history.");
+            alert("✅ Access allowed for 60 minutes.\nThe doctor can now see your ABHA health record & medical history. You can withdraw access at any time.");
           } else {
             setActiveConsentToken(null);
             alert("❌ Consent Declined: Access strictly blocked to doctor under DPDP Act 2023.");
@@ -557,7 +549,7 @@ export const App: React.FC = () => {
               }}
               onClick={handleAcceptIncomingNotification}
             >
-              ✓ Accept & Review OTP
+              ✓ Review request
             </button>
           </div>
         </div>

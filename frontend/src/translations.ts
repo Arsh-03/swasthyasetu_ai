@@ -58,6 +58,8 @@ export interface TranslationDict {
   scopeLabel: string;
   dpdpDisclaimer: string;
   declineBtn: string;
+  consentOneTap: string;
+  allowAccessBtn: string;
   approveBtn: string;
 
   // Discharge Plan
@@ -133,6 +135,8 @@ export const translations: Record<'en' | 'kn' | 'hi', TranslationDict> = {
     scopeLabel: "ವ್ಯಾಪ್ತಿ:",
     dpdpDisclaimer: "* ಭಾರತ ಸರ್ಕಾರದ DPDP ಕಾಯ್ದೆ 2023 ಅಡಿಯಲ್ಲಿ, ನೀವು ಯಾವುದೇ ಕ್ಷಣದಲ್ಲಿ ಈ ಅನುಮತಿಯನ್ನು ಹಿಂಪಡೆಯಬಹುದು.",
     declineBtn: "❌ ತಿರಸ್ಕರಿಸಿ",
+    consentOneTap: "ನೀವು ನಿಮ್ಮ ABHA ಖಾತೆಯಿಂದ ಲಾಗಿನ್ ಆಗಿದ್ದೀರಿ, ಆದ್ದರಿಂದ ಒಂದು ಟ್ಯಾಪ್ ಸಾಕು. \"ಅನುಮತಿಸಿ\" ಒತ್ತಿದರೆ ಈ ವೈದ್ಯರಿಗೆ 60 ನಿಮಿಷಗಳ ಕಾಲ ಮಾತ್ರ ಪ್ರವೇಶ ಸಿಗುತ್ತದೆ; ನೀವು ಯಾವಾಗ ಬೇಕಾದರೂ ಅದನ್ನು ಹಿಂಪಡೆಯಬಹುದು. \"ತಿರಸ್ಕರಿಸಿ\" ಒತ್ತಿದರೆ ನಿಮ್ಮ ದಾಖಲೆಗಳು ಖಾಸಗಿಯಾಗಿಯೇ ಇರುತ್ತವೆ.",
+    allowAccessBtn: "✓ ಅನುಮತಿಸಿ",
     approveBtn: "✅ ಅನುಮೋದಿಸಿ",
 
     dischargeTitle: "ವೈದ್ಯರ ಸಲಹಾ ಪತ್ರ ಮತ್ತು ಚಿಕಿತ್ಸಾ ಯೋಜನೆ",
@@ -205,6 +209,8 @@ export const translations: Record<'en' | 'kn' | 'hi', TranslationDict> = {
     scopeLabel: "दायरा:",
     dpdpDisclaimer: "* DPDP अधिनियम 2023 के तहत, आप किसी भी समय इस अनुमति को तुरंत वापस ले सकते हैं।",
     declineBtn: "❌ अस्वीकार करें",
+    consentOneTap: "आप अपने ABHA खाते से लॉग इन हैं, इसलिए एक टैप काफ़ी है। \"अनुमति दें\" दबाने पर इस डॉक्टर को केवल 60 मिनट के लिए पहुँच मिलेगी; आप इसे कभी भी वापस ले सकते हैं। \"अस्वीकार करें\" दबाने पर आपके रिकॉर्ड निजी रहेंगे।",
+    allowAccessBtn: "✓ अनुमति दें",
     approveBtn: "✅ स्वीकार करें",
 
     dischargeTitle: "डिस्चार्ज सारांश एवं उपचार योजना",
@@ -277,6 +283,8 @@ export const translations: Record<'en' | 'kn' | 'hi', TranslationDict> = {
     scopeLabel: "Access Scope:",
     dpdpDisclaimer: "* Under the Digital Personal Data Protection (DPDP) Act 2023, you retain the legal right to revoke this consent at any time.",
     declineBtn: "❌ Decline Access",
+    consentOneTap: "You are signed in with your ABHA account, so one tap is enough. \"Allow access\" lets this doctor see your records for 60 minutes only; you can withdraw it at any time. \"Decline\" keeps your records private.",
+    allowAccessBtn: "✓ Allow access",
     approveBtn: "✅ Grant Purpose Access",
 
     dischargeTitle: "Discharge Summary & Care Plan",

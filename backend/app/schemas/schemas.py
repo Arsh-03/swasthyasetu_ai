@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Literal, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
 class UserOut(BaseModel):
@@ -113,11 +113,6 @@ class LinkPatientRequestIn(BaseModel):
     duration_minutes: int = 60
     scopes: List[str] = ["demographics", "medical_history", "diagnostic_records"]
 
-class ConsentOtpVerifyIn(BaseModel):
-    otp_code: str
-    decided_by_role: str = "patient"
-    representative_notes: Optional[str] = None
-
 class DoctorUpdateHistoryIn(BaseModel):
     new_conditions: List[str] = []
     prescribed_medications: List[str] = []
@@ -193,3 +188,37 @@ class AuditEventOut(BaseModel):
     resource_id: str
     outcome: str
     timestamp: datetime
+
+
+# ---------------------------------------------------------------------------
+# AI IntelliSense notepad
+# ---------------------------------------------------------------------------
+class TerminologyCode(BaseModel):
+    system: Literal["SNOMED_CT", "ICD_10", "ICD_11", "LOINC", "RxNorm", "CDCI"]
+    code: str
+    display: str = ""
+
+class CodedTerm(BaseModel):
+    start: int
+    end: int
+    original: str
+    name: str
+    codes: List[TerminologyCode] = []
+    category: str = ""
+    severity: Literal["routine", "critical"] = "routine"
+    confidence: float = 1.0
+
+class IntelliSenseAnalyzeIn(BaseModel):
+    text: str = Field(max_length=20000)
+    cursor: int = 0
+    skip_ranges: List[List[int]] = []
+    encounter_id: Optional[str] = None  # when set, medication safety checks use this patient's record
+
+class NotepadSaveIn(BaseModel):
+    content: str = Field(max_length=20000)
+    coded_terms: List[CodedTerm] = []
+
+class IntelliSenseCompleteIn(BaseModel):
+    encounter_id: str
+    text: str = Field(max_length=20000)
+    cursor: int = 0

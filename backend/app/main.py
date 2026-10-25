@@ -1,19 +1,24 @@
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import List, Dict
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.seed_data import seed_database
-from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate
+from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, intellisense, terminology, calls
 from app.services.connection_manager import ws_manager
+from app.services.auth_dependencies import decode_access_token
+from app.services.llm_completion import completion_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Seed database
     await seed_database()
+    await completion_service.start()  # Tier 3 health checks (no-op when disabled)
     yield
     # Shutdown
+    await completion_service.stop()
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -41,24 +46,40 @@ app.include_router(scribe.router, prefix=settings.API_V1_STR)
 app.include_router(fhir.router, prefix=settings.API_V1_STR)
 app.include_router(audit.router, prefix=settings.API_V1_STR)
 app.include_router(translate.router, prefix=settings.API_V1_STR)
+app.include_router(intellisense.router, prefix=settings.API_V1_STR)
+app.include_router(terminology.router, prefix=settings.API_V1_STR)
+app.include_router(calls.router, prefix=settings.API_V1_STR)
+app.include_router(calls.ws_router)
+app.include_router(intellisense.ws_router)
 
 @app.websocket("/ws/telehealth")
-async def telehealth_signaling_ws(websocket: WebSocket):
+async def telehealth_notifications_ws(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time WebRTC media signaling and consent notifications.
+    Real-time notifications for the signed-in user (consent requests and decisions, history updates).
+    First frame must be {"type": "AUTH", "token": ...}. Listen-only: messages from clients are ignored,
+    so nobody can push events to other users.
     """
-    await ws_manager.connect(websocket)
+    await websocket.accept()
+    try:
+        first = await asyncio.wait_for(websocket.receive_json(), timeout=5)
+        token = first.get("token", "") if isinstance(first, dict) and first.get("type") == "AUTH" else ""
+        claims = decode_access_token(token) if token else None
+    except WebSocketDisconnect:
+        return
+    except (asyncio.TimeoutError, HTTPException, ValueError):
+        claims = None
+    user_id = (claims or {}).get("sub")
+    if not user_id:
+        await websocket.close(code=4401)
+        return
+    ws_manager.add(user_id, websocket)
     try:
         while True:
-            data_text = await websocket.receive_text()
-            try:
-                data = json.loads(data_text)
-                # Broadcast signaling frames (offer, answer, candidate, consent_event, network_tier)
-                await ws_manager.broadcast(data)
-            except json.JSONDecodeError:
-                pass
+            await websocket.receive_text()          # ignored (keep-alive only)
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        pass
+    finally:
+        ws_manager.remove(user_id, websocket)
 
 @app.get("/health")
 async def health_check():

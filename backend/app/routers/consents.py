@@ -8,7 +8,7 @@ from app.database import get_db
 from app.models.models import Consent, RecordMetadata, AuditEvent, Encounter, PatientProfile, Practitioner, User
 from app.schemas.schemas import (
     ConsentRequestIn, ConsentDecisionIn, ConsentOut, AuditEventOut,
-    LinkPatientRequestIn, ConsentOtpVerifyIn
+    LinkPatientRequestIn
 )
 from app.services.token_vault import token_vault
 from app.services.connection_manager import ws_manager
@@ -124,7 +124,7 @@ async def link_patient_request(
         "phone_masked": f"+91 {user.phone_number[:5]} •••••" if user.phone_number and len(user.phone_number) >= 5 else "•••• 1234",
         "requested_at": datetime.now(timezone.utc).isoformat()
     }
-    await ws_manager.broadcast(notification_payload)
+    await ws_manager.send_to([profile.patient_id], notification_payload)     # only the patient asked
 
     return {
         "success": True,
@@ -140,75 +140,6 @@ async def link_patient_request(
         "status": "requested"
     }
 
-@router.post("/{consent_id}/verify-otp-and-grant")
-async def verify_otp_and_grant_consent(
-    consent_id: str,
-    req: ConsentOtpVerifyIn,
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Patient submits OTP to cryptographically sign the ABDM consent artifact.
-    Validates OTP, issues single-use HMAC token, and notifies Doctor in real-time.
-    """
-    clean_otp = req.otp_code.strip()
-    if len(clean_otp) < 4:
-        raise HTTPException(status_code=400, detail="Please enter a valid OTP code (min 4-6 digits).")
-
-    query = select(Consent).where(Consent.consent_id == consent_id)
-    res = await db.execute(query)
-    consent = res.scalar_one_or_none()
-    if not consent:
-        raise HTTPException(status_code=404, detail="Consent request not found")
-
-    # Issue HMAC grant token in vault
-    token_info = token_vault.create_grant_token(
-        consent_id=consent.consent_id,
-        practitioner_id=consent.practitioner_id,
-        patient_id=consent.patient_id,
-        record_id=consent.record_id,
-        purpose=consent.purpose,
-        duration_seconds=3600
-    )
-    grant_token_hash = token_info["token"]
-
-    consent.status = "approved"
-    consent.grant_token_hash = grant_token_hash
-
-    audit = AuditEvent(
-        actor_id=consent.patient_id,
-        action="ABHA_CONSENT_APPROVED_OTP_VERIFIED",
-        resource_id=consent.consent_id,
-        outcome="SUCCESS"
-    )
-    db.add(audit)
-    await db.commit()
-
-    # Fetch patient profile details to send back to Doctor in real time
-    p_res = await db.execute(select(PatientProfile).where(PatientProfile.patient_id == consent.patient_id))
-    profile = p_res.scalar_one_or_none()
-
-    # Broadcast approval to Doctor over WebSocket
-    approval_broadcast = {
-        "type": "ABHA_LINK_APPROVED",
-        "consent_id": consent.consent_id,
-        "patient_id": consent.patient_id,
-        "patient_name": profile.full_name if profile else "Verified Patient",
-        "abha_address": profile.abha_address if profile else "",
-        "grant_token": grant_token_hash,
-        "demographics": profile.demographics_json if profile else {},
-        "status": "approved"
-    }
-    await ws_manager.broadcast(approval_broadcast)
-
-    return {
-        "success": True,
-        "message": "Consent successfully signed with OTP and HMAC token provisioned in vault.",
-        "consent_id": consent.consent_id,
-        "status": "approved",
-        "grant_token": grant_token_hash,
-        "patient_id": consent.patient_id
-    }
-
 @router.get("/pending-for-patient")
 async def get_pending_consents_for_patient(
     patient_id: Optional[str] = None,
@@ -219,12 +150,12 @@ async def get_pending_consents_for_patient(
     Returns pending consent requests ONLY for the specified or authenticated patient.
     If called by a doctor without patient_id, returns empty list.
     """
-    target_patient_id = patient_id
-    if not target_patient_id and current_user:
-        if current_user.get("role") in ["patient", "representative"]:
-            target_patient_id = current_user.get("user_id")
-        else:
-            return []
+    # Only the signed-in patient's own requests (the patient_id parameter can't be used to read others').
+    if not current_user or current_user.get("role") not in ["patient", "representative"]:
+        return []
+    target_patient_id = current_user.get("user_id")
+    if patient_id and patient_id != target_patient_id:
+        return []
 
     if not target_patient_id:
         return []
@@ -326,14 +257,18 @@ async def decide_consent(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Patient (or authorised representative) approves or declines doctor's request.
+    Patient (or authorised representative) approves or declines doctor's request with one click.
+    The patient already proved who they are at login, so no OTP is asked here; the server only
+    accepts the decision from the logged-in patient the request was sent to, and only once.
     If approved, generates HMAC-SHA256 single-purpose grant token in Ephemeral Vault.
     """
     query = select(Consent).where(Consent.consent_id == consent_id)
     res = await db.execute(query)
     consent = res.scalar_one_or_none()
-    if not consent:
+    if not consent or consent.patient_id != current_patient["user_id"]:
         raise HTTPException(status_code=404, detail="Consent request not found")
+    if consent.status != "requested":
+        raise HTTPException(status_code=409, detail=f"This request was already {consent.status}.")
 
     grant_token_hash = None
     if decision.approved:
@@ -367,8 +302,22 @@ async def decide_consent(
     await db.commit()
     await db.refresh(consent)
 
-    if not decision.approved:
-        await ws_manager.broadcast({
+    if decision.approved:
+        profile = (await db.execute(
+            select(PatientProfile).where(PatientProfile.patient_id == consent.patient_id))).scalar_one_or_none()
+        await ws_manager.send_to([consent.practitioner_id], {              # only the doctor who asked
+            "type": "ABHA_LINK_APPROVED",
+            "consent_id": consent.consent_id,
+            "encounter_id": consent.encounter_id,
+            "patient_id": consent.patient_id,
+            "patient_name": profile.full_name if profile else "Verified Patient",
+            "abha_address": profile.abha_address if profile else "",
+            "grant_token": grant_token_hash,
+            "demographics": profile.demographics_json if profile else {},
+            "status": "approved"
+        })
+    else:
+        await ws_manager.send_to([consent.practitioner_id], {
             "type": "ABHA_LINK_REJECTED",
             "consent_id": consent.consent_id,
             "patient_id": consent.patient_id,
@@ -402,7 +351,7 @@ async def revoke_consent(
     query = select(Consent).where(Consent.consent_id == consent_id)
     res = await db.execute(query)
     consent = res.scalar_one_or_none()
-    if not consent:
+    if not consent or consent.patient_id != current_patient["user_id"]:
         raise HTTPException(status_code=404, detail="Consent not found")
 
     consent.status = "revoked"
@@ -428,7 +377,7 @@ async def get_consent_status(
     query = select(Consent).where(Consent.consent_id == consent_id)
     res = await db.execute(query)
     consent = res.scalar_one_or_none()
-    if not consent:
+    if not consent or current_user.get("user_id") not in (consent.patient_id, consent.practitioner_id):
         raise HTTPException(status_code=404, detail="Consent not found")
 
     token_check = None

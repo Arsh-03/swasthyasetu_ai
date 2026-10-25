@@ -159,45 +159,58 @@ swasthyasetu_ai/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Python 3.12+**
+- **Python 3.11+** (the backend uses `asyncio.timeout`)
 - **Node.js 20+** and **npm**
 
 ---
 
-### 1. Backend Setup
+### Quick start (recommended)
 
-```bash
-# Navigate to the backend directory
-cd backend
+One command sets everything up and starts both servers. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the frontend packages, creates `.env` with a random `SECRET_KEY`, and starts the backend (port 8000) and frontend (port 5173).
 
-# Create and activate a Python virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start the FastAPI development server
-uvicorn app.main:app --reload --port 8000
+**Windows:** double-click `start.bat`, or in PowerShell:
+```powershell
+.\start.ps1                # set up if needed, then start (opens the browser)
+.\start.ps1 -SetupData     # first time: also download + import ICD-11, RxNorm and DDInter (~95 MB)
+.\stop.ps1                 # stop both servers
 ```
 
-The backend server will start at **`http://localhost:8000`**.  
-Interactive Swagger API documentation is available at **`http://localhost:8000/docs`**.
+**macOS / Linux:**
+```bash
+./start.sh                 # Ctrl+C stops both servers
+./start.sh --setup-data    # first time: also download + import the clinical datasets
+```
+
+Later runs skip the installs and only reinstall when `backend/requirements.txt` or `frontend/package-lock.json` change (`-Reinstall` / `--reinstall` rebuilds the virtual environment).
+
+**Clinical datasets:** `backend/data/terminology.db` is not in git, so each machine builds it once with `-SetupData`. The free datasets (WHO ICD-11/ICD-10, NLM RxNorm, DDInter 2.0) download automatically. SNOMED CT, LOINC and CDCI need accounts; see [docs/08_standards_integration](docs/08_standards_integration/). DDInter is CC BY-NC-SA 4.0 (non-commercial use only).
+
+To run backend commands yourself, use the environment's Python: `backend\.venv\Scripts\python.exe` on Windows, `backend/.venv/bin/python` on macOS/Linux (for example `python -m app.terminology status` from the `backend` folder).
 
 ---
 
-### 2. Frontend Setup
+### Manual setup
+
+#### Backend
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scriptsctivate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000 --timeout-graceful-shutdown 3
+```
+
+The backend server will start at **`http://localhost:8000`**.
+Interactive Swagger API documentation is available at **`http://localhost:8000/docs`**.
+
+#### Frontend
 
 In a new terminal window:
 
 ```bash
-# Navigate to the frontend directory
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start the Vite development server
 npm run dev
 ```
 

@@ -4,10 +4,15 @@ import { translations } from '../translations';
 import { dynamicTranslator } from '../services/translator';
 import { authFetch } from '../services/apiClient';
 import { AddMedicalRecordModal } from './AddMedicalRecordModal';
+import { CallPanel } from './call/CallPanel';
+import { CallWindow } from './call/CallWindow';
+import { IncomingCallCard, RecordingConsentDialog } from './call/CallOverlays';
+import { useConsultationCall } from '../services/call/useConsultationCall';
+import { openRealtime } from '../services/realtime';
 import {
-  Mic, MicOff, Video, VideoOff, PhoneOff, Volume2, Shield, Lock, Unlock,
-  FileCheck, Send, UserCheck, ShieldAlert, Clock, Pill, Sparkles,
-  FilePlus, Heart, Plus, Activity, CheckCircle, PhoneCall
+  Video, Volume2, Shield, Lock, Unlock,
+  FileCheck, UserCheck, ShieldAlert, Clock, Pill, Sparkles,
+  FilePlus, Heart, Plus
 } from 'lucide-react';
 
 interface PatientPortalProps {
@@ -31,8 +36,6 @@ type PatientTab = 'consultation' | 'records' | 'prescriptions' | 'profile';
 
 export const PatientPortal: React.FC<PatientPortalProps> = ({
   language,
-  networkTier,
-  onNetworkTierChange,
   records,
   activeConsentToken,
   onSimulateDoctorRequest,
@@ -48,38 +51,25 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   const t = translations[language];
   const [activeTab, setActiveTab] = useState<PatientTab>('consultation');
 
-  // Video Consultation Session States
-  const [isCallActive, setIsCallActive] = useState(false);
-  const [isIncomingCall, setIsIncomingCall] = useState(false);
-  const [callDuration, setCallDuration] = useState(0);
-  const [callNotice, setCallNotice] = useState<string | null>(null);
-
+  // The patient's current consultation, so the doctor's video call (and consent requests) can reach them.
+  const [callRoom, setCallRoom] = useState<{ encounter_id: string; doctor_name: string } | null>(null);
   useEffect(() => {
-    let interval: any = null;
-    if (isCallActive) {
-      interval = setInterval(() => {
-        setCallDuration(prev => prev + 1);
-      }, 1000);
-    } else {
-      setCallDuration(0);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isCallActive]);
+    if (!session?.token || session.role !== 'patient') return;
+    let active = true;
+    authFetch('/api/v1/calls/active-encounter')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (active && d?.encounter_id) setCallRoom(d); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [session?.token, session?.role]);
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
+  const call = useConsultationCall({
+    role: 'patient',
+    encounterId: callRoom?.encounter_id ?? null,
+    peerName: callRoom?.doctor_name || 'your doctor',
+  });
+  const inCall = call.callState === 'calling' || call.callState === 'in_call';
 
-  const [isMicMuted, setIsMicMuted] = useState(false);
-  const [isCamOff, setIsCamOff] = useState(false);
-  const [asyncChatInput, setAsyncChatInput] = useState('');
-  const [asyncMessages, setAsyncMessages] = useState<string[]>([
-    "Initial symptom note: Flank pain radiating to right lower abdomen for 3 days."
-  ]);
   const [followupResponse, setFollowupResponse] = useState<string | null>(null);
 
   // Dynamic Profile & Medical History State
@@ -102,25 +92,9 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
   }, [session]);
 
   // Real-time WebSocket listener for medical history updates from Doctor
-  useEffect(() => {
-    let socket: WebSocket | null = null;
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws/telehealth`);
-      socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'PATIENT_HISTORY_UPDATED') {
-            fetchProfile();
-          }
-        } catch {}
-      };
-    } catch {}
-
-    return () => {
-      if (socket) socket.close();
-    };
-  }, []);
+  useEffect(() => openRealtime((msg) => {
+    if (msg.type === 'PATIENT_HISTORY_UPDATED') fetchProfile();
+  }), []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived patient identifiers
   const displayName = patientProfile?.full_name || session?.name || "Ramesh Gowda (ರಮೇಶ್ ಗೌಡ)";
@@ -170,12 +144,6 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
     return () => { isMounted = false; };
   }, [language, signedNote]);
 
-  const handleSendAsync = () => {
-    if (!asyncChatInput.trim()) return;
-    setAsyncMessages(prev => [...prev, asyncChatInput.trim()]);
-    setAsyncChatInput('');
-  };
-
   return (
     <div className="portal-container-theme">
       {/* Top Hero Card matching Login Aesthetic */}
@@ -221,9 +189,9 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
         >
           <Video size={16} />
           <span>{t.tabConsultation}</span>
-          {isCallActive ? (
+          {inCall ? (
             <span className="tab-pill-badge" style={{ background: '#ef4444', color: '#ffffff' }}>Active Call</span>
-          ) : isIncomingCall ? (
+          ) : call.callState === 'incoming' ? (
             <span className="tab-pill-badge" style={{ background: '#10b981', color: '#ffffff' }}>Ringing...</span>
           ) : (
             <span className="tab-pill-dot green"></span>
@@ -260,482 +228,35 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: LIVE CONSULTATION ROOM */}
+      {/* TAB 1: LIVE CONSULTATION (real call with the doctor) */}
       {activeTab === 'consultation' && (
         <div className="portal-tab-content">
           <div className="cb-card portal-card-elevated">
-            {!isCallActive ? (
-              /* ========================================================================= */
-              /* STATE A: TELE-CONSULTATION WAITING ROOM / LOBBY (CALL NOT OPEN YET)     */
-              /* ========================================================================= */
-              <>
-                <div className="cb-card-header">
-                  <div className="cb-card-title">
-                    <Video size={20} color="#5568d7" />
-                    <span>Tele-Consultation Room</span>
-                  </div>
-                  <span className="audit-pill" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                    <Shield size={12} style={{ display: 'inline', marginRight: 4 }} />
-                    ABDM Telemedicine Practice Guidelines (TPG 2020) Compliant
-                  </span>
-                </div>
-
-                {/* Dismissible Post-Call Notice */}
-                {callNotice && (
-                  <div style={{
-                    margin: '16px 20px 0 20px',
-                    padding: '12px 16px',
-                    background: '#f0fdf4',
-                    border: '1px solid #86efac',
-                    borderRadius: 10,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    color: '#15803d',
-                    fontSize: '0.88rem'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CheckCircle size={16} />
-                      <span>{callNotice}</span>
-                    </div>
-                    <button
-                      type="button"
-                      style={{ background: 'none', border: 'none', color: '#15803d', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem' }}
-                      onClick={() => setCallNotice(null)}
-                    >
-                      ✕ Dismiss
-                    </button>
-                  </div>
-                )}
-
-                {/* INCOMING CALL RINGING CARD */}
-                {isIncomingCall && (
-                  <div className="incoming-call-banner">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      <div className="ringing-phone-icon">
-                        📞
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: '0.72rem', background: '#047857', padding: '2px 8px', borderRadius: 999, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                            Incoming Video Call
-                          </span>
-                          <span style={{ fontSize: '0.75rem', color: '#a7f3d0' }}>Ringing...</span>
-                        </div>
-                        <div style={{ fontWeight: 800, fontSize: '1.15rem', marginTop: 4 }}>
-                          Dr. Ananya Sharma (MD)
-                        </div>
-                        <div style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
-                          Primary Health Center Encounter #ENC-9481 · General Medicine
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{
-                          borderColor: '#f87171',
-                          color: '#fca5a5',
-                          padding: '10px 18px',
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          borderRadius: 10
-                        }}
-                        onClick={() => setIsIncomingCall(false)}
-                      >
-                        ✕ Decline
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        style={{
-                          background: 'linear-gradient(135deg, #10b981, #059669)',
-                          padding: '10px 22px',
-                          fontSize: '0.95rem',
-                          fontWeight: 700,
-                          borderRadius: 10,
-                          boxShadow: '0 4px 14px rgba(16, 185, 129, 0.5)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8
-                        }}
-                        onClick={() => {
-                          setIsCallActive(true);
-                          setIsIncomingCall(false);
-                          setCallNotice(null);
-                        }}
-                      >
-                        <Video size={18} />
-                        <span>Accept Video Call</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* LOBBY CONTENT / READY ROOM */}
-                <div style={{ padding: '24px 24px 32px 24px' }}>
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                    gap: 20,
-                    marginBottom: 24
-                  }}>
-                    {/* Doctor Card */}
-                    <div style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 14,
-                      padding: 20
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-                        <div style={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: '50%',
-                          background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '1.8rem',
-                          boxShadow: '0 4px 12px rgba(99, 102, 241, 0.25)'
-                        }}>
-                          👩‍⚕️
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontWeight: 800, fontSize: '1.05rem', color: '#0f172a' }}>
-                              Dr. Ananya Sharma (MD)
-                            </span>
-                            <CheckCircle size={15} color="#16a34a" />
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
-                            NMC Medical Registration: #581920
-                          </div>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4, background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700 }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
-                            Online & Ready for Consultation
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ fontSize: '0.83rem', color: '#475569', lineHeight: 1.6, borderTop: '1px solid #e2e8f0', paddingTop: 12 }}>
-                        <div><strong>Specialty:</strong> General Medicine & Telehealth</div>
-                        <div><strong>Encounter:</strong> Primary Health Center #ENC-9481</div>
-                        <div><strong>Facility:</strong> Hassan District Tele-Care Hub</div>
-                      </div>
-                    </div>
-
-                    {/* Pre-Call Checklist Card */}
-                    <div style={{
-                      background: '#f8fafc',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 14,
-                      padding: 20
-                    }}>
-                      <h4 style={{ margin: '0 0 12px 0', fontSize: '0.92rem', fontWeight: 700, color: '#1e293b' }}>
-                        Telehealth Session Readiness
-                      </h4>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: '0.83rem', color: '#334155' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: '#16a34a', fontWeight: 800 }}>✓</span>
-                          <span>Camera & Microphone devices ready</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: '#16a34a', fontWeight: 800 }}>✓</span>
-                          <span>256-bit AES End-to-End Encrypted WebRTC channel</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: '#16a34a', fontWeight: 800 }}>✓</span>
-                          <span>ABDM Digital Consent & Session Token verified</span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ color: '#16a34a', fontWeight: 800 }}>✓</span>
-                          <span>Adaptive stream ready (HD video, audio, or store & forward)</span>
-                        </div>
-                      </div>
-
-                      <div style={{
-                        marginTop: 14,
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        background: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        color: '#1e40af',
-                        fontSize: '0.78rem'
-                      }}>
-                        💡 The video call only opens when you start or accept a call. Network quality can be tuned directly in the call screen.
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Lobby Action Controls */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 16,
-                    flexWrap: 'wrap',
-                    paddingTop: 12,
-                    borderTop: '1px solid #f1f5f9'
-                  }}>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      style={{
-                        background: 'linear-gradient(135deg, #4f46e5, #4338ca)',
-                        padding: '13px 26px',
-                        fontSize: '0.96rem',
-                        fontWeight: 700,
-                        borderRadius: 12,
-                        boxShadow: '0 6px 20px rgba(79, 70, 229, 0.35)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10
-                      }}
-                      onClick={() => {
-                        setIsCallActive(true);
-                        setCallNotice(null);
-                      }}
-                    >
-                      <Video size={19} />
-                      <span>Start Video Consultation</span>
-                    </button>
-
-                    {!isIncomingCall && (
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{
-                          borderColor: '#cbd5e1',
-                          padding: '13px 20px',
-                          fontSize: '0.88rem',
-                          borderRadius: 12,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          color: '#475569'
-                        }}
-                        onClick={() => setIsIncomingCall(true)}
-                        title="Simulate doctor calling to test incoming call flow"
-                      >
-                        <PhoneCall size={16} />
-                        <span>Simulate Doctor Calling</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </>
-            ) : (
-              /* ========================================================================= */
-              /* STATE B: ACTIVE VIDEO CALL INTERFACE (OPEN ONLY WHEN CALLING / ACCEPTED)  */
-              /* ========================================================================= */
-              <>
-                <div className="cb-card-header" style={{ flexWrap: 'wrap', gap: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div className="cb-card-title">
-                      <Video size={20} color="#5568d7" />
-                      <span>{t.liveConsultationWith}</span>
-                    </div>
-                    {/* Live Duration Indicator */}
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      background: 'rgba(239, 68, 68, 0.1)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      color: '#ef4444',
-                      padding: '3px 10px',
-                      borderRadius: 999,
-                      fontSize: '0.78rem',
-                      fontWeight: 700
-                    }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1s infinite' }} />
-                      <span>LIVE {formatDuration(callDuration)}</span>
-                    </div>
-                  </div>
-
-                  {/* NETWORK SPEED & BANDWIDTH SELECTOR ON THE CALL INTERFACE */}
-                  <div className="call-speed-controller" title="Network Connection Speed & Quality (Telehealth Stream Engine)">
-                    <Activity size={15} color={networkTier === 'good' ? '#16a34a' : networkTier === 'weak' ? '#d97706' : '#dc2626'} />
-                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#334155' }}>
-                      Speed:
-                    </span>
-                    <select
-                      className="call-speed-select"
-                      value={networkTier}
-                      onChange={(e) => onNetworkTierChange?.(e.target.value as NetworkTier)}
-                      style={{
-                        color: networkTier === 'good' ? '#15803d' : networkTier === 'weak' ? '#b45309' : '#b91c1c'
-                      }}
-                    >
-                      <option value="good">🟢 HD Video (450 kbps)</option>
-                      <option value="weak">🟡 Audio Only (50 kbps)</option>
-                      <option value="bad">🔴 Store & Forward (5 kbps)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="telehealth-viewport">
-                  {/* TIER 1: HD Video */}
-                  {networkTier === 'good' && (
-                    <div className="video-stream-box">
-                      <div style={{
-                        width: 96,
-                        height: 96,
-                        borderRadius: '50%',
-                        background: 'linear-gradient(135deg, #5568d7 0%, #0d9488 100%)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '2.6rem',
-                        boxShadow: '0 8px 24px rgba(85, 104, 215, 0.35)',
-                        marginBottom: 12
-                      }}>
-                        👩‍⚕️
-                      </div>
-                      <div style={{ fontWeight: 800, fontSize: '1.15rem' }}>Dr. Ananya Sharma (MD)</div>
-                      <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: 3 }}>
-                        NMC Medical Registration: #581920 (Verified General Physician)
-                      </div>
-                      <div style={{
-                        marginTop: 10,
-                        background: 'rgba(22, 163, 74, 0.2)',
-                        color: '#4ade80',
-                        padding: '4px 12px',
-                        borderRadius: 999,
-                        fontSize: '0.75rem',
-                        fontWeight: 700
-                      }}>
-                        ● 720p HD Full Duplex Video Stream Active (450 kbps)
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TIER 2: Audio Priority */}
-                  {networkTier === 'weak' && (
-                    <div className="video-stream-box" style={{ background: '#090d16' }}>
-                      <div style={{ fontSize: '2.5rem', marginBottom: 6 }}>🎙️</div>
-                      <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#fbbf24' }}>
-                        {t.audioOnlyTitle}
-                      </div>
-                      <p style={{ fontSize: '0.82rem', color: '#94a3b8', maxWidth: 380, marginTop: 4 }}>
-                        {t.audioOnlySub}
-                      </p>
-                      <div className="audio-visualizer-bars" style={{ marginTop: 14 }}>
-                        <div className="audio-bar" />
-                        <div className="audio-bar" />
-                        <div className="audio-bar" />
-                        <div className="audio-bar" />
-                        <div className="audio-bar" />
-                        <div className="audio-bar" />
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: '#f59e0b', marginTop: 10 }}>
-                        50 kbps Voice Adaptive Bandwidth Mode
-                      </div>
-                    </div>
-                  )}
-
-                  {/* TIER 3: Store & Forward Async */}
-                  {networkTier === 'bad' && (
-                    <div className="video-stream-box" style={{ background: '#111827', padding: 20 }}>
-                      <div style={{ color: '#f87171', fontWeight: 800, fontSize: '1rem' }}>
-                        ⚠️ {t.storeAndForwardTitle}
-                      </div>
-                      <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 4, marginBottom: 12 }}>
-                        {t.storeAndForwardSub}
-                      </p>
-
-                      <div style={{
-                        width: '100%',
-                        background: '#1f2937',
-                        borderRadius: 10,
-                        padding: 12,
-                        maxHeight: 120,
-                        overflowY: 'auto',
-                        fontSize: '0.82rem',
-                        textAlign: 'left',
-                        marginBottom: 12
-                      }}>
-                        {asyncMessages.map((msg, idx) => (
-                          <div key={idx} style={{ marginBottom: 6, color: '#e5e7eb' }}>
-                            <strong>You:</strong> {msg}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-                        <input
-                          type="text"
-                          value={asyncChatInput}
-                          onChange={(e) => setAsyncChatInput(e.target.value)}
-                          placeholder={t.msgPlaceholder}
-                          style={{
-                            flex: 1,
-                            padding: '10px 14px',
-                            borderRadius: 8,
-                            border: '1px solid #4b5563',
-                            background: '#111827',
-                            color: '#ffffff',
-                            fontSize: '0.85rem'
-                          }}
-                          onKeyDown={(e) => e.key === 'Enter' && handleSendAsync()}
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-primary"
-                          style={{ padding: '8px 16px', minHeight: 'auto', fontSize: '0.85rem' }}
-                          onClick={handleSendAsync}
-                        >
-                          <Send size={15} />
-                          <span>{t.sendMsgBtn}</span>
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Picture-in-Picture */}
-                  <div className="self-pip-box">
-                    <span style={{ fontSize: '1.3rem' }}>🧑‍🌾</span>
-                    <span style={{ marginTop: 2, fontWeight: 700 }}>{t.youPip}</span>
-                    <span style={{ color: isCamOff ? '#f87171' : '#4ade80', fontSize: '0.7rem' }}>
-                      {isCamOff ? 'Camera Off' : 'Live Cam'}
-                    </span>
-                  </div>
-
-                  {/* In-Call Controls */}
-                  <div className="call-control-dock">
-                    <button
-                      type="button"
-                      className={`call-action-btn ${isMicMuted ? 'muted' : ''}`}
-                      onClick={() => setIsMicMuted(!isMicMuted)}
-                      title={isMicMuted ? 'Unmute Microphone' : 'Mute Microphone'}
-                    >
-                      {isMicMuted ? <MicOff size={18} /> : <Mic size={18} />}
-                    </button>
-                    <button
-                      type="button"
-                      className={`call-action-btn ${isCamOff ? 'muted' : ''}`}
-                      onClick={() => setIsCamOff(!isCamOff)}
-                      title={isCamOff ? 'Turn Camera On' : 'Turn Camera Off'}
-                    >
-                      {isCamOff ? <VideoOff size={18} /> : <Video size={18} />}
-                    </button>
-                    <button
-                      type="button"
-                      className="call-action-btn end"
-                      onClick={() => {
-                        setIsCallActive(false);
-                        setCallNotice("Consultation concluded with Dr. Ananya Sharma. Telehealth discharge summary & prescriptions are ready in your Prescriptions tab.");
-                      }}
-                      title="End Consultation"
-                    >
-                      <PhoneOff size={18} />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
+            <div className="cb-card-header">
+              <div className="cb-card-title">
+                <Video size={20} color="#5568d7" />
+                <span>Tele-Consultation Room</span>
+              </div>
+              <span className="audit-pill" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                <Shield size={12} style={{ display: 'inline', marginRight: 4 }} />
+                Telemedicine Practice Guidelines 2020
+              </span>
+            </div>
+            <div style={{ padding: '4px 4px 8px' }}>
+              {callRoom ? (
+                <>
+                  <p style={{ margin: '0 0 12px', fontSize: '0.88rem', color: '#475569', lineHeight: 1.5 }}>
+                    Call <strong>{callRoom.doctor_name}</strong> with video or audio only, or wait here: when the doctor calls you,
+                    your phone rings on any page of this app. The call goes directly between you and the doctor.
+                  </p>
+                  <CallPanel call={call} language={language} />
+                </>
+              ) : (
+                <p style={{ margin: 0, fontSize: '0.88rem', color: '#475569' }}>
+                  You have no consultation booked right now. When a doctor starts a consultation with you, you can call them from here.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1311,7 +832,16 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({
           }));
         }}
       />
+      {inCall && activeTab !== 'consultation' && (
+        <CallWindow call={call} title={`Consultation · ${call.peerName}`} panel={<CallPanel call={call} language={language} compact hideStart />} />
+      )}
+      {call.callState === 'incoming' && call.incoming && (
+        <IncomingCallCard callerName={call.incoming.callerName} video={call.incoming.video}
+          onAccept={(video) => void call.acceptCall(video)} onDecline={call.declineCall} />
+      )}
+      {call.consentRequest && (
+        <RecordingConsentDialog doctorName={call.consentRequest.doctor_name} language={language} onRespond={call.respondConsent} />
+      )}
     </div>
   );
 };
-

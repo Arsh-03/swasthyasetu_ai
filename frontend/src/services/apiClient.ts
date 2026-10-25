@@ -13,6 +13,9 @@ export interface CurrentUserProfile {
   preferred_language?: string;
 }
 
+/** Fired on window when the backend rejects the stored login token. */
+export const SESSION_EXPIRED_EVENT = 'carebridge:session-expired';
+
 export function getStoredToken(): string | null {
   try {
     const raw = localStorage.getItem('carebridge_session');
@@ -37,9 +40,11 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     headers
   });
 
-  // Handle unauthorized session
-  if (res.status === 401) {
+  // Handle unauthorized session: the stored token was rejected (expired, or the server's signing
+  // key changed). Tell the app so it can send the user back to the login screen.
+  if (res.status === 401 && token) {
     console.warn("Unauthorized request (401). Token may be expired or invalid.");
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
   }
 
   return res;

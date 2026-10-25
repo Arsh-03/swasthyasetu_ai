@@ -3,7 +3,7 @@ import type { Language, ConsentRequest } from '../types';
 import { translations } from '../translations';
 import {
   ShieldAlert, Volume2, CheckCircle2, XCircle, Clock, Eye,
-  AlertTriangle, KeyRound, Sparkles, ShieldCheck
+  AlertTriangle, ShieldCheck
 } from 'lucide-react';
 
 interface ConsentModalProps {
@@ -11,7 +11,7 @@ interface ConsentModalProps {
   request: ConsentRequest | null;
   language: Language;
   isRepresentative: boolean;
-  onDecision: (approved: boolean, otpCode?: string) => void;
+  onDecision: (approved: boolean) => void;
   onPlayAudio: (text: string) => void;
   isPlayingAudio: boolean;
 }
@@ -25,31 +25,19 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({
   onPlayAudio,
   isPlayingAudio
 }) => {
-  const [otpCode, setOtpCode] = useState('789456');
-  const [otpError, setOtpError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      setOtpCode('789456');
-      setOtpError(null);
-      setIsVerifying(false);
-    }
+    if (isOpen) setIsSending(false);
   }, [isOpen]);
 
   if (!isOpen || !request) return null;
 
   const t = translations[language];
 
-  const handleApproveWithOtp = () => {
-    const clean = otpCode.trim();
-    if (!clean || clean.length < 4) {
-      setOtpError('Please enter the valid 6-digit OTP code received on your mobile.');
-      return;
-    }
-    setOtpError(null);
-    setIsVerifying(true);
-    onDecision(true, clean);
+  const handleApprove = () => {
+    setIsSending(true);
+    onDecision(true);
   };
 
   const handleDecline = () => {
@@ -149,100 +137,13 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({
             </div>
           </div>
 
-          {/* OTP Based Cryptographic Signature Section */}
+          {/* One-click decision: the patient already signed in, so no OTP is needed */}
           <div style={{
-            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
-            border: '1.5px solid #86efac',
-            borderRadius: 14,
-            padding: 18,
-            marginBottom: 16
+            background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 12, padding: '12px 14px',
+            marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start', color: '#166534', fontSize: '0.84rem', lineHeight: 1.45
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-              <div style={{
-                background: '#16a34a',
-                color: '#ffffff',
-                padding: 6,
-                borderRadius: 8,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                <KeyRound size={18} />
-              </div>
-              <div>
-                <h4 style={{ fontSize: '0.96rem', fontWeight: 800, color: '#166534', margin: 0 }}>
-                  Aadhaar / ABHA OTP Signature Verification
-                </h4>
-                <span style={{ fontSize: '0.78rem', color: '#15803d' }}>
-                  Mandatory cryptographic verification under DPDP Act 2023 §6
-                </span>
-              </div>
-            </div>
-
-            <p style={{ fontSize: '0.82rem', color: '#166534', margin: '0 0 12px 0', lineHeight: 1.4 }}>
-              Enter the 6-digit OTP sent to your registered mobile (<strong>+91 98••• ••345</strong>) to cryptographically sign this consent artifact.
-            </p>
-
-            {otpError && (
-              <div style={{
-                padding: '8px 12px',
-                background: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: 8,
-                color: '#b91c1c',
-                fontSize: '0.82rem',
-                marginBottom: 10
-              }}>
-                {otpError}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', flex: '1 1 200px' }}>
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Enter 6-digit OTP"
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    border: '2px solid #86efac',
-                    fontSize: '1.15rem',
-                    fontWeight: 800,
-                    letterSpacing: '0.3em',
-                    textAlign: 'center',
-                    background: '#ffffff',
-                    color: '#0f172a',
-                    boxSizing: 'border-box'
-                  }}
-                />
-              </div>
-
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{
-                  padding: '9px 12px',
-                  fontSize: '0.8rem',
-                  borderColor: '#16a34a',
-                  color: '#166534',
-                  background: '#ffffff',
-                  gap: 6
-                }}
-                onClick={() => setOtpCode('789456')}
-              >
-                <Sparkles size={14} color="#16a34a" />
-                <span>⚡ Auto-fill Demo OTP</span>
-              </button>
-            </div>
-
-            <div style={{ marginTop: 10, fontSize: '0.74rem', color: '#15803d', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <ShieldCheck size={14} />
-              <span>Sign will generate an ephemeral HMAC-SHA256 token valid for 60 minutes.</span>
-            </div>
+            <ShieldCheck size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{t.consentOneTap}</span>
           </div>
 
           <p style={{ fontSize: '0.78rem', color: 'var(--cb-text-muted)', lineHeight: 1.5, margin: 0 }}>
@@ -257,7 +158,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({
             className="btn btn-outline"
             style={{ flex: 1, minHeight: 46, fontSize: '0.92rem', color: '#dc2626', borderColor: '#fca5a5' }}
             onClick={handleDecline}
-            disabled={isVerifying}
+            disabled={isSending}
           >
             <XCircle size={18} />
             <span>{t.declineBtn}</span>
@@ -275,11 +176,11 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({
               gap: 8,
               boxShadow: '0 4px 12px rgba(22, 163, 74, 0.3)'
             }}
-            onClick={handleApproveWithOtp}
-            disabled={isVerifying}
+            onClick={handleApprove}
+            disabled={isSending}
           >
             <CheckCircle2 size={18} />
-            <span>{isVerifying ? 'Verifying OTP & Signing...' : 'Verify OTP & Grant Access'}</span>
+            <span>{isSending ? '…' : t.allowAccessBtn}</span>
           </button>
         </div>
       </div>

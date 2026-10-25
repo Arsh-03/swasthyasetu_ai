@@ -736,7 +736,7 @@ async def doctor_update_patient_history(
         "updated_by": current_doctor.get("name", "Doctor"),
         "medical_history": med_hist
     }
-    await ws_manager.broadcast(update_event)
+    await ws_manager.send_to([profile.patient_id, current_doctor.get("user_id")], update_event)
 
     return {
         "success": True,

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
-  UserPlus, Sparkles, Send, CheckCircle2,
+  UserPlus, Send, CheckCircle2,
   XCircle, Clock, AlertCircle, Loader2
 } from 'lucide-react';
 import { authFetch } from '../services/apiClient';
+import { openRealtime } from '../services/realtime';
 
 interface LinkPatientModalProps {
   isOpen: boolean;
@@ -31,20 +32,13 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
     }
   }, [isOpen]);
 
-  // Listen for WebSocket notifications when in waiting_otp state
+  // Listen for the patient's decision while waiting
   useEffect(() => {
     if (!isOpen || status !== 'waiting_otp') return;
 
-    let socket: WebSocket | null = null;
     let pollInterval: any = null;
 
-    try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws/telehealth`);
-
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
+    const closeRealtime = openRealtime((data) => {
           if (data.type === 'ABHA_LINK_APPROVED' && (data.consent_id === pendingConsentId || !pendingConsentId)) {
             setStatus('approved');
             setTimeout(() => {
@@ -55,9 +49,7 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
             setStatus('rejected');
             setErrorMessage('Patient declined the link request.');
           }
-        } catch {}
-      };
-    } catch {}
+    });
 
     // Fallback polling every 2.5s in case WebSocket drops
     pollInterval = setInterval(async () => {
@@ -71,7 +63,7 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
     }, 2500);
 
     return () => {
-      if (socket) socket.close();
+      closeRealtime();
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [isOpen, status, pendingConsentId, abhaIdentifier, onPatientLinked, onClose]);
@@ -112,28 +104,6 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
       setErrorMessage(e.message || 'Network error connecting to ABDM Gateway.');
       setStatus('idle');
     }
-  };
-
-  const handleSimulateQuickGrant = async () => {
-    // Demo speed-run button in case testing without opening another tab
-    if (!pendingConsentId) return;
-    try {
-      const res = await authFetch(`/api/v1/consents/${pendingConsentId}/verify-otp-and-grant`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          otp_code: '789456'
-        })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setStatus('approved');
-        setTimeout(() => {
-          onPatientLinked(data, data.grant_token);
-          onClose();
-        }, 800);
-      }
-    } catch {}
   };
 
   return (
@@ -194,12 +164,12 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
               </div>
 
               <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
-                Awaiting Patient Authorization & OTP
+                Waiting for the patient to allow access
               </h3>
 
               <p style={{ fontSize: '0.86rem', color: '#64748b', maxWidth: 420, margin: '0 auto 18px', lineHeight: 1.5 }}>
                 An ABDM Consent Request has been pushed to the patient linked with <strong>{abhaIdentifier}</strong>.
-                The patient must accept the request and verify with their 6-digit Aadhaar/ABHA OTP.
+                The patient gets this request in their CareBridge app and can allow or decline it with one tap.
               </p>
 
               <div style={{
@@ -221,26 +191,10 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: '#64748b' }}>Status:</span>
-                  <span style={{ fontWeight: 700, color: '#d97706' }}>⏳ Dispatched · Waiting for Patient OTP</span>
+                  <span style={{ fontWeight: 700, color: '#d97706' }}>⏳ Sent · waiting for the patient</span>
                 </div>
               </div>
 
-              {/* Demo accelerator shortcut */}
-              <button
-                type="button"
-                className="btn btn-outline"
-                style={{
-                  fontSize: '0.82rem',
-                  padding: '8px 14px',
-                  borderColor: '#818cf8',
-                  color: '#4338ca',
-                  background: '#eef2ff'
-                }}
-                onClick={handleSimulateQuickGrant}
-              >
-                <Sparkles size={14} />
-                <span>Simulate Patient Accepting & Entering OTP (Demo Shortcut)</span>
-              </button>
             </div>
           ) : status === 'approved' ? (
             <div style={{ textAlign: 'center', padding: '24px 12px' }}>
@@ -260,7 +214,7 @@ export const LinkPatientModal: React.FC<LinkPatientModalProps> = ({
                 Consent Granted & Verified!
               </h3>
               <p style={{ fontSize: '0.88rem', color: '#475569', marginBottom: 12 }}>
-                Patient verified the OTP and signed the ABDM Consent Artifact.
+                The patient allowed access to their ABHA records.
                 Ephemeral cryptographic HMAC token generated in vault.
               </p>
               <div style={{ color: '#15803d', fontWeight: 700, fontSize: '0.85rem' }}>

@@ -1,12 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import type { HealthRecord, ClinicalNote } from '../types';
 import { dynamicTranslator } from '../services/translator';
 import { authFetch } from '../services/apiClient';
 import { LinkPatientModal } from './LinkPatientModal';
+import { ClinicalNotepad } from './ClinicalNotepad';
+import { CallPanel } from './call/CallPanel';
+import { CallWindow } from './call/CallWindow';
+import { IncomingCallCard } from './call/CallOverlays';
+import { useConsultationCall } from '../services/call/useConsultationCall';
+import { useDoctorLobby } from '../services/call/useDoctorLobby';
 import {
   Stethoscope, ShieldAlert, Send, FileCheck, Download, AlertTriangle,
   Lock, Unlock, Clock, Sparkles, Activity, FileText, CheckCircle2,
-  UserPlus, Plus, Heart, Save, Database
+  UserPlus, Plus, Heart, Save, Database, NotebookPen, Video, Phone
 } from 'lucide-react';
 
 interface DoctorPortalProps {
@@ -19,7 +25,9 @@ interface DoctorPortalProps {
   onPatientLinked?: (patient: any, token: string) => void;
 }
 
-type DoctorTab = 'triage' | 'records' | 'scribe' | 'update_history' | 'fhir';
+type DoctorTab = 'triage' | 'records' | 'notepad' | 'scribe' | 'update_history' | 'fhir';
+
+const DEFAULT_ENCOUNTER_ID = 'enc_9481';
 
 export const DoctorPortal: React.FC<DoctorPortalProps> = ({
   records,
@@ -34,6 +42,10 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
 
   // Link Patient Modal & Active Patient State
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
+  const [activeEncounterId, setActiveEncounterId] = useState(DEFAULT_ENCOUNTER_ID);
+  // Consultation call + AI minutes, shared between the call panel/window and the notepad.
+  const [notepadText, setNotepadText] = useState('');
+  const [lobbyAnswer, setLobbyAnswer] = useState<{ video: boolean } | null>(null);
   const [activePatient, setActivePatient] = useState<any>({
     patient_id: 'usr_ramesh_gowda',
     full_name: 'Ramesh Gowda',
@@ -89,7 +101,54 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
     fetchPatientData();
   }, []);
 
+  // ---- Consultation call: rings on every tab; opens a floating window with the notepad when connected ----
+  const clearLobbyAnswer = useCallback(() => setLobbyAnswer(null), []);
+  const call = useConsultationCall({
+    role: 'doctor',
+    encounterId: activeEncounterId,
+    peerName: activePatient?.full_name || 'Patient',
+    noteText: notepadText,
+    autoAnswer: lobbyAnswer,
+    onAutoAnswered: clearLobbyAnswer,
+  });
+  const lobby = useDoctorLobby(true);
+  // A lobby call for the consultation that is already open is handled by that consultation's own ringing.
+  const lobbyCall = lobby.ringing && lobby.ringing.encounterId !== activeEncounterId ? lobby.ringing : null;
+  const inCall = call.callState === 'calling' || call.callState === 'in_call';
+  // When a call ends, open the notepad: the call window closes, and the final minutes are added there.
+  const [wasInCall, setWasInCall] = useState(false);
+  if (inCall !== wasInCall) {
+    setWasInCall(inCall);
+    if (!inCall && call.callState === 'idle') setActiveTab('notepad');
+  }
+
+  const answerLobbyCall = async (video: boolean) => {
+    if (!lobbyCall) return;
+    const { encounterId, patientId } = lobbyCall;
+    lobby.clear();
+    setLobbyAnswer({ video });                 // answered automatically once this consultation's room connects
+    setActiveEncounterId(encounterId);
+    if (patientId) {
+      try {
+        const res = await authFetch(`/api/v1/auth/patient/${patientId}/details`);
+        if (res.ok) setActivePatient(await res.json());
+      } catch { /* keep the current header; the call still connects */ }
+    }
+  };
+
+  const notepad = (
+    <ClinicalNotepad
+      key={activeEncounterId}
+      encounterId={activeEncounterId}
+      patientName={activePatient?.full_name}
+      callMinutes={call.minutes}
+      autoApplyCall={call.aiState === 'recording' || call.aiState === 'finishing'}
+      onTextChange={setNotepadText}
+    />
+  );
+
   const handlePatientLinked = async (patientData: any, token: string) => {
+    if (patientData?.encounter_id) setActiveEncounterId(patientData.encounter_id);
     try {
       const pid = patientData.patient_id || patientData.abha_address;
       const res = await authFetch(`/api/v1/auth/patient/${pid}/details`);
@@ -312,6 +371,22 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
             <UserPlus size={16} />
             <span>➕ Link Patient via ABHA</span>
           </button>
+          {call.callState === 'idle' && (
+            <>
+              <button type="button" className="btn btn-primary" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 700, gap: 6, borderRadius: 10 }}
+                onClick={() => void call.startCall(true)} disabled={call.connection !== 'open'}
+                title={call.peerPresent ? `Video call ${activePatient.full_name}` : `${activePatient.full_name} is not online right now`}>
+                <Video size={16} /> <span>Video call</span>
+              </button>
+              <button type="button" className="btn btn-outline" style={{ padding: '8px 14px', fontSize: '0.85rem', fontWeight: 700, gap: 6, borderRadius: 10 }}
+                onClick={() => void call.startCall(false)} disabled={call.connection !== 'open'}>
+                <Phone size={16} /> <span>Audio call</span>
+              </button>
+              <span className="portal-header-tag-pill" style={{ color: call.peerPresent ? '#047857' : '#64748b' }}>
+                ● {call.peerPresent ? 'Patient online' : 'Patient offline'}
+              </span>
+            </>
+          )}
           <div className="portal-header-tag-pill">
             <CheckCircle2 size={15} color="#16a34a" />
             <span>NMC Telemedicine Guidelines Compliant</span>
@@ -343,6 +418,16 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
           ) : (
             <span className="tab-pill-badge">Encrypted</span>
           )}
+        </button>
+
+        <button
+          type="button"
+          className={`portal-nav-tab ${activeTab === 'notepad' ? 'active' : ''}`}
+          onClick={() => setActiveTab('notepad')}
+        >
+          <NotebookPen size={16} />
+          <span>Live Notepad</span>
+          <span className="tab-pill-badge green">AI IntelliSense</span>
         </button>
 
         <button
@@ -698,6 +783,23 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* AI INTELLISENSE CONSULTATION NOTEPAD */}
+      {activeTab === 'notepad' && (
+        <div className="portal-tab-content">
+          {inCall ? (
+            <div className="cb-card" style={{ padding: 18, color: '#334155' }}>
+              <strong>The consultation is open in the call window</strong> (bottom-right), with the notepad inside it.
+              Use its enlarge button for a bigger notepad, or minimise it to look at other tabs.
+            </div>
+          ) : (
+            <>
+              <CallPanel call={call} />
+              {notepad}
+            </>
+          )}
         </div>
       )}
 
@@ -1406,6 +1508,21 @@ export const DoctorPortal: React.FC<DoctorPortalProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Consultation call: floating window (video, AI minutes switch, notepad) while a call is active */}
+      {inCall && (
+        <CallWindow call={call} title={`Consultation · ${activePatient.full_name}`} panel={<CallPanel call={call} compact hideStart />}>
+          {notepad}
+        </CallWindow>
+      )}
+      {call.callState === 'incoming' && call.incoming && (
+        <IncomingCallCard callerName={call.incoming.callerName} video={call.incoming.video}
+          onAccept={(video) => void call.acceptCall(video)} onDecline={call.declineCall} />
+      )}
+      {lobbyCall && call.callState !== 'incoming' && !inCall && (
+        <IncomingCallCard callerName={lobbyCall.callerName} video={lobbyCall.video}
+          onAccept={(video) => void answerLobbyCall(video)} onDecline={lobby.decline} />
       )}
 
       {/* Link Patient via ABHA Modal */}
