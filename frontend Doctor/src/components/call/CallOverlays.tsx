@@ -1,10 +1,20 @@
 // Things that must appear on any page: the ringing card and the patient's recording-consent dialog.
 
 import React, { useState } from 'react';
-import { PhoneCall, PhoneOff, Phone, ShieldCheck } from 'lucide-react';
 import type { CallLanguage as Language } from '../../services/call/callTypes';
 import { CONSENT_TEXT } from '../../services/call/consentText';
 import './ConsultationCall.css';
+import { Icon, type IconName } from '../ui/Icon';
+
+// Design-system icons (Phosphor via <Icon>), named like the components they replace.
+const glyph = (name: IconName) =>
+  function Glyph({ size = 16, className }: { size?: number; className?: string }) {
+    return <Icon name={name} size={size} className={className} />;
+  };
+const PhoneCall = glyph('callIncoming');
+const PhoneOff = glyph('callEnd');
+const Phone = glyph('call');
+const ShieldCheck = glyph('shieldCheck');
 
 interface IncomingProps {
   callerName: string;

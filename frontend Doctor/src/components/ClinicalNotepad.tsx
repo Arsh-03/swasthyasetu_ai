@@ -6,10 +6,6 @@
 // standardizations.
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  NotebookPen, Save, Wifi, WifiOff, Zap, ChevronDown, RotateCcw, FileJson, AlertTriangle,
-  Check, X, Keyboard, WandSparkles, ListChecks, Sparkles, ShieldAlert, MessagesSquare, Plus,
-} from 'lucide-react';
 import { authFetch, getStoredToken, apiUrl } from '../services/backend';
 import { IntelliSenseConnection, loadLexicon } from '../services/intellisense/intellisenseClient';
 import { LocalEngine, formatCode, shiftAnnotations, type TextEdit } from '../services/intellisense/localEngine';
@@ -20,6 +16,31 @@ import type {
 } from '../services/intellisense/types';
 import type { CallFinding, CallMinutes } from '../services/call/callTypes';
 import './ClinicalNotepad.css';
+import { Icon, type IconName } from './ui/Icon';
+
+// Design-system icons (Phosphor via <Icon>), named like the components they replace.
+const glyph = (name: IconName) =>
+  function Glyph({ size = 16, className }: { size?: number; className?: string }) {
+    return <Icon name={name} size={size} className={className} />;
+  };
+const NotebookPen = glyph('clinicalNotes');
+const Save = glyph('save');
+const Wifi = glyph('online');
+const WifiOff = glyph('offline');
+const Zap = glyph('bolt');
+const ChevronDown = glyph('chevronDown');
+const RotateCcw = glyph('undo');
+const FileJson = glyph('code');
+const AlertTriangle = glyph('warning');
+const Check = glyph('check');
+const X = glyph('close');
+const Keyboard = glyph('keyboard');
+const WandSparkles = glyph('aiAssist');
+const ListChecks = glyph('checklist');
+const Sparkles = glyph('aiAssist');
+const ShieldAlert = glyph('drugAlert');
+const MessagesSquare = glyph('chat');
+const Plus = glyph('add');
 
 interface ClinicalNotepadProps {
   encounterId: string;
@@ -910,7 +931,7 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     <div className="cb-card portal-card-elevated np-root">
       <div className="cb-card-header">
         <div className="cb-card-title">
-          <NotebookPen size={20} color="#0d9488" />
+          <NotebookPen size={20} className="text-primary" />
           <span>AI IntelliSense Notepad{patientName ? ` · ${patientName}` : ''}</span>
         </div>
         <div className="np-status-group">

@@ -11,6 +11,7 @@ import type { PatientSummary, DoctorProfile } from './services/api';
 import { api, WS_BASE_URL } from './services/api';
 import { type SupportedLanguage, t } from './utils/translations';
 import type { UpcomingAppointment } from './data/patientRecords';
+import { Icon } from './components/ui/Icon';
 import { useConsultationCall } from './services/call/useConsultationCall';
 import { useDoctorLobby } from './services/call/useDoctorLobby';
 import { ClinicalNotepad } from './components/ClinicalNotepad';
@@ -32,6 +33,10 @@ export function App() {
   const [recordsVersion, setRecordsVersion] = useState(0);
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'kn' | 'hi'>('kn');
+  // <html lang> drives per-script typography (base.css) and screen-reader pronunciation
+  useEffect(() => {
+    document.documentElement.lang = selectedLanguage;
+  }, [selectedLanguage]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isConsentModalOpen, setIsConsentModalOpen] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
@@ -241,7 +246,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F2F2F7] flex flex-col font-sans antialiased text-[#1C1C1E]">
+    <div className="min-h-screen bg-base flex flex-col font-sans antialiased text-ink">
       {/* Top Clinical Header without Live Call in Navigation */}
       <DoctorHeader
         activeTab={activeTab}
@@ -259,9 +264,9 @@ export function App() {
 
       {/* Real-time Dynamic Toast Banner (macOS Notification Style) */}
       {notification && (
-        <div className="fixed top-20 right-6 z-50 liquid-glass text-[#1C1C1E] border border-black/10 p-3 px-4 rounded-2xl shadow-apple-lg flex items-center gap-2.5 animate-bounce">
-          <span className="w-2 h-2 rounded-full bg-[#007AFF] animate-ping"></span>
-          <span className="material-symbols-outlined text-[18px] text-[#007AFF]">notifications_active</span>
+        <div className="fixed top-20 right-6 z-50 glass text-ink border border-ink/10 p-3 px-4 rounded-2xl shadow-lg flex items-center gap-2.5 animate-bounce">
+          <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
+          <Icon name="notification" size={18} tone="primary" weight="duotone" />
           <span className="text-xs font-semibold">{notification}</span>
         </div>
       )}
@@ -270,10 +275,13 @@ export function App() {
       <main className="w-full pt-[84px] flex-1 flex flex-col pb-16">
         {activeTab !== 'audit-trail' && !selectedPatient && (
           <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 py-16 flex flex-col items-center gap-3 text-center">
-            <span className="material-symbols-outlined text-[40px] text-[#8E8E93]">
-              {queueStatus === 'error' ? 'cloud_off' : queueStatus === 'loading' ? 'hourglass_top' : 'inbox'}
-            </span>
-            <p className="text-sm font-semibold text-[#1C1C1E]">
+            <Icon
+              name={queueStatus === 'error' ? 'offline' : queueStatus === 'loading' ? 'hourglass' : 'inbox'}
+              size={40}
+              tone="muted"
+              weight="duotone"
+            />
+            <p className="text-sm font-semibold text-ink">
               {queueStatus === 'error'
                 ? 'Could not load the patient queue. Is the backend running?'
                 : queueStatus === 'loading'
@@ -283,7 +291,7 @@ export function App() {
             {queueStatus === 'error' && (
               <button
                 onClick={loadQueue}
-                className="px-4 py-2 rounded-xl bg-[#007AFF] text-white text-xs font-semibold"
+                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold"
               >
                 Retry
               </button>
@@ -358,7 +366,7 @@ export function App() {
           <button
             type="button"
             onClick={() => setActiveTab('active-consultation')}
-            className="w-full py-2 rounded-xl bg-[#007AFF] text-white text-xs font-semibold cursor-pointer"
+            className="w-full py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold cursor-pointer"
           >
             Back to the consultation (notes &amp; AI minutes)
           </button>
@@ -395,10 +403,10 @@ export function App() {
       />
 
       {/* macOS Minimal Footer Strip */}
-      <footer className="w-full bg-[#F2F2F7] py-3.5 border-t border-black/5">
-        <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-[#8E8E93]">
+      <footer className="w-full bg-base py-3.5 border-t border-ink/5">
+        <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-ink-muted">
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#34C759]"></span>
+            <span className="w-2 h-2 rounded-full bg-success"></span>
             <span>Ayushman Bharat Digital Mission (ABDM) Level-3 Tele-Triage Node</span>
           </div>
           <div className="flex items-center gap-3">
@@ -406,7 +414,7 @@ export function App() {
             <span>•</span>
             <span>FHIR R4 Encrypted</span>
             <span>•</span>
-            <span className="font-mono text-[11px]">v2.4-AppleHIG</span>
+            <span className="font-mono text-2xs">v2.4-AppleHIG</span>
           </div>
         </div>
       </footer>

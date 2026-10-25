@@ -2,13 +2,29 @@
 // the floating call windows; several can show the same call, so it never owns call state.
 
 import React, { useEffect, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, PhoneCall, PhoneOff, Phone, Sparkles, ShieldCheck, CircleStop } from 'lucide-react';
 import type { CallLanguage as Language } from '../../services/call/callTypes';
 import type { ConsultationCallApi } from '../../services/call/useConsultationCall';
 import type { AiState } from '../../services/call/callTypes';
 import { CONSENT_TEXT } from '../../services/call/consentText';
 import { useCallTimer } from '../../services/call/useCallTimer';
 import './ConsultationCall.css';
+import { Icon, type IconName } from '../ui/Icon';
+
+// Design-system icons (Phosphor via <Icon>), named like the components they replace.
+const glyph = (name: IconName) =>
+  function Glyph({ size = 16, className }: { size?: number; className?: string }) {
+    return <Icon name={name} size={size} className={className} />;
+  };
+const Mic = glyph('mic');
+const MicOff = glyph('micOff');
+const Video = glyph('video');
+const VideoOff = glyph('videoOff');
+const PhoneCall = glyph('callIncoming');
+const PhoneOff = glyph('callEnd');
+const Phone = glyph('call');
+const Sparkles = glyph('aiAssist');
+const ShieldCheck = glyph('shieldCheck');
+const CircleStop = glyph('stop');
 
 const AI_LABEL: Record<AiState, string> = {
   off: 'Off',

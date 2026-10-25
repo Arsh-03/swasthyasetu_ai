@@ -2,10 +2,22 @@
 // stay at hand on every tab. Three sizes; switching size never remounts what's inside.
 
 import React, { useState } from 'react';
-import { Maximize2, Minimize2, ChevronDown, PhoneOff, Mic, MicOff } from 'lucide-react';
 import type { ConsultationCallApi } from '../../services/call/useConsultationCall';
 import { useCallTimer } from '../../services/call/useCallTimer';
 import './ConsultationCall.css';
+import { Icon, type IconName } from '../ui/Icon';
+
+// Design-system icons (Phosphor via <Icon>), named like the components they replace.
+const glyph = (name: IconName) =>
+  function Glyph({ size = 16, className }: { size?: number; className?: string }) {
+    return <Icon name={name} size={size} className={className} />;
+  };
+const Maximize2 = glyph('expand');
+const Minimize2 = glyph('collapse');
+const ChevronDown = glyph('chevronDown');
+const PhoneOff = glyph('callEnd');
+const Mic = glyph('mic');
+const MicOff = glyph('micOff');
 
 type Size = 'min' | 'small' | 'large';
 

@@ -1,6 +1,7 @@
 import React from 'react';
 import type { DoctorProfile } from '../services/api';
 import { t, type SupportedLanguage } from '../utils/translations';
+import { Icon } from './ui/Icon';
 
 const LANGUAGES: SupportedLanguage[] = ['en', 'kn', 'hi'];
 const LANGUAGE_NAMES: Record<SupportedLanguage, string> = { en: 'English', kn: 'ಕನ್ನಡ', hi: 'हिंदी' };
@@ -17,6 +18,7 @@ const StableLabel: React.FC<{ lang: SupportedLanguage; text: (l: SupportedLangua
     {LANGUAGES.map((l) => (
       <span
         key={l}
+        lang={l}
         aria-hidden={l !== lang}
         className={`[grid-area:1/1] whitespace-nowrap ${l === lang ? '' : 'invisible'}`}
       >
@@ -62,35 +64,37 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
       : (nameParts[0]?.[0] || 'D').toUpperCase();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 liquid-glass-toolbar shadow-apple-sm transition-all duration-200">
+    <header className="fixed top-0 left-0 right-0 z-50 glass-toolbar shadow-sm transition-all duration-200">
       <div className="h-16 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
         {/* Brand & macOS Segmented Tab Navigation */}
         <div className="flex items-center gap-4 lg:gap-6 shrink-0">
-          <div
-            className="flex items-center gap-2.5 cursor-pointer select-none group"
+          <button
+            type="button"
+            className="flex items-center gap-2.5 cursor-pointer select-none group text-left rounded-xl"
             onClick={() => setActiveTab('patient-queue')}
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center shadow-apple-sm ring-1 ring-white/30 group-hover:scale-105 transition-transform">
-              <span className="material-symbols-outlined text-white text-[20px]">health_and_safety</span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[15px] font-semibold text-[#1C1C1E] tracking-tight leading-none">
+            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-ink flex items-center justify-center shadow-sm ring-1 ring-white/30 group-hover:scale-105 transition-transform">
+              <Icon name="brand" size={20} tone="onPrimary" weight="duotone" />
+            </span>
+            <span className="flex flex-col">
+              <span className="text-subhead font-semibold text-ink tracking-tight leading-none">
                 SwasthyaSetu
               </span>
-              <span className="text-[10px] font-medium text-[#8E8E93] uppercase tracking-wider mt-0.5">
+              <span className="text-3xs font-medium text-ink-muted uppercase tracking-wider mt-0.5">
                 <StableLabel lang={selectedLanguage} text={(l) => t(l, 'clinicianStudio')} />
               </span>
-            </div>
-          </div>
+            </span>
+          </button>
 
           {/* macOS Style Segmented Control (Localized) */}
-          <nav className="hidden md:flex items-center p-1 rounded-xl bg-[#E5E5EA]/70 ring-1 ring-black/5">
+          <nav className="hidden md:flex items-center p-1 rounded-xl bg-fog/40 ring-1 ring-ink/5">
             <button
               onClick={() => setActiveTab('patient-queue')}
-              className={`px-3 py-1.5 rounded-[9px] text-[13px] font-medium transition-all ${
+              aria-current={activeTab === 'patient-queue' ? 'page' : undefined}
+              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
                 activeTab === 'patient-queue'
-                  ? 'bg-white text-[#1C1C1E] shadow-apple-sm font-semibold'
-                  : 'text-[#636366] hover:text-[#1C1C1E] hover:bg-black/5'
+                  ? 'bg-card text-ink shadow-sm font-semibold'
+                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
               }`}
             >
               <StableLabel lang={selectedLanguage} text={(l) => t(l, 'patientQueue')} />
@@ -98,15 +102,16 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('patient-chart')}
-              className={`px-3 py-1.5 rounded-[9px] text-[13px] font-medium transition-all flex items-center gap-1.5 ${
+              aria-current={activeTab === 'patient-chart' ? 'page' : undefined}
+              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all flex items-center gap-1.5 ${
                 activeTab === 'patient-chart'
-                  ? 'bg-white text-[#1C1C1E] shadow-apple-sm font-semibold'
-                  : 'text-[#636366] hover:text-[#1C1C1E] hover:bg-black/5'
+                  ? 'bg-card text-ink shadow-sm font-semibold'
+                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
               }`}
             >
               <StableLabel lang={selectedLanguage} text={(l) => t(l, 'patientChart')} />
               {selectedPatientName && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#007AFF]/10 text-[#007AFF] max-w-[90px] truncate">
+                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary-tint text-primary max-w-[90px] truncate">
                   {selectedPatientName.split(' ')[0]}
                 </span>
               )}
@@ -114,10 +119,11 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('clinical-records')}
-              className={`px-3 py-1.5 rounded-[9px] text-[13px] font-medium transition-all ${
+              aria-current={activeTab === 'clinical-records' ? 'page' : undefined}
+              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
                 activeTab === 'clinical-records'
-                  ? 'bg-white text-[#1C1C1E] shadow-apple-sm font-semibold'
-                  : 'text-[#636366] hover:text-[#1C1C1E] hover:bg-black/5'
+                  ? 'bg-card text-ink shadow-sm font-semibold'
+                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
               }`}
             >
               <StableLabel lang={selectedLanguage} text={(l) => t(l, 'clinicalRecords')} />
@@ -125,10 +131,11 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
 
             <button
               onClick={() => setActiveTab('audit-trail')}
-              className={`px-3 py-1.5 rounded-[9px] text-[13px] font-medium transition-all ${
+              aria-current={activeTab === 'audit-trail' ? 'page' : undefined}
+              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
                 activeTab === 'audit-trail'
-                  ? 'bg-white text-[#1C1C1E] shadow-apple-sm font-semibold'
-                  : 'text-[#636366] hover:text-[#1C1C1E] hover:bg-black/5'
+                  ? 'bg-card text-ink shadow-sm font-semibold'
+                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
               }`}
             >
               <StableLabel lang={selectedLanguage} text={(l) => t(l, 'auditTrail')} />
@@ -139,15 +146,16 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
         {/* Global Apple Search Field */}
         <div className="flex-1 max-w-xs hidden xl:block">
           <div className="relative flex items-center">
-            <span className="material-symbols-outlined absolute left-2.5 text-[#8E8E93] text-[18px]">search</span>
+            <Icon name="search" size={18} tone="muted" weight="duotone" className="absolute left-2.5" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t(selectedLanguage, 'searchPlaceholder')}
-              className="w-full h-8 pl-8 pr-8 rounded-lg bg-[#E5E5EA]/60 hover:bg-[#E5E5EA]/90 focus:bg-white text-[#1C1C1E] placeholder:text-[#8E8E93] text-[13px] focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 focus:border-[#007AFF] border border-transparent transition-all"
+              aria-label={t(selectedLanguage, 'searchPlaceholder')}
+              className="w-full h-8 pl-8 pr-8 rounded-lg bg-fog/40 hover:bg-fog/60 focus:bg-card text-ink placeholder:text-ink-muted text-footnote focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary border border-transparent transition-all"
             />
-            <kbd className="absolute right-2 px-1.5 py-0.5 rounded text-[10px] font-mono text-[#8E8E93] bg-white/70 border border-black/5 shadow-xs">
+            <kbd aria-hidden className="absolute right-2 px-1.5 py-0.5 rounded text-3xs font-mono text-ink-muted bg-white/70 border border-ink/5 shadow-xs">
               ⌘K
             </kbd>
           </div>
@@ -159,10 +167,10 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
           {isCallActive && activeTab !== 'active-consultation' && onReturnToCall && (
             <button
               onClick={onReturnToCall}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#34C759] hover:bg-[#2FB350] text-white text-xs font-semibold shadow-apple-sm animate-pulse active:scale-95 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success-deep hover:bg-success-pressed text-white text-xs font-semibold shadow-sm animate-pulse active:scale-95 transition-all"
               title="Return to Ongoing Consultation"
             >
-              <span className="material-symbols-outlined text-[15px]">call</span>
+              <Icon name="call" size={15} />
               <StableLabel lang={selectedLanguage} text={(l) => t(l, 'activeCall')} className="hidden sm:inline-grid" />
             </button>
           )}
@@ -170,36 +178,41 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
           {/* Vernacular Indic / English Switcher Pill */}
           <button
             onClick={() => setSelectedLanguage(selectedLanguage === 'en' ? 'kn' : selectedLanguage === 'kn' ? 'hi' : 'en')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#E5E5EA]/70 hover:bg-[#E5E5EA] text-[#1C1C1E] ring-1 ring-black/5 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-fog/70 hover:bg-fog text-ink ring-1 ring-ink/5 transition-all cursor-pointer"
             title="Switch Language"
+            aria-label={`Switch language (${LANGUAGE_NAMES[selectedLanguage]})`}
           >
-            <StableLabel lang={selectedLanguage} text={(l) => LANGUAGE_NAMES[l]} className="text-[13px] font-medium" />
-            <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-white font-mono text-[#636366]">
+            <StableLabel lang={selectedLanguage} text={(l) => LANGUAGE_NAMES[l]} className="text-footnote font-medium" />
+            <span className="text-4xs uppercase px-1 py-0.5 rounded bg-card font-mono text-ink-muted">
               {selectedLanguage}
             </span>
           </button>
 
           {/* Clinician Monogram Pill with Duty Tag */}
-          <div className="flex items-center gap-2 pl-2 border-l border-black/10">
-            <div className="flex items-center gap-2.5 py-1 px-2.5 rounded-full bg-white/90 border border-black/5 shadow-apple-sm">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-[#007AFF] to-[#5856D6] text-white text-[11px] font-semibold flex items-center justify-center ring-1 ring-black/10 shrink-0 shadow-xs">
+          <div className="flex items-center gap-2 pl-2 border-l border-ink/10">
+            {/* Below 1536px only the initials avatar shows (the name stays available to screen readers) so the header fits from 1280px in every language */}
+            <div
+              className="flex items-center gap-2.5 py-1 px-2.5 max-2xl:px-1 rounded-full bg-white/90 border border-ink/5 shadow-sm"
+              title={doctor ? `${doctor.display_name} · ${doctor.registration_number}` : undefined}
+            >
+              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-primary to-ink text-white text-2xs font-semibold flex items-center justify-center ring-1 ring-ink/10 shrink-0 shadow-xs">
                 {doctorInitials}
               </div>
-              <div className="flex flex-col text-left">
+              <div className="flex flex-col text-left max-2xl:sr-only">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[12px] font-semibold text-[#1C1C1E] leading-none">
+                  <span className="text-xs font-semibold text-ink leading-none">
                     {doctorShortName}
                   </span>
                   <span
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-medium ${
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-4xs font-medium ${
                       isCallActive
-                        ? 'bg-[#007AFF]/15 text-[#007AFF]'
-                        : 'bg-[#34C759]/15 text-[#248A3D]'
+                        ? 'bg-primary-tint text-primary'
+                        : 'bg-success-tint text-success-deep'
                     }`}
                   >
                     <span
                       className={`w-1 h-1 rounded-full ${
-                        isCallActive ? 'bg-[#007AFF] animate-ping' : 'bg-[#34C759]'
+                        isCallActive ? 'bg-primary animate-ping' : 'bg-success'
                       }`}
                     ></span>
                     <StableLabel
@@ -208,7 +221,7 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
                     />
                   </span>
                 </div>
-                <span className="text-[10px] text-[#8E8E93] leading-none mt-0.5 font-mono">
+                <span className="text-3xs text-ink-muted leading-none mt-0.5 font-mono">
                   {doctor?.registration_number || ''}
                 </span>
               </div>
@@ -218,10 +231,11 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
             {onLogout && (
               <button
                 onClick={onLogout}
-                className="w-7 h-7 rounded-full bg-[#E5E5EA]/70 hover:bg-[#FF3B30]/10 text-[#8E8E93] hover:text-[#FF3B30] flex items-center justify-center transition-colors ring-1 ring-black/5 active:scale-95 cursor-pointer"
+                className="w-7 h-7 rounded-full bg-fog/70 hover:bg-danger-tint text-ink-muted hover:text-danger-deep flex items-center justify-center transition-colors ring-1 ring-ink/5 active:scale-95 cursor-pointer"
                 title={t(selectedLanguage, 'signOut')}
+                aria-label={t(selectedLanguage, 'signOut')}
               >
-                <span className="material-symbols-outlined text-[15px]">logout</span>
+                <Icon name="signOut" size={15} />
               </button>
             )}
           </div>

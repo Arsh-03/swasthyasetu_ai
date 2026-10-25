@@ -1,8 +1,8 @@
 # Motion & Illustration Guidelines
 
 **Document ID:** UI-MOTION-SS-2026-V1
-**Applies to:** Patient app (`frontend Patient/`)
-**Code:** `src/theme/motion.ts`, `src/hooks/usePressScale.ts`, `src/components/illustrations/`
+**Applies to:** Patient app (`frontend Patient/`) and Doctor portal (`frontend Doctor/`, web: see [§ 3](#3-web-motion-doctor-portal))
+**Code:** Patient `src/theme/motion.ts`, `src/hooks/usePressScale.ts`, `src/components/illustrations/`; Doctor `src/styles/tokens.css`, `base.css`, `utilities.css`
 
 ---
 
@@ -70,3 +70,30 @@ All of them are shown in the dev Style Guide (long-press the brand mark in a dev
 2. Use palette tokens from `src/theme/tokens.ts` (`colors.*`); never hex values.
 3. Add it to `ILLUSTRATIONS` in `Illustrations.tsx` so the Style Guide shows it.
 4. Check it next to text in all three languages and at the smallest screen width.
+
+---
+
+## 3. Web motion (Doctor portal)
+
+The Doctor portal has no animation library: motion is plain CSS transitions on the same tokens.
+
+### 3.1 Tokens (`src/styles/tokens.css`)
+
+| Token | Value | Use |
+|---|---|---|
+| `--duration-press` | 150 ms | Hover lift and press (`neu-press`, `critical`) |
+| `--duration-transition` | 250 ms | Segmented thumb, toggle knob (`duration-250`) |
+| `--duration-signature` | 400 ms | **Reserved**, as in the Patient app |
+| `--ease-calm` | `cubic-bezier(0.16, 1, 0.3, 1)` | All timed motion (`ease-calm`). It is also Tailwind's default transition curve and 150 ms the default duration, so existing `transition-*` classes follow the tokens |
+
+### 3.2 Rules
+
+- Animate **only `transform` and `opacity`**. Pressed / selected states swap the shadow instantly (raised → inset) while the 1px hover lift animates back; shadows, blur, colours and layout never animate.
+- Hover = raised surfaces lift 1px (`translateY(-1px)`); active = inset. Critical buttons do the same with their solid fill.
+- `prefers-reduced-motion: reduce` collapses every transition and animation to ~0 ms (`base.css`), including the legacy `animate-ping` / `animate-pulse` / `animate-bounce` still on some screens. The state must stay clear without motion (inset, colour, icon, label).
+- No looping animation for attention. The legacy pings / pulses / bounces on the toast, the call ring and status dots are reviewed screen by screen in Phase 2; only the outgoing-call ring is expected to stay (it stops under reduced motion).
+
+### 3.3 Illustrations on the web
+
+Same style rules as § 2.1: soft, flat, organic, palette tokens only (CSS variables or `currentColor`, never hex in components), decorative (`aria-hidden`). On the web they are inline SVG React components on the 200 × 160 artboard. The Doctor set (loading / empty / error states per screen) is built in Phase 2; `AmbientBackground` (static CSS blobs, § 11.3 of the tokens doc) already exists in the UI kit.
+
