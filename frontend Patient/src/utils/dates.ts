@@ -114,7 +114,7 @@ export const formatDateLabel = (label: string | undefined, lang: SupportedLangua
 };
 
 /** "10:32 AM" in device-local time (digits and AM/PM, same as appointment times). */
-const formatClock = (date: Date) => {
+export const formatClock = (date: Date) => {
   const h = date.getHours();
   const m = String(date.getMinutes()).padStart(2, '0');
   return `${h % 12 === 0 ? 12 : h % 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;

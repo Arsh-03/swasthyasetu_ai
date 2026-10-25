@@ -2,6 +2,8 @@
 Speech-to-text for consultation calls. Audio is processed in memory and never written to disk.
 
 Providers (SCRIBE_ASR_PROVIDER):
+  "auto"  Your own server (below) when it answers its health check, else the demo script. The choice is
+          made once per call when AI is switched on, so a call never mixes real speech with demo lines.
   "stub"  A scripted demo consultation (Hindi / Kannada / English with English translations).
           No model needed: lets the whole minutes pipeline run on a laptop.
   "http"  Your own speech-to-text server exposing the common /v1/audio/transcriptions API
@@ -59,6 +61,9 @@ DEMO_SCRIPT = {
          "I take a sugar tablet, metformin, every morning. My father also had sugar.", "hi"),
         ("ಮೈ ಕೈ ನೋವು ಕೂಡ ಇದೆ. ನನ್ನ ನಂಬರ್ 98450 12345.",
          "I also have body ache. My number is 98450 12345.", "kn"),
+        # A danger sign, so the demo also shows the live assistant's safety alert.
+        ("Aur kabhi kabhi seedhi chadhte waqt chest pain hota hai.",
+         "And sometimes I get chest pain when I climb stairs.", "hi"),
     ],
 }
 
@@ -132,8 +137,45 @@ class HttpASR:
         return res.status_code < 500 and "ngrok-error-code" not in res.headers
 
 
+class AutoASR:
+    """Live speech-to-text (your Whisper server) when it is online; otherwise the demo conversation."""
+    name = "auto"
+
+    def __init__(self, live: Optional[HttpASR]):
+        self._live = live
+        self._demo = StubASR()
+        self._mode: Dict[str, str] = {}
+
+    async def choose(self, session_id: str) -> str:
+        """'live' or 'demo' for this call (decided once, when AI is switched on)."""
+        mode = "live" if self._live is not None and await self._live.health() else "demo"
+        self._mode[session_id] = mode
+        return mode
+
+    def mode_of(self, session_id: str) -> str:
+        return self._mode.get(session_id, "demo")
+
+    async def transcribe(self, session_id: str, speaker: str, audio: bytes, mime: str, offset_ms: int,
+                         duration_ms: int) -> List[Segment]:
+        engine = self._live if self.mode_of(session_id) == "live" and self._live is not None else self._demo
+        return await engine.transcribe(session_id, speaker, audio, mime, offset_ms, duration_ms)
+
+    def forget(self, session_id: str) -> None:
+        self._mode.pop(session_id, None)
+        self._demo.forget(session_id)
+
+    async def health(self) -> bool:
+        return True  # demo mode is always available
+
+
 def _build() -> Optional[object]:
     kind = settings.SCRIBE_ASR_PROVIDER
+    if kind == "auto":
+        live = None
+        if settings.SCRIBE_ASR_URL:
+            live = HttpASR(settings.SCRIBE_ASR_URL, settings.SCRIBE_ASR_MODEL, settings.SCRIBE_ASR_LANGUAGE,
+                           settings.SCRIBE_ASR_TRANSLATE, settings.SCRIBE_ASR_TIMEOUT_S)
+        return AutoASR(live)
     if kind == "stub":
         return StubASR()
     if kind == "http" and settings.SCRIBE_ASR_URL:

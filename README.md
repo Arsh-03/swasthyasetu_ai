@@ -132,6 +132,8 @@ swasthyasetu_ai/
 │   │   │   ├── fhir.py               # HL7 FHIR R4 bundle export
 │   │   │   ├── audit.py              # Audit log (+ filterable /audit/events)
 │   │   │   ├── doctor.py             # Doctor portal: dashboard, calendar, patients, visits, notifications, settings
+│   │   │   ├── chat.py               # Patient ↔ doctor chat (open around visits, emergency words → 108 + urgent alert)
+│   │   │   ├── vitals.py             # Readings patients take at home (heart rate from the phone camera)
 │   │   │   └── translate.py          # Kannada / Hindi / English translation
 │   │   └── services/                 # Token vault, DDI engine, FHIR, scribe,
 │   │                                 # translation & WebSocket connection manager
@@ -371,6 +373,23 @@ All REST routes are under `/api/v1`. The live, complete list is always at **`htt
 | `GET` | `/doctor/visits/{encounter_id}` | One past visit (note, plan, notepad, activity) |
 | `GET` / `POST` | `/doctor/notifications` · `/doctor/notifications/read` | Notification bell |
 | `GET` / `PUT` | `/doctor/settings` | Profile, preferences, weekly hours and leave |
+
+### Chat (patients and doctors)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/chat/threads` | My conversations (doctor: patients · patient: doctors) |
+| `GET` | `/chat/threads/{other_id}` | Messages, and whether the patient can write now (open from booking until N days after a visit) |
+| `POST` | `/chat/threads/{other_id}/messages` | Send; patient messages with emergency words are flagged (patient told to call 108, doctor alerted) |
+| `POST` | `/chat/threads/{other_id}/read` | Mark read (read receipts) |
+| `GET` | `/chat/unread` | Unread count |
+
+### Home readings
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/vitals` | Patient saves a reading (heart rate from the phone camera: an estimate, 30–220 bpm accepted; outside 45–120 warns the doctor) |
+| `GET` | `/vitals/me` · `/vitals/patient/{id}` | Patient's own readings · a patient's readings (doctor) |
+
+**Heart rate from the phone camera** (patient app → Home → Heart rate): the patient covers the back camera and flash with a fingertip for 30 s; `frontend Patient/src/services/heartRate.ts` turns the tiny brightness changes into beats per minute and refuses unclear signals. Works in the web app (Chrome on Android also turns the flash on); the installed app needs a native camera module first.
 | `GET` | `/translate/languages` | Supported languages |
 | `POST` | `/translate` | Translate text |
 | `POST` | `/translate/batch` | Translate several texts |

@@ -33,7 +33,7 @@ export interface NotificationItem {
 
 /** Where a notification or audit row leads in the portal. */
 export interface PortalLink {
-  page?: 'patient' | 'visit' | 'meeting' | 'home' | 'audit';
+  page?: 'patient' | 'visit' | 'meeting' | 'home' | 'audit' | 'messages';
   patient_id?: string;
   encounter_id?: string;
   appointment_id?: string;
@@ -91,6 +91,18 @@ export interface VisitRow {
   appointment_id: string | null;
 }
 
+export interface VitalReading {
+  reading_id: string;
+  kind: 'heart_rate';
+  value: number;
+  unit: string;
+  method: 'camera_ppg' | 'manual';
+  confidence: 'good' | 'fair' | null;
+  details: { quality?: number; irregularity?: number | null; seconds?: number; torch?: boolean };
+  out_of_range: boolean;
+  created_at: string;
+}
+
 export interface PatientDetail {
   patient: PatientBrief;
   chart: Partial<PatientFullRecord> | null;
@@ -98,6 +110,7 @@ export interface PatientDetail {
   past_visits: VisitRow[];
   open_consultation: PatientSummary | null;
   cancelled: Appointment[];
+  readings: VitalReading[];
 }
 
 export interface VisitDetail {
@@ -125,9 +138,10 @@ export interface VisitDetail {
   coded_terms: { name: string; category?: string; codes?: { system: string; code: string }[] }[];
   appointment: Appointment | null;
   timeline: { action: string; at: string; detail: string }[];
+  messages: { sender: 'patient' | 'doctor'; body: string; translation: string | null; urgent: boolean; created_at: string }[];
 }
 
-export type AuditCategory = 'appointments' | 'consultations' | 'consent_records' | 'alerts' | 'account';
+export type AuditCategory = 'appointments' | 'consultations' | 'messages' | 'consent_records' | 'alerts' | 'account';
 
 export interface AuditItem {
   event_id: string;
@@ -156,7 +170,10 @@ export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
 
 export interface DoctorSettings {
   profile: { display_name: string; specialty: string; facility: string; registration_number: string };
-  prefs: { language: 'en' | 'kn' | 'hi'; date_format: string; time_format: '12h' | '24h'; timezone: string };
+  prefs: {
+    language: 'en' | 'kn' | 'hi'; date_format: string; time_format: '12h' | '24h'; timezone: string;
+    chat_window_days: number; utc_offset_minutes: number;
+  };
   availability: { weekly: Record<Weekday, TimeSlot[]>; leaves: Leave[] };
 }
 
@@ -224,4 +241,55 @@ export const doctorApi = {
     start?: string; end?: string; category?: string; outcome?: string; patient_id?: string; q?: string;
     limit?: number; offset?: number;
   }) => call<AuditPage>(`/audit/events?${qs(filters)}`),
+};
+
+// ---------------------------------------------------------------------------------------------- Chat
+
+export interface ChatMessage {
+  message_id: string;
+  sender: 'patient' | 'doctor';
+  body: string;
+  lang: string;
+  translation: string | null;
+  translation_lang: string | null;
+  encounter_id: string | null;
+  urgent: boolean;
+  created_at: string;
+  read: boolean;
+}
+
+export interface ChatStatus {
+  open: boolean;
+  reason: 'upcoming' | 'recent_visit' | 'consultation' | 'doctor_reply' | 'closed';
+  open_until: string | null;
+  window_days: number;
+  doctor_available_now: boolean;
+  doctor_next_available: string | null;
+}
+
+export interface ChatThreadSummary {
+  other_id: string;
+  name: string;
+  avatar_url: string | null;
+  subtitle: string | null;
+  last_message: ChatMessage | null;
+  unread: number;
+  urgent: boolean;
+  open: boolean;
+}
+
+export interface ChatThread {
+  patient: { id: string; name: string; avatar_url: string | null; language: string };
+  doctor: { id: string; name: string; specialty: string };
+  status: ChatStatus;
+  messages: ChatMessage[];
+}
+
+export const chatApi = {
+  threads: () => call<ChatThreadSummary[]>('/chat/threads'),
+  thread: (patientId: string) => call<ChatThread>(`/chat/threads/${encodeURIComponent(patientId)}`),
+  send: (patientId: string, body: string) =>
+    call<ChatMessage & { emergency: boolean }>(`/chat/threads/${encodeURIComponent(patientId)}/messages`, { method: 'POST', body: JSON.stringify({ body, lang: 'en' }) }),
+  markRead: (patientId: string) => call<{ marked: number }>(`/chat/threads/${encodeURIComponent(patientId)}/read`, { method: 'POST' }),
+  unread: () => call<{ count: number }>('/chat/unread'),
 };

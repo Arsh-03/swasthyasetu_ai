@@ -15,6 +15,9 @@ import { hrefFor, navigate } from '../router';
 import { useDevices, usePreview } from '../meeting/devices';
 import { FloatingNotepad } from '../meeting/FloatingNotepad';
 import { VisitNoteForm } from '../meeting/VisitNoteForm';
+import { Conversation } from '../Conversation';
+import { HeartRateReading } from '../HeartRateReading';
+import { AlertStack, LiveAssist } from '../meeting/LiveAssist';
 import { Avatar, Button, Card, ErrorNote, Facts, Loading, PageHeader, Pill, SelectInput, Tabs, shortName } from '../ui';
 import type { StringKey } from '../i18n';
 
@@ -82,6 +85,9 @@ function MeetingRoom({ appointment, patient, inCallAlready }: { appointment: App
   const inCall = call.callState === 'in_call' || call.callState === 'calling';
   // Once a call has run in this room, ending it shows the summary instead of the lobby.
   useEffect(() => { if (inCall) setJoined(true); }, [inCall]);
+  // AI switched on: open the notepad, where the live suggestions appear.
+  const recording = call.aiState === 'recording';
+  useEffect(() => { if (recording) setNotesOpen(true); }, [recording]);
 
   return (
     <>
@@ -102,6 +108,7 @@ function NotepadWindow({ open, onClose, patient }: { open: boolean; onClose: () 
   return (
     <FloatingNotepad open={open} onClose={onClose} title={t('notesFor', { name: shortName(patient.full_name) })}
       minimizeLabel={t('minimize')} closeLabel={t('close')}>
+      <LiveAssist />
       {notepad}
     </FloatingNotepad>
   );
@@ -204,6 +211,7 @@ function PreJoin({ appointment, patient, onOpenNotes }: { appointment: Appointme
               { label: t('reasonForVisit'), value: appointment.agenda || patient.complaint },
               { label: t('allergies'), value: (patient.allergies ?? []).join(', ') || t('noneRecorded') },
             ]} />
+            {patient.latest_heart_rate && <HeartRateReading reading={patient.latest_heart_rate} compact />}
             <div className="flex flex-col gap-2">
               <Button variant="primary" size="lg" icon="video" disabled={!ready || joining} onClick={() => join(true)}>
                 {joining ? t('joining') : t('joinCall')}
@@ -281,7 +289,7 @@ function RoundButton({ icon, label, onClick, off, danger, active, disabled }: {
 
 function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary; notesOpen: boolean; onToggleNotes: () => void }) {
   const { t, call, speakerOn, setSpeakerOn } = usePortal();
-  const [panel, setPanel] = useState<'patient' | 'note' | null>(() => (window.innerWidth >= 1280 ? 'patient' : null));
+  const [panel, setPanel] = useState<'patient' | 'note' | 'chat' | null>(() => (window.innerWidth >= 1280 ? 'patient' : null));
   const remoteRef = useRef<HTMLVideoElement>(null);
   const selfRef = useRef<HTMLVideoElement>(null);
   const timer = useCallTimer(call.callStartedAt);
@@ -337,6 +345,8 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
           <span className="absolute bottom-1 left-1.5 text-3xs text-white/90">{t('you')}</span>
         </div>
 
+        <AlertStack />
+
         {call.notice && !calling && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-glass-night text-white text-xs rounded-full px-4 py-2">{call.notice}</div>
         )}
@@ -373,16 +383,20 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
           <div className="flex items-center justify-between pr-2">
             <div className="flex-1">
               <Tabs label={t('patientAndNote')} value={panel} onChange={setPanel}
-                tabs={[{ id: 'patient', label: t('tabPatient') }, { id: 'note', label: t('tabVisitNote') }]} />
+                tabs={[{ id: 'patient', label: t('tabPatient') }, { id: 'note', label: t('tabVisitNote') }, { id: 'chat', label: t('tabChat') }]} />
             </div>
             <button type="button" onClick={() => setPanel(null)} aria-label={t('close')}
               className="w-9 h-9 rounded-tight flex items-center justify-center text-ink-muted hover:bg-ink-tint cursor-pointer">
               <Icon name="close" size={18} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">
-            {panel === 'patient' ? <PatientSidePanel patient={patient} /> : <VisitNoteForm patient={patient} compact />}
-          </div>
+          {panel === 'chat' ? (
+            <div className="flex-1 min-h-0 flex flex-col"><Conversation patientId={patient.patient_id} showHeader={false} compact /></div>
+          ) : (
+            <div className="flex-1 overflow-y-auto p-4">
+              {panel === 'patient' ? <PatientSidePanel patient={patient} /> : <VisitNoteForm patient={patient} compact />}
+            </div>
+          )}
         </aside>
       )}
     </div>
@@ -404,6 +418,7 @@ function PatientSidePanel({ patient }: { patient: PatientSummary }) {
         { label: t('reasonForVisit'), value: patient.complaint },
         { label: t('vitals'), value: patient.vitals },
       ]} />
+      {patient.latest_heart_rate && <HeartRateReading reading={patient.latest_heart_rate} compact />}
       <div>
         <p className="text-2xs font-semibold uppercase tracking-wide text-ink-muted mb-1.5">{t('allergies')}</p>
         <div className="flex flex-wrap gap-1.5">

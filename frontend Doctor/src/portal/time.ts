@@ -3,7 +3,9 @@ import type { DoctorSettings } from '../services/doctorApi';
 
 export type Prefs = DoctorSettings['prefs'];
 
-export const DEFAULT_PREFS: Prefs = { language: 'en', date_format: 'DD MMM YYYY', time_format: '12h', timezone: 'Asia/Kolkata' };
+export const DEFAULT_PREFS: Prefs = {
+  language: 'en', date_format: 'DD MMM YYYY', time_format: '12h', timezone: 'Asia/Kolkata', chat_window_days: 7, utc_offset_minutes: 330,
+};
 
 const LOCALE: Record<Prefs['language'], string> = { en: 'en-IN', kn: 'kn-IN', hi: 'hi-IN' };
 

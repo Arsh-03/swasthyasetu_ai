@@ -36,11 +36,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal, get_db
-from app.models.models import AuditEvent, Encounter, PatientProfile, Practitioner
+from app.models.models import AuditEvent, Encounter, PatientProfile, Practitioner, VisitSummary
 from app.services import call_minutes as cm
 from app.services.asr import ASRError, asr, asr_info
 from app.services.auth_dependencies import decode_access_token, get_current_user, require_patient
 from app.services.deidentify import deidentifier_for
+from app.services import live_assistant as la
+from app.services.connection_manager import ws_manager
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 ws_router = APIRouter(tags=["calls"])
@@ -103,6 +105,36 @@ async def _audit(actor: str, action: str, resource: str, outcome: str = "SUCCESS
         await db.commit()
 
 
+def _doctor_sender(encounter_id: str):
+    """Send to whichever doctor socket is in the room at the time (it may reconnect mid-call)."""
+    async def send(payload: Dict[str, Any]) -> None:
+        room = _rooms.get(encounter_id)
+        if room and room.doctor:
+            await _send(room.doctor, payload)
+    return send
+
+
+async def _assist(encounter_id: str, session: cm.CallSession, new_lines) -> None:
+    """Live assistant: instant safety alerts, then streamed suggestions."""
+    send = _doctor_sender(encounter_id)
+    for alert in la.safety_alerts(session, new_lines):
+        await send({"type": "AI_ALERT", **alert})
+    if new_lines:
+        la.schedule_suggestions(session, send)
+
+
+async def _offer_summary(session: cm.CallSession, patient_id: Optional[str]) -> None:
+    """After the call: offer the patient a masked summary. Kept in memory until they answer."""
+    if not patient_id or not session.lines:
+        return
+    async with AsyncSessionLocal() as db:
+        profile = await db.get(PatientProfile, patient_id)
+    language = (profile.preferred_language if profile else None) or "en"
+    summary = await la.build_patient_summary(session, language)
+    sid = la.offer_summary(patient_id, session.encounter_id, summary)
+    await ws_manager.send_to([patient_id], {"type": "SUMMARY_OFFER", "summary_id": sid, "encounter_id": session.encounter_id})
+
+
 async def _push_minutes(encounter_id: str, session: cm.CallSession) -> None:
     room = _rooms.get(encounter_id)
     if room and room.doctor:
@@ -128,6 +160,9 @@ async def _finish_minutes(encounter_id: str, session: cm.CallSession) -> None:
             await _send(room.doctor, {"type": "AI_MINUTES", "final": True, **(await cm.analyze(session))})
         if room and room.doctor:
             await _send(room.doctor, {"type": "AI_STATUS", "state": "off", "detail": "Minutes complete."})
+        async with AsyncSessionLocal() as db:
+            enc = await db.get(Encounter, encounter_id)
+        await _offer_summary(session, enc.patient_id if enc else None)
     finally:
         cm.end_session(session.id)
 
@@ -250,7 +285,11 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
                         await _send(websocket, {"type": "AI_STATUS", "state": "recording", "session_id": existing.id})
                         continue
                     s = cm.create_session(encounter_id, deidentifier_for(patient_name, doctor_name, [district]))
+                    s.known_allergies = [a for a in (enc.allergies_json or []) if isinstance(a, str)]
                     room.session_id = s.id
+                    speech_mode = await asr.choose(s.id) if hasattr(asr, "choose") else "live"
+                    await _send(websocket, {"type": "AI_MODE", "speech": speech_mode,
+                                            "model": "live" if await la.model_online() else "demo"})
                     await _send(room.patient, {"type": "CONSENT_REQUEST", "session_id": s.id, "doctor_name": doctor_name})
                     await _send(websocket, {"type": "AI_STATUS", "state": "waiting_consent", "session_id": s.id,
                                             "patient_connected": room.patient is not None,
@@ -292,6 +331,9 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
                     s.note_text = msg["text"][:20000]
                     if s.lines:
                         await _push_minutes(encounter_id, s)
+                    if s.consent_at:
+                        for alert in la.safety_alerts(s, []):
+                            await _send(websocket, {"type": "AI_ALERT", **alert})
             elif kind == "ANALYZE" and role == "doctor":
                 s = cm.get_session(room.session_id) if room.session_id else None
                 if s:
@@ -396,7 +438,53 @@ async def upload_audio(
         del audio  # never stored
     if lines:
         await _push_minutes(session.encounter_id, session)
+        await _assist(session.encounter_id, session, lines)
     return {"transcribed_lines": len(lines)}
+
+
+# ---------------------------------------------------------------------------
+# Patient visit summaries: offered after the call, stored only if the patient says yes
+# ---------------------------------------------------------------------------
+def _summary_out(row: VisitSummary) -> Dict[str, Any]:
+    return {"summary_id": row.summary_id, "encounter_id": row.encounter_id, "language": row.language,
+            "sections": row.sections_json or {}, "engine": row.engine, "created_at": row.created_at}
+
+
+@router.get("/summaries/pending")
+async def pending_summaries(current_patient: Dict[str, Any] = Depends(require_patient)):
+    return la.pending_for(current_patient["user_id"])
+
+
+@router.post("/summaries/{summary_id}/accept")
+async def accept_summary(summary_id: str, current_patient: Dict[str, Any] = Depends(require_patient),
+                         db: AsyncSession = Depends(get_db)):
+    pending = la.take_pending(summary_id, current_patient["user_id"])
+    if not pending:
+        raise HTTPException(status_code=404, detail="This summary is no longer available.")
+    s = pending["summary"]
+    row = VisitSummary(summary_id=summary_id, patient_id=current_patient["user_id"], encounter_id=pending["encounter_id"],
+                       language=s["language"], sections_json=s["sections"], engine=s["engine"])
+    db.add(row)
+    db.add(AuditEvent(actor_id=f"patient:{current_patient['user_id']}", action="VISIT_SUMMARY_SAVED",
+                      resource_id=pending["encounter_id"] or summary_id, outcome="SUCCESS",
+                      purpose="Patient asked for a summary of the consultation"))
+    await db.commit()
+    await db.refresh(row)
+    return _summary_out(row)
+
+
+@router.post("/summaries/{summary_id}/decline")
+async def decline_summary(summary_id: str, current_patient: Dict[str, Any] = Depends(require_patient)):
+    la.take_pending(summary_id, current_patient["user_id"])
+    return {"ok": True}
+
+
+@router.get("/summaries/me")
+async def my_summaries(current_patient: Dict[str, Any] = Depends(require_patient), db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import desc as _desc
+    rows = (await db.execute(select(VisitSummary).where(VisitSummary.patient_id == current_patient["user_id"])
+                             .order_by(_desc(VisitSummary.created_at)).limit(20))).scalars().all()
+    return [_summary_out(r) for r in rows]
 
 
 @router.get("/active-encounter")

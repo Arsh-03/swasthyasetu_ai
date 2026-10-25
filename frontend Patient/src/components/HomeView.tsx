@@ -17,6 +17,8 @@ interface HomeViewProps {
   onOpenRecords: () => void;
   onOpenMedicines: () => void;
   onOpenFollowUp: () => void;
+  onOpenHeartRate: () => void;
+  onOpenChat: () => void;
   onTriggerEmergency: () => void;
 }
 

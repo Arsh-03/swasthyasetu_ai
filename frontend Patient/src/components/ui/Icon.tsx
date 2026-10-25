@@ -2,6 +2,8 @@ import React from 'react';
 import type { Icon as PhosphorIcon } from 'phosphor-react-native';
 // Per-icon imports (package "exports": ./src/icons/*) so only these glyphs are bundled.
 import { BoneIcon } from 'phosphor-react-native/src/icons/Bone';
+import { ChatCircleTextIcon } from 'phosphor-react-native/src/icons/ChatCircleText';
+import { PaperPlaneRightIcon } from 'phosphor-react-native/src/icons/PaperPlaneRight';
 import { BrainIcon } from 'phosphor-react-native/src/icons/Brain';
 import { BuildingsIcon } from 'phosphor-react-native/src/icons/Buildings';
 import { CalendarBlankIcon } from 'phosphor-react-native/src/icons/CalendarBlank';
@@ -74,6 +76,8 @@ const REGISTRY = {
   medication: PillIcon,
   records: FolderOpenIcon,
   privacy: ShieldCheckIcon,
+  chat: ChatCircleTextIcon,
+  send: PaperPlaneRightIcon,
   chevronLeft: CaretLeftIcon,
   chevronRight: CaretRightIcon,
   close: XIcon,

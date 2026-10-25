@@ -36,6 +36,21 @@ File: `frontend Doctor/src/portal/i18n.ts`, the `kn` and `hi` blocks (about 310 
 
 Doctors read these, so clinical words may stay in English where that is what doctors use (e.g. "ABHA", "OTP", "BMI"). Keep `{name}`, `{n}`, `{time}`, `{when}`, `{reason}`, `{total}`, `{locked}`, `{shown}`, `{year}` exactly as they are. An English text with `|` ("one|many") has a singular and a plural form; Kannada and Hindi use one form.
 
+## 4. Chat
+
+- Patient app: `frontend Patient/src/utils/translations.ts`, keys `tabChat`, `chat…` and `toastDoctorMessage` (keep `{date}`, `{time}`, `{days}`).
+- Emergency words: `backend/app/routers/chat.py`, `EMERGENCY_WORDS`. A native speaker should add the everyday ways people say chest pain, can't breathe, fainted, heavy bleeding, fits, poisoning, suicide in Kannada and Hindi (including Kannada / Hindi written in English letters, e.g. "ede novu", "saans nahi"). Missing a phrase means a real emergency is not flagged.
+
+## 5. Heart rate check
+
+- Patient app: `frontend Patient/src/utils/translations.ts`, keys `heartRate…`, `messageDoctor…` and `hr…` (keep `{n}`). The steps and the disclaimer ("an estimate, not a medical test; if you feel unwell, call 108") must keep their meaning.
+- Doctor portal: `frontend Doctor/src/portal/i18n.ts`, keys `homeReadings…` to `actReading`.
+
+## 6. Live assistant and visit summary
+
+- Doctor portal: `frontend Doctor/src/portal/i18n.ts`, keys `assist…`, `addToNote`, `engine…`.
+- Patient app: `frontend Patient/src/utils/translations.ts`, keys `summary…` (the offer text must keep: no names, saved only if they say yes).
+
 ## Status
 
 | Language | Reviewed by | Date |

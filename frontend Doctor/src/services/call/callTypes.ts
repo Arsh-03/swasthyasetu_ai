@@ -33,6 +33,38 @@ export interface CallFinding {
   quote_english: string;
 }
 
+/** Live assistant (backend/app/services/live_assistant.py). */
+export type AssistEngine = 'live' | 'demo';
+
+export interface AssistSuggestion {
+  id: string;
+  kind: 'ASK' | 'CHECK' | 'NOTE' | 'SAFETY' | string;
+  text: string;
+}
+
+export interface AssistAlert {
+  id: string;
+  kind: 'red_flag' | 'allergy' | string;
+  severity: string;
+  title: string;
+  detail: string;
+  quote: string;
+  quote_english: string;
+  at_ms: number | null;
+  source: string;
+}
+
+export interface AssistState {
+  /** Speech-to-text: your own server ('live') or the scripted demo conversation ('demo'). */
+  speech: AssistEngine | null;
+  /** Suggestions: your own model ('live') or the built-in demo engine ('demo'). */
+  model: AssistEngine | null;
+  /** Text arriving right now (token by token), or null. */
+  streaming: string | null;
+  suggestions: AssistSuggestion[];
+  alerts: AssistAlert[];
+}
+
 export interface CallMinutes {
   session_id: string;
   transcript: TranscriptLineView[];

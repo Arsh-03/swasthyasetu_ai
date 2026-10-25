@@ -15,19 +15,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import (
-    Appointment, AuditEvent, ClinicalNote, ConsultationNotepad, Encounter, Notification,
-    PatientProfile, Practitioner, PractitionerSettings, User,
+    Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, Notification,
+    PatientProfile, Practitioner, PractitionerSettings, User, VitalReading,
 )
 from app.services.auth_dependencies import require_doctor
 from app.services.connection_manager import ws_manager
 from app.services.notifications import notification_to_dict
 from app.services.serializers import as_aware, wait_label
+from app.routers.vitals import latest_heart_rate, reading_out
 
 router = APIRouter(prefix="/doctor", tags=["doctor portal"])
 
 OPEN = ("queued", "in_progress")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-DEFAULT_PREFS = {"language": "en", "date_format": "DD MMM YYYY", "time_format": "12h", "timezone": "Asia/Kolkata"}
+# chat_window_days: how long patients can message after a visit · utc_offset_minutes: kept current by the portal
+# (the server has no time-zone database) so chat can tell patients when the doctor is next available.
+DEFAULT_PREFS = {"language": "en", "date_format": "DD MMM YYYY", "time_format": "12h", "timezone": "Asia/Kolkata",
+                 "chat_window_days": 7, "utc_offset_minutes": 330}
 DEFAULT_AVAILABILITY = {
     "weekly": {
         **{d: [{"start": "09:00", "end": "13:00"}, {"start": "14:00", "end": "17:00"}] for d in WEEKDAYS[:5]},
@@ -397,7 +401,9 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
         await ws_manager.send_to([apt.patient_id], {"type": "call_room_ready", "encounter_id": enc.encounter_id})
     profile = await db.get(PatientProfile, apt.patient_id)
     user = await db.get(User, apt.patient_id)
-    return {"appointment": appointment_out(apt, profile, enc), "patient": queue_style_summary(enc, profile, user)}
+    summary = queue_style_summary(enc, profile, user)
+    summary["latest_heart_rate"] = await latest_heart_rate(db, apt.patient_id)
+    return {"appointment": appointment_out(apt, profile, enc), "patient": summary}
 
 
 # ---------------------------------------------------------------------------
@@ -484,6 +490,9 @@ async def patient_detail(patient_id: str, current_doctor: Dict[str, Any] = Depen
         "past_visits": [_visit_row(e, notes.get(e.encounter_id), apt_by_enc.get(e.encounter_id)) for e in past],
         "open_consultation": queue_style_summary(open_enc, profile, user) if open_enc else None,
         "cancelled": [appointment_out(a, profile) for a in apts if a.visit_status in ("cancelled", "no_show")],
+        "readings": [reading_out(r) for r in (await db.execute(
+            select(VitalReading).where(VitalReading.patient_id == patient_id)
+            .order_by(desc(VitalReading.created_at)).limit(10))).scalars()],
     }
 
 
@@ -500,6 +509,8 @@ async def visit_detail(encounter_id: str, current_doctor: Dict[str, Any] = Depen
     apt = (await db.execute(select(Appointment).where(Appointment.encounter_id == encounter_id))).scalars().first()
     events = (await db.execute(select(AuditEvent).where(AuditEvent.resource_id == encounter_id)
                                .order_by(AuditEvent.timestamp))).scalars().all()
+    chat = (await db.execute(select(ChatMessage).where(ChatMessage.encounter_id == encounter_id)
+                             .order_by(ChatMessage.created_at))).scalars().all()
     return {
         "encounter_id": enc.encounter_id,
         "patient": patient_brief(profile) if profile else None,
@@ -521,6 +532,8 @@ async def visit_detail(encounter_id: str, current_doctor: Dict[str, Any] = Depen
         "coded_terms": (pad.coded_terms_json or []) if pad else [],
         "appointment": appointment_out(apt) if apt else None,
         "timeline": [{"action": e.action, "at": as_aware(e.timestamp), "detail": e.purpose or ""} for e in events],
+        "messages": [{"sender": m.sender_role, "body": m.body, "translation": m.translation, "urgent": bool(m.urgent),
+                      "created_at": as_aware(m.created_at)} for m in chat],
     }
 
 
@@ -624,6 +637,10 @@ async def save_settings(req: SettingsIn, current_doctor: Dict[str, Any] = Depend
         doctor.facility = req.facility.strip(); changed.append("facility")
     if req.prefs is not None:
         allowed = {k: v for k, v in req.prefs.items() if k in DEFAULT_PREFS}
+        if "chat_window_days" in allowed:
+            allowed["chat_window_days"] = max(1, min(30, int(allowed["chat_window_days"] or 7)))
+        if "utc_offset_minutes" in allowed:
+            allowed["utc_offset_minutes"] = max(-720, min(840, int(allowed["utc_offset_minutes"])))
         row.prefs_json = {**DEFAULT_PREFS, **(row.prefs_json or {}), **allowed}; changed.append("preferences")
     if req.availability is not None:
         row.availability_json = _valid_availability(req.availability); changed.append("availability")

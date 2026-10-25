@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 
 from app.database import AsyncSessionLocal
 from app.models.models import (
-    Appointment, AuditEvent, ClinicalNote, ConsultationNotepad, Encounter, Notification, PatientProfile,
+    Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, Notification, PatientProfile,
     Practitioner, User,
 )
 
@@ -109,6 +109,7 @@ async def _clear(session) -> None:
     await session.execute(delete(Appointment).where(Appointment.appointment_id.like("apt_demo_%")))
     await session.execute(delete(Encounter).where(Encounter.encounter_id.like("enc_demo_%")))
     await session.execute(delete(Notification).where(Notification.notification_id.like("ntf_demo_%")))
+    await session.execute(delete(ChatMessage).where(ChatMessage.message_id.like("chat_demo_%")))
     await session.execute(delete(AuditEvent).where(AuditEvent.event_id.like("aud_demo_%")))
     await session.flush()
 
@@ -250,6 +251,30 @@ async def build(session) -> None:
          {"page": "patient", "patient_id": "usr_ramesh_gowda", "tab": "records"}, 180, read=True)
     note(4, "appointment", "info", "Appointment confirmed by Lakshmi Narayan", "Tomorrow's follow-up was confirmed.",
          {"page": "patient", "patient_id": "demo_pat_lakshmi", "tab": "visits"}, 300, read=True)
+    # --- A few chat conversations ----------------------------------------------------------------
+    chats = [
+        ("usr_ramesh_gowda", [
+            ("patient", "kn", "ಡಾಕ್ಟರ್, ಔಷಧಿ ಊಟದ ಮೊದಲು ತೆಗೆದುಕೊಳ್ಳಬೇಕೇ ಅಥವಾ ನಂತರವೇ?", 300, True),
+            ("doctor", "en", "After food, Ramesh. Tamsulosin at bedtime after dinner. Keep drinking 3 litres of water.", 290, True),
+            ("patient", "kn", "ಸರಿ ಡಾಕ್ಟರ್, ಧನ್ಯವಾದಗಳು. ನೋವು ಸ್ವಲ್ಪ ಕಡಿಮೆ ಆಗಿದೆ.", 40, False),
+        ]),
+        ("demo_pat_lakshmi", [
+            ("doctor", "en", "Lakshmi, please send your BP readings from this week before tomorrow's visit.", 600, True),
+            ("patient", "en", "Morning 138/86, evening 142/88. Knee pain is better with the gel.", 120, False),
+        ]),
+    ]
+    k = 0
+    for pid, rows in chats:
+        if pid not in profiles:
+            continue
+        last_enc = (await session.execute(select(Encounter.encounter_id).where(
+            Encounter.patient_id == pid, Encounter.status == "completed").order_by(Encounter.end_time.desc()))).scalars().first()
+        for sender, lang, body, minutes_ago, read in rows:
+            k += 1
+            at = now - timedelta(minutes=minutes_ago)
+            session.add(ChatMessage(message_id=f"chat_demo_{k:03d}", patient_id=pid, practitioner_id=DOCTOR,
+                                    sender_role=sender, body=body, lang=lang, encounter_id=last_enc,
+                                    created_at=at, read_at=at + timedelta(minutes=5) if read else None))
     await session.flush()
 
 

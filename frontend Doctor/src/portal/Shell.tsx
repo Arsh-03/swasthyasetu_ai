@@ -9,9 +9,10 @@ import { Avatar, IconButton } from './ui';
 import type { NotificationItem } from '../services/doctorApi';
 import { useCallTimer } from '../services/call/useCallTimer';
 
-const NAV: { page: 'home' | 'patients' | 'audit'; icon: IconName; label: 'navHome' | 'navPatients' | 'navAudit' }[] = [
+const NAV: { page: 'home' | 'patients' | 'messages' | 'audit'; icon: IconName; label: 'navHome' | 'navPatients' | 'navMessages' | 'navAudit' }[] = [
   { page: 'home', icon: 'home', label: 'navHome' },
   { page: 'patients', icon: 'patients', label: 'navPatients' },
+  { page: 'messages', icon: 'chat', label: 'navMessages' },
   { page: 'audit', icon: 'history', label: 'navAudit' },
 ];
 
@@ -22,7 +23,7 @@ function activeSection(route: Route): string {
 }
 
 export function Shell({ route, children }: { route: Route; children: ReactNode }) {
-  const { t, doctor } = usePortal();
+  const { t, doctor, chatUnread } = usePortal();
   const [menuOpen, setMenuOpen] = useState(false);
   const section = activeSection(route);
   useEffect(() => setMenuOpen(false), [route]);
@@ -42,7 +43,11 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
             )}
           >
             <Icon name={item.icon} size={20} weight={active ? 'duotone' : 'regular'} />
-            {t(item.label)}
+            <span className="flex-1">{t(item.label)}</span>
+            {item.page === 'messages' && chatUnread > 0 && (
+              <span className="min-w-5 h-5 px-1.5 rounded-full bg-primary text-on-primary text-3xs font-bold flex items-center justify-center"
+                aria-label={t('unreadMessages', { n: chatUnread })}>{chatUnread > 99 ? '99+' : chatUnread}</span>
+            )}
           </a>
         );
       })}

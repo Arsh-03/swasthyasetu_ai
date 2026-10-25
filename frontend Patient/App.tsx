@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { Platform, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +22,9 @@ import { formatDateLabel } from './src/utils/dates';
 import { ConsentGateModal } from './src/components/ConsentGateModal';
 import { PatientTelehealthCall } from './src/components/PatientTelehealthCall';
 import { CarePlanView } from './src/components/CarePlanView';
+import { ChatView } from './src/components/ChatView';
+import { HeartRateView } from './src/components/HeartRateView';
+import { SummaryOfferSheet } from './src/components/VisitSummary';
 import { WhoSawMyRecordsView } from './src/components/WhoSawMyRecordsView';
 import { RecordsLockerView } from './src/components/RecordsLockerView';
 import { SymptomIntakeModal } from './src/components/SymptomIntakeModal';
@@ -37,8 +40,8 @@ import { enableWebRTC } from './src/services/webrtcPlatform';
  *  (Expo Go doesn't include react-native-webrtc, so there the app explains where calls work.) */
 const CALLS_SUPPORTED = enableWebRTC();
 
-type TabType = 'home' | 'careplan' | 'records' | 'whosaw';
-type ScreenType = 'home' | 'call' | 'careplan' | 'whosaw' | 'records';
+type TabType = 'home' | 'careplan' | 'chat' | 'records' | 'whosaw';
+type ScreenType = 'home' | 'call' | 'careplan' | 'chat' | 'heartrate' | 'whosaw' | 'records';
 
 // Dev-only design reference. A conditional require (folded away when __DEV__ is false)
 // keeps it out of production bundles, which a static import would not.
@@ -72,6 +75,17 @@ function PatientApp() {
   }, [t, lang]);
   const [user, setUser] = useState<PatientUser | null>(() => patientApi.getCurrentUser());
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('home');
+  const screenRef = useRef<ScreenType>('home');
+  screenRef.current = currentScreen;
+  // Chat with the doctor: unread badge, and a counter bumped on every live chat event
+  const [chatUnread, setChatUnread] = useState(0);
+  // A visit summary offered after a call with AI minutes (kept only if the patient says yes)
+  const [summaryOffer, setSummaryOffer] = useState<string | null>(null);
+  const [summariesKey, setSummariesKey] = useState(0);
+  const [chatEvent, setChatEvent] = useState(0);
+  const refreshChatUnread = useCallback(() => {
+    patientApi.getChatUnread().then((r) => setChatUnread(r.count)).catch(() => undefined);
+  }, []);
   // Where the Privacy screen's back button should return to
   const [privacyBackTarget, setPrivacyBackTarget] = useState<'home' | 'records'>('home');
   const [isIntakeVisible, setIsIntakeVisible] = useState(false);
@@ -169,6 +183,8 @@ function PatientApp() {
       })
       .catch(() => {});
     void refreshCallRoom();
+    refreshChatUnread();
+    patientApi.getPendingSummaries().then((p) => { if (p.length) setSummaryOffer(p[0].summary_id); }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
@@ -202,6 +218,21 @@ function PatientApp() {
               status: 'PENDING',
             });
             showToast(tr('toastConsentRequest', { name: data.practitioner_name || tr('yourDoctor') }), 'warning');
+          }
+
+          // After a call with AI minutes: offer a summary of the visit.
+          if (data.type === 'SUMMARY_OFFER' && data.summary_id) setSummaryOffer(String(data.summary_id));
+
+          // Chat: a new message or a read receipt.
+          if (data.type === 'chat_message' || data.type === 'chat_read') {
+            setChatEvent((v) => v + 1);
+            if (data.type === 'chat_message' && data.sender === 'doctor') {
+              if (screenRef.current === 'chat') refreshChatUnread();
+              else {
+                setChatUnread((u) => u + 1);
+                showToast(tr('toastDoctorMessage'), 'info');
+              }
+            }
           }
 
           // The doctor opened a meeting room for a new consultation: join its call room.
@@ -327,17 +358,20 @@ function PatientApp() {
   }
 
   const activeTab: TabType =
-    currentScreen === 'home'
+    currentScreen === 'home' || currentScreen === 'heartrate'
       ? 'home'
       : currentScreen === 'careplan'
       ? 'careplan'
       : currentScreen === 'records'
       ? 'records'
+      : currentScreen === 'chat'
+      ? 'chat'
       : 'whosaw';
 
   const tabs: GlassTab<TabType>[] = [
     { key: 'home', label: t('tabToday'), icon: 'home' },
     { key: 'careplan', label: t('tabMedications'), icon: 'medication' },
+    { key: 'chat', label: t('tabChat'), icon: 'chat', badge: chatUnread },
     { key: 'records', label: t('tabRecords'), icon: 'records' },
     { key: 'whosaw', label: t('tabPrivacy'), icon: 'shieldCheck' },
   ];
@@ -389,11 +423,27 @@ function PatientApp() {
               onOpenRecords={() => setCurrentScreen('records')}
               onOpenMedicines={() => setCurrentScreen('careplan')}
               onOpenFollowUp={() => setCurrentScreen('careplan')}
+              onOpenHeartRate={() => setCurrentScreen('heartrate')}
+              onOpenChat={() => setCurrentScreen('chat')}
               onTriggerEmergency={() => setIsEmergencyVisible(true)}
             />
           )}
 
-          {currentScreen === 'careplan' && <CarePlanView onBack={() => setCurrentScreen('home')} />}
+          {currentScreen === 'careplan' && <CarePlanView onBack={() => setCurrentScreen('home')} summariesKey={summariesKey} />}
+
+          {currentScreen === 'heartrate' && (
+            <HeartRateView onBack={() => setCurrentScreen('home')} onMessageDoctor={() => setCurrentScreen('chat')} />
+          )}
+
+          {currentScreen === 'chat' && (
+            <ChatView
+              onBack={() => setCurrentScreen('home')}
+              chatEvent={chatEvent}
+              onEmergency={() => setIsEmergencyVisible(true)}
+              onRequestVisit={() => setIsIntakeVisible(true)}
+              onUnreadChanged={refreshChatUnread}
+            />
+          )}
 
           {currentScreen === 'records' && (
             <RecordsLockerView
@@ -434,6 +484,15 @@ function PatientApp() {
           }
           showToast(t('toastTriageComplete'), 'call');
           if (await refreshCallRoom()) setPendingCallStart(true);
+        }}
+      />
+
+      {/* Visit summary offer after a consultation */}
+      <SummaryOfferSheet
+        summaryId={summaryOffer}
+        onDone={(saved) => {
+          setSummaryOffer(null);
+          if (saved) setSummariesKey((k) => k + 1);
         }}
       />
 

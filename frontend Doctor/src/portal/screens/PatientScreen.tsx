@@ -9,10 +9,12 @@ import { usePortal } from '../PortalContext';
 import { hrefFor, navigate } from '../router';
 import { BookAppointment } from '../BookAppointment';
 import { AppointmentRow } from '../Schedule';
+import { Conversation } from '../Conversation';
+import { HeartRateReading } from '../HeartRateReading';
 import { Avatar, Button, Card, CardHeader, Empty, ErrorNote, Facts, Loading, Pill, Tabs } from '../ui';
 
-type Tab = 'overview' | 'visits' | 'records' | 'history';
-const TABS: Tab[] = ['overview', 'visits', 'records', 'history'];
+type Tab = 'overview' | 'visits' | 'messages' | 'records' | 'history';
+const TABS: Tab[] = ['overview', 'visits', 'messages', 'records', 'history'];
 
 /** What the consent dialog needs (the open consultation, or the patient without one). */
 function summaryFor(detail: PatientDetail): PatientSummary {
@@ -63,6 +65,7 @@ export function PatientScreen({ patientId, tab }: { patientId: string; tab?: str
           tabs={[
             { id: 'overview', label: t('tabOverview'), icon: 'person' },
             { id: 'visits', label: t('tabVisits'), icon: 'calendar', count: detail.past_visits.length + detail.upcoming.length },
+            { id: 'messages', label: t('tabMessages'), icon: 'chat' },
             { id: 'records', label: t('tabRecords'), icon: 'records' },
             { id: 'history', label: t('tabHistory'), icon: 'history' },
           ]}
@@ -71,6 +74,9 @@ export function PatientScreen({ patientId, tab }: { patientId: string; tab?: str
       <div className="pt-5">
         {current === 'overview' && <OverviewTab detail={detail} onOpenVisits={() => setTab('visits')} />}
         {current === 'visits' && <VisitsTab detail={detail} onBook={() => setBooking(true)} />}
+        {current === 'messages' && (
+          <Card className="h-[600px] max-h-[75vh] overflow-hidden"><Conversation patientId={patientId} showHeader={false} /></Card>
+        )}
         {current === 'records' && <RecordsTab detail={detail} />}
         {current === 'history' && <HistoryTab detail={detail} />}
       </div>
@@ -172,6 +178,21 @@ function OverviewTab({ detail, onOpenVisits }: { detail: PatientDetail; onOpenVi
           <CardHeader icon="calendar" title={t('nextAppointment')} />
           <div className="px-2 pb-3">
             {detail.upcoming[0] ? <AppointmentRow apt={detail.upcoming[0]} showDate hidePatient /> : <p className="px-3 pb-2 text-sm text-ink-muted">{t('notBooked')}</p>}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader icon="vitals" title={t('homeReadings')} subtitle={t('homeReadingsHint')} />
+          <div className="px-5 pb-5 flex flex-col gap-2">
+            {detail.readings.length === 0 ? <p className="text-sm text-ink-muted">{t('noReadings')}</p> : (
+              <>
+                <HeartRateReading reading={detail.readings[0]} />
+                {detail.readings.length > 1 && (
+                  <p className="text-2xs text-ink-muted">
+                    {t('earlierReadings')}: {detail.readings.slice(1, 6).map((r) => `${r.value} (${fmt.date(r.created_at)})`).join(' · ')}
+                  </p>
+                )}
+              </>
+            )}
           </div>
         </Card>
         <Card>

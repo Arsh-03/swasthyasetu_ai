@@ -51,6 +51,8 @@ interface ClinicalNotepadProps {
   autoApplyCall?: boolean;
   /** Current note text (debounced), so the call can compare it with the conversation. */
   onTextChange?: (text: string) => void;
+  /** Text the doctor chose to add from the live assistant (inserted once per id, in its section). */
+  insertRequest?: { id: string; text: string; section: string } | null;
 }
 
 const fmtTime = (ms: number | null) => (ms === null ? '' : `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`);
@@ -110,7 +112,7 @@ const SafetyRow: React.FC<{ alert: SafetyAlert }> = ({ alert: a }) => (
 );
 
 export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
-  encounterId, patientName, callMinutes = null, autoApplyCall = false, onTextChange,
+  encounterId, patientName, callMinutes = null, autoApplyCall = false, onTextChange, insertRequest = null,
 }) => {
   const [lexicon, setLexicon] = useState<Lexicon | null>(null);
   const engine = useMemo(() => (lexicon ? new LocalEngine(lexicon) : null), [lexicon]);
@@ -325,6 +327,15 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     }
     setCallApplied(prev => ({ ...prev, [f.id]: { status: 'removed', finding: f } }));
   }, [commitText]);
+
+  // "Add to note" from the live assistant.
+  useEffect(() => {
+    if (!insertRequest || loading || callAppliedRef.current[insertRequest.id]) return;
+    addCallFinding({
+      id: insertRequest.id, kind: 'other', section: insertRequest.section, text: insertRequest.text, severity: 'routine',
+      source: 'model', speaker: 'conversation', at_ms: null, quote: '', quote_english: '',
+    });
+  }, [insertRequest, addCallFinding, loading]);
 
   // Auto-add new findings while AI minutes are on.
   useEffect(() => {

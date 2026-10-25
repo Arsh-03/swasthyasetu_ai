@@ -5,7 +5,8 @@
 
 import { authFetch } from '../backend';
 
-const CHUNK_MS = 15000;
+// 5 s pieces keep the live assistant a few seconds behind the conversation (Whisper needs a few seconds of speech).
+const CHUNK_MS = 5000;
 
 /** Browsers can record audio chunks; phones (react-native-webrtc) can't, so there the doctor's app
  *  records the patient's voice from the call instead (still only with the patient's consent). */

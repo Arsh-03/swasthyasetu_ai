@@ -36,6 +36,8 @@ export interface PatientSummary {
   wait_time?: string;
   urgency?: 'high' | 'follow_up' | 'routine';
   avatar_url?: string;
+  /** Latest heart rate the patient measured at home (phone camera estimate). */
+  latest_heart_rate?: import('./doctorApi').VitalReading | null;
 }
 
 export interface RecordSummary {

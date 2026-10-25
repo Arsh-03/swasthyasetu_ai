@@ -115,6 +115,20 @@ export function VisitScreen({ patientId, encounterId }: { patientId: string; enc
               </div>
             </Card>
           )}
+          {visit.messages.length > 0 && (
+            <Card>
+              <CardHeader icon="chat" title={t('tabMessages')} subtitle={t('visitMessagesHint')}
+                action={<a href={hrefFor({ page: 'messages', patientId })} className="text-xs font-semibold text-primary hover:underline">{t('openChat')}</a>} />
+              <ul className="px-5 pb-5 flex flex-col gap-2.5">
+                {visit.messages.map((m, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="text-2xs text-ink-muted">{m.sender === 'doctor' ? t('you') : t('patient')} · {fmt.dateTime(m.created_at)}</span>
+                    <p className={m.urgent ? 'text-danger-deep font-semibold' : 'text-ink'}>{m.sender === 'patient' && m.translation ? m.translation : m.body}</p>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {visit.timeline.length > 0 && (
             <Card>
               <CardHeader icon="history" title={t('activity')} />

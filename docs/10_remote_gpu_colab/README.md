@@ -30,6 +30,26 @@ The notebook's `.env` lines also:
 - set `INTELLISENSE_HEALTH_INTERVAL_S=300`, so health checks don't use up ngrok's free monthly request allowance
 - raise the timeouts slightly for the extra network hop
 
+## Live assistant and automatic demo fallback
+
+During a call with AI minutes on (and the patient's consent), the doctor gets a **live assistant** in the floating notepad:
+suggestions (Ask / Check / Note / Safety) streamed a few seconds after something is said, and safety alerts
+(danger signs, allergy clashes) as pop-ups. Code: `backend/app/services/live_assistant.py`.
+
+| Part | When Colab is online | When Colab is offline |
+|---|---|---|
+| Speech-to-text (`SCRIBE_ASR_PROVIDER=auto`) | Whisper on Colab, 5-second audio pieces | The scripted demo conversation |
+| Suggestions | Your Ollama model, streamed token by token | The built-in demo engine (rules), streamed the same way |
+| Safety alerts | Rules (never wait for a model) | Rules |
+| Patient summary (after the call, only if the patient says yes) | Written by your model in the patient's language | Built from the masked facts (English) |
+
+- The speech mode is chosen **once per call** when AI is switched on, so a call never mixes real speech with demo lines.
+  If Colab drops mid-call, transcription pauses with a warning; suggestions switch to the demo engine.
+- The doctor's screen shows which engines are running ("Speech: live / demo", "AI: live / demo").
+- Before anything reaches a model: fillers and stutters are removed (`call_minutes.clean_speech`) and names, phone
+  numbers, IDs, places and dates are masked (`deidentify.py`). The patient summary never names the patient or the doctor.
+- Nothing is written to disk during the call. The summary is stored (`visit_summaries`) only when the patient taps "Yes".
+
 ## Security
 
 - Every request except `/health` needs `Authorization: Bearer <AI_GATEWAY_TOKEN>`. The backend adds this header automatically (`app.config.ai_headers()`).

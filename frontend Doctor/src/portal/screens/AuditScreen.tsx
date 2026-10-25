@@ -15,15 +15,19 @@ const PAGE = 50;
 const CATEGORIES: { id: AuditCategory; icon: IconName; label: StringKey }[] = [
   { id: 'appointments', icon: 'calendar', label: 'catAppointments' },
   { id: 'consultations', icon: 'clinicalNotes', label: 'catConsultations' },
+  { id: 'messages', icon: 'chat', label: 'catMessages' },
   { id: 'consent_records', icon: 'shieldCheck', label: 'catConsentRecords' },
   { id: 'alerts', icon: 'emergency', label: 'catAlerts' },
   { id: 'account', icon: 'person', label: 'catAccount' },
 ];
 
-const DEFAULT_CATEGORIES: AuditCategory[] = ['appointments', 'consultations', 'consent_records', 'alerts'];
+const DEFAULT_CATEGORIES: AuditCategory[] = ['appointments', 'consultations', 'messages', 'consent_records', 'alerts'];
 
 const ACTION_KEYS: Record<string, StringKey> = {
   APPOINTMENT_BOOKED: 'actAppointmentBooked',
+  CHAT_MESSAGE_SENT: 'actChatMessage',
+  VITAL_READING_RECORDED: 'actReading',
+  CHAT_MESSAGE_URGENT: 'actChatUrgent',
   APPOINTMENT_RESCHEDULED: 'actAppointmentRescheduled',
   APPOINTMENT_CANCELLED: 'actAppointmentCancelled',
   APPOINTMENT_UPDATED: 'actAppointmentUpdated',
@@ -214,7 +218,7 @@ export function AuditScreen() {
 
 function AuditRow({ item }: { item: AuditItem }) {
   const { t, fmt } = usePortal();
-  const cat = CATEGORIES.find((c) => c.id === item.category) ?? CATEGORIES[4];
+  const cat = CATEGORIES.find((c) => c.id === item.category) ?? CATEGORIES[CATEGORIES.length - 1];
   const route = routeForLink(item.link);
   const body = (
     <>

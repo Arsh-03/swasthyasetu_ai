@@ -34,6 +34,13 @@ export interface PortalState {
   setSpeakerOn: (on: boolean) => void;
   speakerId: string;
   setSpeakerId: (id: string) => void;
+  /** Unread patient messages (sidebar badge). */
+  chatUnread: number;
+  refreshChatUnread: () => void;
+  /** Bumped on every live chat event (new message, read receipt); open conversations reload. */
+  chatEvent: number;
+  /** Put text into the open consultation's note (the live assistant's "Add to note"). */
+  addToNote: (item: { id: string; text: string; section: string }) => void;
   /** The AI notepad for the open consultation (null when none is open). */
   notepad: ReactNode;
   requestRecords: (patient: PatientSummary) => void;

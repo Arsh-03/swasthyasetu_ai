@@ -88,12 +88,16 @@ async def get_audit_trail(
 
 # Outcomes that mean something went wrong or needs a look (PENDING etc. are normal steps).
 PROBLEM_OUTCOMES = {"DENIED", "ALERT", "REVOKED", "EXPIRED", "FAILED", "DECLINED", "BLOCKED", "REJECTED", "ERROR"}
-AUDIT_CATEGORIES = ("appointments", "consultations", "consent_records", "alerts", "account")
+AUDIT_CATEGORIES = ("appointments", "consultations", "messages", "consent_records", "alerts", "account")
 
 
 def audit_category(action: str) -> str:
     if action.startswith("APPOINTMENT_"):
         return "appointments"
+    if action == "VITAL_READING_RECORDED":
+        return "consultations"
+    if action.startswith("CHAT_"):
+        return "alerts" if action == "CHAT_MESSAGE_URGENT" else "messages"
     if action in ("RECOVERY_CHECKIN",) or action.startswith("ALERT_") or action.startswith("UNAUTHORIZED_"):
         return "alerts"
     if action in ("SYMPTOM_INTAKE_SUBMITTED", "CARE_PLAN_SIGNED_AND_ISSUED", "NOTEPAD_DRAFT_SAVED",

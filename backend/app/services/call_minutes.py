@@ -53,6 +53,12 @@ class CallSession:
     # (set only when the patient consents from such a device).
     patient_recorded_by_doctor: bool = False
     ending: bool = False                      # the call ended; waiting for the last chunks
+    # Live assistant (live_assistant.py)
+    known_allergies: List[str] = field(default_factory=list)
+    sent_alerts: set = field(default_factory=set)
+    sent_suggestions: set = field(default_factory=set)
+    assist_running: bool = False
+    assist_dirty: bool = False
 
 
 _sessions: Dict[str, CallSession] = {}
@@ -94,10 +100,35 @@ async def add_audio(session: CallSession, speaker: str, audio: bytes, mime: str,
         segments = await asr.transcribe(session.id, speaker, audio, mime, offset_ms, duration_ms)
     finally:
         session.pending_uploads -= 1
+    for seg in segments:
+        seg.text = clean_speech(seg.text)
+        seg.english = clean_speech(seg.english, english=True)
     new = [TranscriptLine(seg, session.deid.redact(punctuate(seg.english))) for seg in segments if seg.english.strip()]
     session.lines.extend(new)
     session.last_activity = time.time()
     return new
+
+
+# ---------------------------------------------------------------------------
+# Cleaning spoken text: fillers, hesitations and repeated words carry no meaning for the notes.
+# ---------------------------------------------------------------------------
+# English-letter fillers plus the Kannada / Hindi "umm" sounds (ಅಂ, ಅಮ್, ಹ್ಮ್, अं, अम्, हम्म).
+_FILLERS_ANY = re.compile(r"(?i)(?<![\wऀ-෿])(?:u+h+m*|u+m+|h+m+|e+r+m*|a+h+|a{2,}|e{2,}|m{2,}|ಅಂ+|ಅಮ್|ಹ್ಮ್|अं+|अम्|हम्म)(?![\wऀ-෿])[,.]?\s*")
+_FILLERS_EN = re.compile(r"(?i)\b(?:you know|i mean|kind of|sort of|basically|actually|like,)\s*")
+_REPEATS = re.compile(r"(?i)(?<![\wऀ-෿])([\wऀ-෿]+)(?:[\s,]+\1)+(?![\wऀ-෿])")
+
+
+def clean_speech(text: str, english: bool = False) -> str:
+    """Remove "umm", "uh", "you know", stutters ("the the") and extra spaces; keep everything clinical."""
+    if not text:
+        return text
+    out = _FILLERS_ANY.sub("", text)
+    if english:
+        out = _FILLERS_EN.sub("", out)
+    out = _REPEATS.sub(r"\1", out)
+    out = re.sub(r"\s+([,.?!])", r"\1", re.sub(r"\s{2,}", " ", out))
+    out = re.sub(r"([,.?!])(?:\s*,)+", r"\1", out).strip(" ,")
+    return out[:1].upper() + out[1:] if out else out
 
 
 # ---------------------------------------------------------------------------

@@ -5,9 +5,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CallClient, type CallMessage, type CallQuality } from './callClient';
 import { ChunkRecorder, canRecordAudio } from './audioRecorder';
 import { startTone } from './ringtone';
-import type { AiState, CallLanguage as Language, CallMinutes, CallRole } from './callTypes';
+import type { AiState, AssistAlert, AssistState, AssistSuggestion, CallLanguage as Language, CallMinutes, CallRole } from './callTypes';
 
 export type CallState = 'idle' | 'calling' | 'incoming' | 'in_call';
+const EMPTY_ASSIST: AssistState = { speech: null, model: null, streaming: null, suggestions: [], alerts: [] };
 const RING_TIMEOUT_MS = 45000;
 
 export interface IncomingCall { callerName: string; video: boolean }
@@ -44,6 +45,10 @@ export interface ConsultationCallApi {
   notice: string | null;
   speechAvailable: boolean;
   minutes: CallMinutes | null;
+  /** Live assistant during the call: engines in use, streamed suggestions, safety alerts. */
+  assist: AssistState;
+  dismissAlert: (id: string) => void;
+  dismissSuggestion: (id: string) => void;
   startCall: (video: boolean) => Promise<void>;
   acceptCall: (video: boolean) => Promise<void>;
   declineCall: () => void;
@@ -91,6 +96,7 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
   const [notice, setNotice] = useState<string | null>(null);
   const [speechAvailable, setSpeechAvailable] = useState(true);
   const [minutes, setMinutes] = useState<CallMinutes | null>(null);
+  const [assist, setAssist] = useState<AssistState>(EMPTY_ASSIST);
 
   const clientRef = useRef<CallClient | null>(null);
   const recorderRef = useRef<ChunkRecorder | null>(null);
@@ -104,6 +110,7 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
   if (stateFor !== encounterId) {
     setStateFor(encounterId);
     setMinutes(null);
+    setAssist(EMPTY_ASSIST);
     setAiState('off');
     setRecordingSession(null);
     setCallState('idle');
@@ -208,6 +215,25 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
       case 'AI_MINUTES':
         setMinutes(msg as unknown as CallMinutes);
         break;
+      case 'AI_MODE':
+        setAssist((a) => ({ ...EMPTY_ASSIST, speech: msg.speech ?? null, model: msg.model ?? null, alerts: a.alerts }));
+        break;
+      case 'AI_ASSIST':
+        if (msg.state === 'streaming') {
+          setAssist((a) => ({ ...a, streaming: String(msg.text ?? ''), model: msg.engine ?? a.model }));
+        } else {
+          const items = (msg.items ?? []) as AssistSuggestion[];
+          setAssist((a) => ({
+            ...a, streaming: null, model: msg.engine ?? a.model,
+            suggestions: [...items, ...a.suggestions.filter((s) => !items.some((i) => i.id === s.id))].slice(0, 6),
+          }));
+        }
+        break;
+      case 'AI_ALERT': {
+        const alert = msg as unknown as AssistAlert;
+        setAssist((a) => (a.alerts.some((x) => x.id === alert.id) ? a : { ...a, alerts: [alert, ...a.alerts] }));
+        break;
+      }
       case 'REPLACED':
         setNotice('This consultation was opened in another window.');
         break;
@@ -376,9 +402,12 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
     setRecordingSession(null);
   };
 
+  const dismissAlert = useCallback((id: string) => setAssist((a) => ({ ...a, alerts: a.alerts.filter((x) => x.id !== id) })), []);
+  const dismissSuggestion = useCallback((id: string) => setAssist((a) => ({ ...a, suggestions: a.suggestions.filter((x) => x.id !== id) })), []);
+
   return {
     role, peerName, connection, roomEncounterId, peerPresent, callState, incoming, endReason, withVideo, callStartedAt, localStream, remoteStream, remoteHasVideo,
-    micOff, camOff, aiState, aiDetail, aiOn, quality: callState === 'in_call' ? quality : null, recordingSession, consentRequest, notice, speechAvailable, minutes,
+    micOff, camOff, aiState, aiDetail, aiOn, quality: callState === 'in_call' ? quality : null, recordingSession, consentRequest, notice, speechAvailable, minutes, assist, dismissAlert, dismissSuggestion,
     startCall, acceptCall, declineCall, endCall, toggleMic, toggleCam, toggleAi, respondConsent, withdrawConsent,
   };
 }

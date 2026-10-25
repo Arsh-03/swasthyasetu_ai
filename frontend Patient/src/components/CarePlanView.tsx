@@ -7,6 +7,7 @@ import type { SupportedLanguage, TranslationKey } from '../utils/translations';
 import { haptic } from '../utils/haptics';
 import { localized } from '../utils/localized';
 import { EmptyMedications } from './illustrations';
+import { SavedSummaries } from './VisitSummary';
 import {
   AppText,
   AudioListenButton,
@@ -28,6 +29,8 @@ import {
 
 interface CarePlanViewProps {
   onBack: () => void;
+  /** Bumped when a new visit summary was saved. */
+  summariesKey?: number;
 }
 
 type CheckinStatus = 'better' | 'same' | 'worse';
@@ -65,7 +68,7 @@ const buildDoseRows = (meds: CarePlanMedication[]): DoseRow[] => {
   return rows;
 };
 
-export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
+export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey = 0 }) => {
   const { lang, t } = useLanguage();
   const [plan, setPlan] = useState<CarePlan | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -144,6 +147,8 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
         title={t('carePlan')}
         subtitle={subtitle || (status === 'loading' ? t('loading') : t('noCarePlan'))}
       />
+
+      <SavedSummaries refreshKey={summariesKey} />
 
       {/* Voice instructions */}
       <AudioListenButton

@@ -12,7 +12,7 @@ import { RemoteAudio } from './components/call/RemoteAudio';
 import { Icon } from './components/ui/Icon';
 import { cx } from './components/ui/cx';
 import { api, WS_BASE_URL, type DoctorProfile, type PatientSummary } from './services/api';
-import { doctorApi, type DoctorSettings, type NotificationItem } from './services/doctorApi';
+import { chatApi, doctorApi, type DoctorSettings, type NotificationItem } from './services/doctorApi';
 import { useConsultationCall } from './services/call/useConsultationCall';
 import { useDoctorLobby } from './services/call/useDoctorLobby';
 import { PortalContext, type PortalState, type ToastTone } from './portal/PortalContext';
@@ -27,6 +27,7 @@ import { VisitScreen } from './portal/screens/VisitScreen';
 import { MeetingScreen } from './portal/screens/MeetingScreen';
 import { AuditScreen } from './portal/screens/AuditScreen';
 import { SettingsScreen } from './portal/screens/SettingsScreen';
+import { MessagesScreen } from './portal/screens/MessagesScreen';
 
 const LANG_KEY = 'doctor_lang';
 const storedLang = (): Lang => {
@@ -53,6 +54,8 @@ export function App() {
   const [consentPatient, setConsentPatient] = useState<PatientSummary | null>(null);
   const [speakerOn, setSpeakerOn] = useState(true);
   const [speakerId, setSpeakerId] = useState('');
+  const [chatUnread, setChatUnread] = useState(0);
+  const [chatEvent, setChatEvent] = useState(0);
   const route = useRoute();
 
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
@@ -85,6 +88,9 @@ export function App() {
     api.getMe().then(setDoctor).catch(() => logout());
     doctorApi.settings().then((s) => {
       setSettings(s);
+      // The server has no time-zone database: keep the doctor's UTC offset current for chat ("available again at...").
+      const offset = makeFormatters({ ...DEFAULT_PREFS, ...s.prefs }).offset();
+      if (s.prefs.utc_offset_minutes !== offset) doctorApi.saveSettings({ prefs: { utc_offset_minutes: offset } }).then(setSettings).catch(() => undefined);
       setLangState(s.prefs.language);
       try { localStorage.setItem(LANG_KEY, s.prefs.language); } catch { /* */ }
     }).catch(() => { /* older server: defaults */ });
@@ -114,6 +120,11 @@ export function App() {
     const id = setInterval(loadNotifications, 60000);
     return () => clearInterval(id);
   }, [isAuthenticated, loadNotifications]);
+
+  const refreshChatUnread = useCallback(() => {
+    chatApi.unread().then((r) => setChatUnread(r.count)).catch(() => { /* badge stays */ });
+  }, []);
+  useEffect(() => { if (isAuthenticated) refreshChatUnread(); }, [isAuthenticated, refreshChatUnread]);
 
   const markRead = useCallback((ids: string[] | 'all') => {
     setNotifications((prev) => prev.map((n) => (ids === 'all' || ids.includes(n.notification_id) ? { ...n, read: true } : n)));
@@ -145,12 +156,26 @@ export function App() {
             setVersion((v) => v + 1);
             break;
           }
+          case 'chat_message': {
+            setChatEvent((v) => v + 1);
+            if (msg.sender === 'patient') {
+              setChatUnread((u) => u + 1);
+              // Urgent ones also come as a notification (red banner); others get a quiet toast unless that chat is open.
+              const open = window.location.hash.startsWith(`#/messages/${encodeURIComponent(String(msg.patient_id))}`);
+              if (!msg.urgent && !open) toast(tRef.current('newMessageFrom', { name: String(msg.sender_name || '').replace(/\s*\(.*?\)/g, '') || tRef.current('patient') }), 'info');
+            }
+            break;
+          }
+          case 'chat_read':
+            setChatEvent((v) => v + 1);
+            break;
           case 'ABHA_LINK_APPROVED':
           case 'consent_granted':
           case 'ABHA_LINK_REJECTED':
           case 'queue_updated':
           case 'appointment_event':
           case 'recovery_checkin':
+          case 'vitals_recorded':
             setVersion((v) => v + 1);
             break;
         }
@@ -167,6 +192,7 @@ export function App() {
 
   // ---- Consultation call ----
   const [notepadText, setNotepadText] = useState('');
+  const [insertRequest, setInsertRequest] = useState<{ id: string; text: string; section: string } | null>(null);
   const [lobbyAnswer, setLobbyAnswer] = useState<{ video: boolean } | null>(null);
   const clearLobbyAnswer = useCallback(() => setLobbyAnswer(null), []);
   const patient = consultation?.patient ?? null;
@@ -216,13 +242,14 @@ export function App() {
       callMinutes={call.minutes}
       autoApplyCall={call.aiState === 'recording' || call.aiState === 'finishing'}
       onTextChange={setNotepadText}
+      insertRequest={insertRequest}
     />
   ) : null;
 
   const portal: PortalState = {
     doctor, settings, saveSettings, lang, setLang, t, fmt, notifications, unread, markRead, toast, version, refresh,
     consultation, openConsultation, closeConsultation, call, speakerOn, setSpeakerOn, speakerId, setSpeakerId,
-    notepad, requestRecords: setConsentPatient, logout,
+    chatUnread, refreshChatUnread, chatEvent, addToNote: setInsertRequest, notepad, requestRecords: setConsentPatient, logout,
   };
 
   if (!isAuthenticated) {
@@ -242,6 +269,7 @@ export function App() {
         {route.page === 'patient' && <PatientScreen patientId={route.patientId} tab={route.tab} />}
         {route.page === 'visit' && <VisitScreen patientId={route.patientId} encounterId={route.encounterId} />}
         {route.page === 'meeting' && <MeetingScreen appointmentId={route.appointmentId} />}
+        {route.page === 'messages' && <MessagesScreen patientId={route.patientId} />}
         {route.page === 'audit' && <AuditScreen />}
         {route.page === 'settings' && <SettingsScreen section={route.section} />}
       </Shell>

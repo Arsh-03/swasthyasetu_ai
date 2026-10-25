@@ -131,6 +131,13 @@ function PreferencesSection({ settings }: { settings: DoctorSettings }) {
             </SelectInput>
           )}
         </Field>
+        <Field label={t('chatWindow')} hint={t('chatWindowHint')}>
+          {(id) => (
+            <SelectInput id={id} value={prefs.chat_window_days} onChange={(e) => setPrefs({ ...prefs, chat_window_days: Number(e.target.value) })}>
+              {[1, 3, 7, 14, 30].map((d) => <option key={d} value={d}>{t('daysAfterVisit', { n: d })}</option>)}
+            </SelectInput>
+          )}
+        </Field>
         <p className="sm:col-span-2 text-xs text-ink-muted">{t('preview')}: <span className="font-semibold text-ink">{preview.dateTime(new Date())}</span></p>
       </div>
       <SaveBar busy={busy} error={error} disabled={!dirty} onSave={() => save({ prefs })} />

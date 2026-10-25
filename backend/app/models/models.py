@@ -262,3 +262,51 @@ class PractitionerSettings(Base):
     # {"weekly": {"mon": [{"start": "09:00", "end": "13:00"}], ...}, "leaves": [{"id", "start", "end", "reason"}]}
     availability_json = Column(JSONType, default=dict)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class ChatMessage(Base):
+    """One chat message between a patient and their doctor. Part of the clinical record (never edited or deleted)."""
+    __tablename__ = "chat_messages"
+
+    message_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), nullable=False, index=True)
+    sender_role = Column(String(20), nullable=False)  # 'patient', 'doctor'
+    body = Column(Text, nullable=False)
+    lang = Column(String(10), default="en")  # language the sender wrote in
+    translation = Column(Text, nullable=True)  # into the reader's language, when the translator changed it
+    translation_lang = Column(String(10), nullable=True)
+    encounter_id = Column(String(36), nullable=True)  # the visit this message belongs to
+    urgent = Column(Boolean, default=False)  # emergency words detected (patient messages)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)  # read by the recipient
+
+
+class VitalReading(Base):
+    """A reading the patient took at home (e.g. heart rate from the phone camera). Estimates are labelled as such."""
+    __tablename__ = "vital_readings"
+
+    reading_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    kind = Column(String(30), nullable=False)  # 'heart_rate'
+    value = Column(Integer, nullable=False)
+    unit = Column(String(20), default="bpm")
+    method = Column(String(30), default="camera_ppg")  # 'camera_ppg' (fingertip on camera), 'manual'
+    confidence = Column(String(10), nullable=True)  # 'good', 'fair'
+    details_json = Column(JSONType, default=dict)  # {"quality", "irregularity", "seconds", "beats", "torch"}
+    encounter_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class VisitSummary(Base):
+    """A plain-language summary of a consultation, kept only because the patient asked for it.
+    Built from de-identified text: it never names the patient or the doctor."""
+    __tablename__ = "visit_summaries"
+
+    summary_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    encounter_id = Column(String(36), nullable=True)
+    language = Column(String(10), default="en")
+    sections_json = Column(JSONType, default=dict)  # {"told": [...], "advice": [...], "next": [...], "urgent": [...]}
+    engine = Column(String(20), default="rules")    # 'live' (your model) or 'rules'
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)

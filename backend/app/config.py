@@ -29,8 +29,9 @@ class Settings(BaseModel):
     )
 
     # Consultation call minutes (speech-to-text + AI gap check). See docs/09_call_minutes.
-    # SCRIBE_ASR_PROVIDER: "stub" = scripted demo conversation, "http" = your own Whisper-style server, "" = off.
-    SCRIBE_ASR_PROVIDER: str = os.getenv("SCRIBE_ASR_PROVIDER", "stub").strip().lower()
+    # SCRIBE_ASR_PROVIDER: "auto" = your Whisper server (SCRIBE_ASR_URL, e.g. the Colab gateway) when it is online,
+    # else the scripted demo conversation; "stub" = always demo; "http" = always your server; "" = off.
+    SCRIBE_ASR_PROVIDER: str = os.getenv("SCRIBE_ASR_PROVIDER", "auto").strip().lower()
     SCRIBE_ASR_URL: str = os.getenv("SCRIBE_ASR_URL", "")
     SCRIBE_ASR_MODEL: str = os.getenv("SCRIBE_ASR_MODEL", "whisper-large-v3")
     SCRIBE_ASR_LANGUAGE: str = os.getenv("SCRIBE_ASR_LANGUAGE", "")          # "" = auto-detect

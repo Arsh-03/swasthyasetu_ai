@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '../../utils/haptics';
 import { colors, radii, spacing, touch } from '../../theme/tokens';
@@ -22,6 +22,8 @@ export interface GlassTab<K extends string> {
   key: K;
   label: string;
   icon: IconName;
+  /** Unread count shown as a small badge on the icon. */
+  badge?: number;
 }
 
 interface GlassTabBarProps<K extends string> {
@@ -46,6 +48,7 @@ export function GlassTabBar<K extends string>({ tabs, activeKey, onChange }: Gla
                 key={tab.key}
                 label={tab.label}
                 icon={tab.icon}
+                badge={tab.badge}
                 active={tab.key === activeKey}
                 onPress={() => onChange(tab.key)}
               />
@@ -58,7 +61,7 @@ export function GlassTabBar<K extends string>({ tabs, activeKey, onChange }: Gla
 }
 
 /** One tab: active = raised disc + duotone glyph + bold label; inactive = regular glyph. */
-export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean; onPress: () => void }> = ({ label, icon, active, onPress }) => (
+export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean; onPress: () => void; badge?: number }> = ({ label, icon, active, onPress, badge }) => (
   <Pressable
     onPress={() => {
       if (!active) haptic.selection();
@@ -67,8 +70,13 @@ export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean;
     style={({ pressed }) => [styles.item, pressed && !active && styles.pressed]}
     accessibilityRole="tab"
     accessibilityState={{ selected: active }}
-    accessibilityLabel={label}
+    accessibilityLabel={badge ? `${label} (${badge})` : label}
   >
+    {badge ? (
+      <View style={styles.badge} pointerEvents="none">
+        <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
+      </View>
+    ) : null}
     {active ? (
       <IconDisc icon={icon} variant="raised" size={38} active />
     ) : (
@@ -83,6 +91,21 @@ export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean;
 );
 
 const styles = StyleSheet.create({
+  badge: {
+    position: 'absolute',
+    top: 2,
+    left: '50%',
+    marginLeft: 8,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: colors.dangerDeep,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  badgeText: { color: colors.onPrimary, fontSize: 11, fontWeight: '700' },
   wrap: {
     position: 'absolute',
     left: SIDE_MARGIN,

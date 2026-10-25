@@ -18,7 +18,7 @@ export { SheetHeader } from './SheetHeader';
 export { StableLabel } from './StableLabel';
 export { TextField } from './TextField';
 export { Toast, type ToastMessage, type ToastTone } from './Toast';
-export { ChromeInsetsProvider, ScreenScroll } from './ScreenScroll';
+export { ChromeInsetsProvider, ScreenScroll, useChromeInsets } from './ScreenScroll';
 export { Groove, InsetLayer, NeuButton, NeuInset, NeuList, NeuPanel, NeuPressable, NeuTile, NeuToggle, NeuView, RaisedLayer } from './Neu';
 export { Stepper, type Step } from './Stepper';
 export { ExpandableText } from './ExpandableText';

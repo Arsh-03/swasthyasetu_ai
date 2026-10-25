@@ -121,6 +121,63 @@ export interface ConsentHistoryItem {
   expires_at: string | null;
 }
 
+export interface VisitSummaryData {
+  summary_id: string;
+  encounter_id: string | null;
+  language: string;
+  sections: { told?: string[]; advice?: string[]; next?: string[]; urgent?: string[] };
+  engine: string;
+  created_at: string;
+}
+
+export interface VitalReading {
+  reading_id: string;
+  kind: 'heart_rate';
+  value: number;
+  unit: string;
+  method: 'camera_ppg' | 'manual';
+  confidence: 'good' | 'fair' | null;
+  details: Record<string, unknown>;
+  out_of_range: boolean;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  message_id: string;
+  sender: 'patient' | 'doctor';
+  body: string;
+  lang: string;
+  translation: string | null;
+  translation_lang: string | null;
+  urgent: boolean;
+  created_at: string;
+  read: boolean;
+}
+
+export interface ChatStatus {
+  open: boolean;
+  reason: 'upcoming' | 'recent_visit' | 'consultation' | 'doctor_reply' | 'closed';
+  open_until: string | null;
+  window_days: number;
+  doctor_available_now: boolean;
+  doctor_next_available: string | null;
+}
+
+export interface ChatThreadSummary {
+  other_id: string;
+  name: string;
+  subtitle: string | null;
+  last_message: ChatMessage | null;
+  unread: number;
+  open: boolean;
+}
+
+export interface ChatThread {
+  doctor: { id: string; name: string; specialty: string };
+  status: ChatStatus;
+  messages: ChatMessage[];
+}
+
 class PatientApiService {
   private token: string | null = null;
   private currentUser: PatientUser | null = null;
@@ -197,6 +254,55 @@ class PatientApiService {
       method: 'POST',
       body: JSON.stringify({ approved: true }),
     });
+  }
+
+  // ---- Visit summaries (offered after a call with AI minutes; kept only if the patient says yes) ----
+  async getPendingSummaries(): Promise<{ summary_id: string; encounter_id: string }[]> {
+    return this.request('/calls/summaries/pending');
+  }
+
+  async acceptSummary(summaryId: string): Promise<VisitSummaryData> {
+    return this.request(`/calls/summaries/${encodeURIComponent(summaryId)}/accept`, { method: 'POST' });
+  }
+
+  async declineSummary(summaryId: string): Promise<{ ok: boolean }> {
+    return this.request(`/calls/summaries/${encodeURIComponent(summaryId)}/decline`, { method: 'POST' });
+  }
+
+  async getMySummaries(): Promise<VisitSummaryData[]> {
+    return this.request('/calls/summaries/me');
+  }
+
+  // ---- Home readings (heart rate from the camera) ----
+  async saveReading(reading: {
+    kind: 'heart_rate'; value: number; method: 'camera_ppg' | 'manual'; confidence?: 'good' | 'fair'; details?: Record<string, unknown>;
+  }): Promise<VitalReading> {
+    return this.request('/vitals', { method: 'POST', body: JSON.stringify(reading) });
+  }
+
+  async getMyReadings(): Promise<VitalReading[]> {
+    return this.request('/vitals/me');
+  }
+
+  // ---- Chat with the doctor (backend/app/routers/chat.py) ----
+  async getChatThreads(): Promise<ChatThreadSummary[]> {
+    return this.request('/chat/threads');
+  }
+
+  async getChatThread(doctorId: string): Promise<ChatThread> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}`);
+  }
+
+  async sendChatMessage(doctorId: string, body: string, lang: string): Promise<ChatMessage & { emergency: boolean }> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}/messages`, { method: 'POST', body: JSON.stringify({ body, lang }) });
+  }
+
+  async markChatRead(doctorId: string): Promise<{ marked: number }> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}/read`, { method: 'POST' });
+  }
+
+  async getChatUnread(): Promise<{ count: number }> {
+    return this.request('/chat/unread');
   }
 
   /** The patient's open consultation (where the doctor's call room is). */
