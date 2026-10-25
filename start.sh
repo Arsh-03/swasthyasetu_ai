@@ -96,7 +96,7 @@ for port in $BACKEND_PORT $DOCTOR_PORT $PATIENT_PORT; do
 done
 cleanup() { trap - INT TERM EXIT; kill 0 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
-(cd "$BACKEND" && "$VENV_PY" -m uvicorn app.main:app --reload --port $BACKEND_PORT --timeout-graceful-shutdown 3) &
+(cd "$BACKEND" && "$VENV_PY" -m uvicorn app.main:app --reload --host 0.0.0.0 --port $BACKEND_PORT --timeout-graceful-shutdown 3) &
 (cd "$DOCTOR_APP" && npx vite --port $DOCTOR_PORT --strictPort) &
 (cd "$PATIENT_APP" && BROWSER=none npx expo start --web --port $PATIENT_PORT) &
 for _ in $(seq 1 60); do

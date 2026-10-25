@@ -235,7 +235,7 @@ pip install -r requirements.txt
 # Optional: copy the env template and set SECRET_KEY / DATABASE_URL
 cp ../.env.example .env
 
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 - API: **`http://localhost:8000`**

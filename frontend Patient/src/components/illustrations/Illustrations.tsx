@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 
@@ -21,15 +22,12 @@ const BLOBS = [
 ] as const;
 
 const Artboard: React.FC<{ width: number; children: React.ReactNode }> = ({ width, children }) => (
-  <Svg
-    width={width}
-    height={(width * 4) / 5}
-    viewBox="0 0 200 160"
-    accessibilityElementsHidden
-    importantForAccessibility="no-hide-descendants"
-  >
-    {children}
-  </Svg>
+  // Accessibility props live on the View: react-native-svg forwards Svg props to the DOM on web.
+  <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <Svg width={width} height={(width * 4) / 5} viewBox="0 0 200 160">
+      {children}
+    </Svg>
+  </View>
 );
 
 /** Organic background blob. `variant` picks one of three shapes. */
@@ -80,7 +78,7 @@ export const EmptyRecords: React.FC<IllustrationProps> = ({ width = 180 }) => (
 export const EmptyMedications: React.FC<IllustrationProps> = ({ width = 180 }) => (
   <Artboard width={width}>
     <Path d={BLOBS[2]} fill={colors.ice} />
-    <G rotation={-35} origin="96, 82">
+    <G transform="rotate(-35 96 82)">
       <Rect x={56} y={66} width={80} height={32} rx={16} fill={colors.card} />
       <Path d="M96 66h24a16 16 0 010 32H96z" fill={colors.primary} />
     </G>

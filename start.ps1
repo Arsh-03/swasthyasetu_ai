@@ -169,7 +169,7 @@ foreach ($p in @($BackendPort, $DoctorPort, $PatientPort)) {
 
 # --timeout-graceful-shutdown lets auto-reload restart even while the notepad's WebSocket is open.
 $backendCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge backend :$BackendPort'; Set-Location '$Backend'; " +
-              "& '$VenvPy' -m uvicorn app.main:app --reload --port $BackendPort --timeout-graceful-shutdown 3"
+              "& '$VenvPy' -m uvicorn app.main:app --reload --host 0.0.0.0 --port $BackendPort --timeout-graceful-shutdown 3"
 # not 'npm run dev --': PowerShell drops the '--'
 $doctorCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge Doctor portal :$DoctorPort'; Set-Location '$DoctorApp'; " +
              "npx vite --port $DoctorPort --strictPort"
