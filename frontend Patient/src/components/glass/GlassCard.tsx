@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type StyleProp, type ViewStyle } from 'react-native';
 import { radii, shadows, spacing } from '../../theme/tokens';
 import { GlassSurface, type GlassMaterial } from './GlassSurface';
 
@@ -7,14 +7,14 @@ interface GlassCardProps {
   children: React.ReactNode;
   material?: GlassMaterial;
   radius?: number;
-  /** Inner padding; defaults to 16 like the Doctor's p-4 cards. */
+  /** Inner padding; defaults to 16. */
   padding?: number;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
 }
 
 /**
- * `.liquid-glass` card. The shadow lives on an outer view because the
+ * Glass card (card material, fill 55%). The shadow lives on an outer view because the
  * glass surface has to clip (overflow hidden), which would cut the shadow off on iOS.
  */
 export const GlassCard: React.FC<GlassCardProps> = ({
@@ -26,14 +26,8 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   contentStyle,
 }) => (
   <View style={[shadows.glass, { borderRadius: radius }, style]}>
-    <GlassSurface material={material} style={[styles.surface, { borderRadius: radius, padding }, contentStyle]}>
+    <GlassSurface material={material} style={[{ borderRadius: radius, padding }, contentStyle]}>
       {children}
     </GlassSurface>
   </View>
 );
-
-const styles = StyleSheet.create({
-  surface: {
-    borderWidth: 1,
-  },
-});

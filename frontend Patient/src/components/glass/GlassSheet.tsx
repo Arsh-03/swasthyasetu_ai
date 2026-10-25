@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radii, shadows, spacing } from '../../theme/tokens';
+import { colors, radii, shadows, spacing, tints } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { GlassSurface } from './GlassSurface';
 
@@ -25,7 +25,7 @@ interface GlassSheetProps {
   children: React.ReactNode;
   /** `bottom` = iOS-style sheet with grabber, `center` = alert-style dialog. */
   placement?: 'bottom' | 'center';
-  material?: 'sheet' | 'dark';
+  material?: 'sheet' | 'night';
   /** Darker backdrop (incoming call, SOS). */
   strongScrim?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -34,8 +34,7 @@ interface GlassSheetProps {
 const useNative = Platform.OS !== 'web';
 
 /**
- * `.liquid-glass-sheet` modal. The backdrop mirrors the Doctor's
- * `bg-black/40 backdrop-blur-md`; the panel springs in from below.
+ * Glass sheet modal: blurred ink scrim behind, panel springs in from below.
  */
 export const GlassSheet: React.FC<GlassSheetProps> = ({
   visible,
@@ -122,7 +121,7 @@ export const GlassSheet: React.FC<GlassSheetProps> = ({
           >
             {isBottom && (
               <View
-                style={[styles.grabber, material === 'dark' && styles.grabberDark]}
+                style={[styles.grabber, material === 'night' && styles.grabberNight]}
                 accessibilityElementsHidden
                 importantForAccessibility="no"
               />
@@ -166,11 +165,11 @@ const styles = StyleSheet.create({
     width: 36,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: colors.gray3,
+    backgroundColor: colors.fog,
     alignSelf: 'center',
     marginBottom: spacing.md,
   },
-  grabberDark: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  grabberNight: {
+    backgroundColor: tints.whiteStrong,
   },
 });

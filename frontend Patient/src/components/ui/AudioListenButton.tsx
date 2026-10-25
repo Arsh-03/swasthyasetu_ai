@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radii, shadows, spacing, touch } from '../../theme/tokens';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, radii, spacing, tints, touch } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { haptic } from '../../utils/haptics';
+import { NeuPressable } from './Neu';
 import { speak, stopSpeaking } from '../../utils/speech';
 import { AppText } from './AppText';
 import { Icon } from './Icon';
@@ -20,8 +21,8 @@ interface AudioListenButtonProps {
 }
 
 /**
- * High-contrast audio badge (accessibility rule): bg #ECFDF5, text/icon #047857,
- * at least 48×48. Required on cards with consent or diagnostic information.
+ * High-contrast audio badge (accessibility rule, unchanged from V1): colors.audioBg /
+ * colors.audioText, at least 48×48. Required on cards with consent or diagnostic information.
  */
 export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
   text,
@@ -53,38 +54,44 @@ export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
 
   if (variant === 'pill') {
     return (
-      <Pressable
+      <NeuPressable
         onPress={toggle}
-        accessibilityRole="button"
+        haptics="none"
+        selected={playing}
+        fill={colors.audioBg}
+        radius={touch.min / 2}
         accessibilityLabel={a11yLabel}
-        accessibilityState={{ selected: playing }}
-        style={({ pressed }) => [styles.pill, pressed && styles.pressed, style]}
+        containerStyle={[styles.pillWrap, style]}
+        style={styles.pill}
       >
-        <Icon name={playing ? 'stop' : 'volume-up'} size={20} color={colors.audioText} />
+        <Icon name={playing ? 'stop' : 'listen'} size={20} color={colors.audioText} active />
         <AppText variant="footnote" weight={600} color="audioText" compact numberOfLines={1}>
           {playing ? t('stop') : label ?? t('listen')}
         </AppText>
-      </Pressable>
+      </NeuPressable>
     );
   }
 
   return (
-    <Pressable
+    <NeuPressable
       onPress={toggle}
-      accessibilityRole="button"
+      haptics="none"
+      selected={playing}
+      fill={colors.audioBg}
+      radius={radii.lg}
       accessibilityLabel={a11yLabel}
-      accessibilityState={{ selected: playing }}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed, style]}
+      containerStyle={style}
+      style={styles.card}
     >
       <View style={styles.playCircle}>
-        <Icon name={playing ? 'pause' : 'play-arrow'} size={26} color={colors.onTint} />
+        <Icon name={playing ? 'pause' : 'play'} size={26} color={colors.onPrimary} />
       </View>
       <View style={styles.cardText}>
         <AppText variant="callout" color="audioText">
           {playing ? playingTitle ?? title : title}
         </AppText>
         {subtitle ? (
-          <AppText variant="footnote" color="audioText" style={styles.subtitle}>
+          <AppText variant="footnote" color="audioText">
             {subtitle}
           </AppText>
         ) : null}
@@ -94,23 +101,21 @@ export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
           <View key={i} style={[styles.waveBar, { height: h }, playing && styles.waveBarActive]} />
         ))}
       </View>
-    </Pressable>
+    </NeuPressable>
   );
 };
 
 const styles = StyleSheet.create({
+  pillWrap: {
+    alignSelf: 'flex-start',
+  },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     gap: 6,
     minHeight: touch.min,
     minWidth: touch.min,
     paddingHorizontal: 14,
-    borderRadius: radii.pill,
-    backgroundColor: colors.audioBg,
-    borderWidth: 1,
-    borderColor: 'rgba(4, 120, 87, 0.15)',
   },
   card: {
     flexDirection: 'row',
@@ -118,11 +123,6 @@ const styles = StyleSheet.create({
     gap: 14,
     minHeight: 72,
     padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: colors.audioBg,
-    borderWidth: 1,
-    borderColor: 'rgba(4, 120, 87, 0.15)',
-    ...shadows.sm,
   },
   playCircle: {
     width: touch.min,
@@ -135,9 +135,6 @@ const styles = StyleSheet.create({
   cardText: {
     flex: 1,
   },
-  subtitle: {
-    opacity: 0.8,
-  },
   wave: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -146,13 +143,9 @@ const styles = StyleSheet.create({
   waveBar: {
     width: 3,
     borderRadius: 1.5,
-    backgroundColor: 'rgba(4, 120, 87, 0.25)',
+    backgroundColor: tints.audioWave,
   },
   waveBarActive: {
     backgroundColor: colors.audioText,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
   },
 });

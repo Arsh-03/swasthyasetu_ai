@@ -5,6 +5,7 @@ const ignore = () => {};
 
 export const haptic = {
   tap: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(ignore),
+  heavy: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(ignore),
   selection: () => Haptics.selectionAsync().catch(ignore),
   success: () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(ignore),
   warning: () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(ignore),

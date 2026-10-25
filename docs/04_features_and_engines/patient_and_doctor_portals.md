@@ -10,7 +10,9 @@
 
 | Feature | Description | State / Action | Vernacular / Accessibility |
 | :--- | :--- | :--- | :--- |
-| **Vernacular Switcher** | 1-click toggle between Kannada, Hindi, and English. | Persistent in LocalStorage | Immediate UI text & audio reload |
+| **Sign in** | ABHA ID or mobile number, then a 6-digit OTP (demo `123456`; 1-click demo fill). Visual-first: illustration, 3 trust discs (Only you decide / Never shared / Govt health ID), ID → OTP stepper, ABDM + DPDP badges. | Step 1 ID → Step 2 OTP → signed in; loading = spinner + "Signing in…"; error = inset alert well | **Listen** reads the whole screen (headline, description, instructions, trust marks); labels never truncate in kn / hi |
+| **Today (Home)** | Greeting, next-appointment card (time, doctor, one status badge, date / agenda, Listen, Join call), 4 quick actions, Emergency SOS, ABDM / DPDP badges. | Card states: loading · appointment · none · failed; live reschedule badge via WebSocket | Listen reads the appointment aloud; icon + colour + short label first; SOS is the highest-contrast element after Join call |
+| **Vernacular Switcher** | 1-click toggle between Kannada, Hindi, and English (raised pill on sign-in and in the app header). | Persisted on the device (AsyncStorage); a saved choice wins over the profile language | Immediate UI text, fonts and audio language switch |
 | **Representative Declaration** | Declares self vs. authorized representative. | Sets `relationship_type` | Clear legal disclaimer |
 | **Pre-Consultation Consent** | Reviews privacy terms before starting call. | Signs encounter consent | High-contrast "🔊 Listen" button |
 | **Record Manager** | Lists ABDM-linked diagnostic scans. | Default: `PROTECTED` | Shows lock badge and date |

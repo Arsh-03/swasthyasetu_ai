@@ -1,16 +1,17 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { colors, radii, spacing } from '../theme/tokens';
 import type { PatientUser } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
-import { LANGUAGE_NAMES, t as translate } from '../utils/translations';
+import { LANGUAGE_NAMES, LANGUAGE_SHORT, t as translate } from '../utils/translations';
 import { GlassToolbar } from './glass';
-import { AppText, Avatar, BrandMark, IconButton, StableLabel } from './ui';
+import { AppText, Avatar, BrandMark, Icon, IconButton, NeuPressable, StableLabel } from './ui';
 
 interface PatientHeaderProps {
   user: PatientUser | null;
   onOpenProfile: () => void;
   onLogout?: () => void;
+  onBrandLongPress?: () => void;
 }
 
 const initialsOf = (name: string) => {
@@ -21,70 +22,123 @@ const initialsOf = (name: string) => {
   return `${first}${last}`.toUpperCase();
 };
 
-/** Mobile DoctorHeader: brand mark, language pill and monogram avatar on the glass toolbar. */
-export const PatientHeader: React.FC<PatientHeaderProps> = ({ user, onOpenProfile, onLogout }) => {
+/**
+ * Header layout for a given width. Uses the effective width (width ÷ font scale) so large
+ * system text gets the compact layouts too. Order of giving up space: full language name →
+ * subtitle → app name. The controls never shrink or overlap the brand.
+ */
+export const headerLayout = (width: number, fontScale = 1) => {
+  const w = width / Math.max(1, fontScale);
+  return {
+    shortLanguage: w < 400,
+    // Shown only where they fit unclipped next to the controls (ellipsis remains a safety net)
+    showSubtitle: w >= 380,
+    showName: w >= 370,
+  };
+};
+
+interface HeaderBarProps extends PatientHeaderProps {
+  /** Override the measured width (dev Style Guide previews). */
+  availableWidth?: number;
+}
+
+/** Toolbar contents: brand group (flex, ellipsis) + controls (fixed). */
+export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLogout, onBrandLongPress, availableWidth }) => {
   const { lang, t, cycleLang } = useLanguage();
+  const window = useWindowDimensions();
+  const layout = headerLayout(availableWidth ?? window.width, window.fontScale);
 
   return (
-    <GlassToolbar>
-      {/* Brand */}
-      <View style={styles.brand}>
-        <BrandMark size={36} />
-        <View>
-          <AppText variant="callout" lang="en" compact style={styles.brandName}>
-            {t('appName')}
-          </AppText>
-          <StableLabel text={(l) => translate(l, 'patientApp')} variant="caption" color="tertiary" compact />
-        </View>
+    <View style={styles.bar}>
+      {/* Brand: takes the remaining space and ellipsizes; never pushed under the controls */}
+      <View style={styles.brand} accessible={!layout.showName} accessibilityLabel={!layout.showName ? t('appName') : undefined}>
+        <BrandMark size={36} onLongPress={onBrandLongPress} />
+        {layout.showName && (
+          <View style={styles.brandText}>
+            <AppText variant="callout" compact numberOfLines={1} ellipsizeMode="tail" style={styles.brandName}>
+              {t('appName')}
+            </AppText>
+            {layout.showSubtitle && (
+              <StableLabel
+                text={(l) => translate(l, 'patientApp')}
+                variant="caption"
+                color="inkMuted"
+                compact
+                ellipsizeMode="tail"
+                containerStyle={styles.subtitle}
+              />
+            )}
+          </View>
+        )}
       </View>
 
       <View style={styles.actions}>
-        {/* Language switcher pill */}
-        <Pressable
+        {/* Language pill: icon + full name, or icon + short code below 400pt */}
+        <NeuPressable
           onPress={cycleLang}
-          accessibilityRole="button"
-          accessibilityLabel={`${t('switchLanguage')}: ${LANGUAGE_NAMES[lang]}`}
+          radius={radii.md}
+          compact
+          haptics="selection"
           hitSlop={4}
-          style={({ pressed }) => [styles.langPill, pressed && styles.langPillPressed]}
+          accessibilityLabel={`${t('switchLanguage')}: ${LANGUAGE_NAMES[lang]}`}
+          style={[styles.langPill, layout.shortLanguage && styles.langPillShort]}
         >
-          <StableLabel text={(l) => LANGUAGE_NAMES[l]} variant="subhead" weight={500} compact />
-          <View style={styles.langCode}>
-            <AppText variant="mono" color="secondary">
-              {lang.toUpperCase()}
-            </AppText>
-          </View>
-        </Pressable>
+          <Icon name="translate" size={18} color={colors.primary} active />
+          <StableLabel text={(l) => (layout.shortLanguage ? LANGUAGE_SHORT[l] : LANGUAGE_NAMES[l])} variant="subhead" weight={600} compact />
+        </NeuPressable>
 
         {/* Monogram avatar → profile / symptom intake */}
-        <Pressable
+        <NeuPressable
           onPress={onOpenProfile}
-          accessibilityRole="button"
+          radius={21}
+          compact
+          hitSlop={3}
           accessibilityLabel={`${user?.full_name ?? ''}, ${t('openProfile')}`}
-          hitSlop={4}
-          style={({ pressed }) => [styles.avatarPill, pressed && styles.langPillPressed]}
+          style={styles.avatarDisc}
         >
           <Avatar initials={initialsOf(user?.full_name ?? '')} size={30} />
-        </Pressable>
+        </NeuPressable>
 
-        {onLogout && (
-          <IconButton icon="logout" tone="danger" size={32} accessibilityLabel={t('signOut')} onPress={onLogout} />
-        )}
+        {onLogout && <IconButton icon="signOut" tone="danger" size={42} accessibilityLabel={t('signOut')} onPress={onLogout} />}
       </View>
-    </GlassToolbar>
+    </View>
   );
 };
 
+/** Glass toolbar: brand, raised language pill, raised avatar disc, raised sign-out disc. */
+export const PatientHeader: React.FC<PatientHeaderProps> = (props) => (
+  <GlassToolbar>
+    <HeaderBar {...props} />
+  </GlassToolbar>
+);
+
 const styles = StyleSheet.create({
+  bar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   brand: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    flexShrink: 1,
+  },
+  brandText: {
+    flex: 1,
+    minWidth: 0,
   },
   brandName: {
     letterSpacing: -0.3,
   },
+  subtitle: {
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+  },
   actions: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -93,31 +147,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 40,
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  langPillShort: {
     paddingHorizontal: 10,
-    borderRadius: radii.md,
-    backgroundColor: tints.gray,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
+    gap: 4,
   },
-  langPillPressed: {
-    opacity: 0.7,
-  },
-  langCode: {
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
-    backgroundColor: colors.card,
-  },
-  avatarPill: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  avatarDisc: {
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.hairline,
-    ...shadows.sm,
   },
 });

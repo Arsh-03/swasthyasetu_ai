@@ -1,33 +1,42 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radii, spacing, tints, tones, touch, type Tone } from '../../theme/tokens';
-import { haptic } from '../../utils/haptics';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, neu, radii, spacing, tones, touch, type Tone } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { NeuPressable } from './Neu';
 
 interface BadgeProps {
   label: string;
   tone?: Tone;
   icon?: IconName;
-  /** Small status dot instead of an icon (queue urgency style). */
+  /** Small status dot instead of an icon. */
   dot?: boolean;
   size?: 'sm' | 'md';
+  /**
+   * Opaque base under the tint. Required when the badge sits directly on the ambient
+   * background: the translucent tint over a blob drops text below 4.5:1.
+   */
+  solid?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-/** Rounded-full status pill: `px-2 py-0.5 rounded-full bg-[tone]/15 text-[tone] font-semibold`. */
-export const Badge: React.FC<BadgeProps> = ({ label, tone = 'blue', icon, dot = false, size = 'sm', style }) => {
+/**
+ * Status pill (informational → soft inset): tone tint fill, debossed two-tone edge,
+ * deep text (≥ 4.5:1) and a duotone icon. Gold is reserved for "verified".
+ */
+export const Badge: React.FC<BadgeProps> = ({ label, tone = 'primary', icon, dot = false, size = 'sm', solid = false, style }) => {
   const c = tones[tone];
   const isSm = size === 'sm';
-  return (
-    <View style={[styles.badge, isSm ? styles.badgeSm : styles.badgeMd, { backgroundColor: c.bg }, style]}>
-      {dot && <View style={[styles.dot, { backgroundColor: c.fg }]} />}
-      {icon && <Icon name={icon} size={isSm ? 13 : 15} color={colors[c.text]} />}
+  const pill = (
+    <View style={[styles.badge, isSm ? styles.badgeSm : styles.badgeMd, { backgroundColor: c.bg }, !solid && style]}>
+      {dot && <View style={[styles.dot, { backgroundColor: c.icon }]} />}
+      {icon && <Icon name={icon} size={isSm ? 14 : 16} color={c.icon} active />}
       <AppText variant={isSm ? 'caption' : 'footnote'} weight={600} color={c.text} compact numberOfLines={1}>
         {label}
       </AppText>
     </View>
   );
+  return solid ? <View style={[styles.solidBase, style]}>{pill}</View> : pill;
 };
 
 interface ChipProps {
@@ -38,29 +47,30 @@ interface ChipProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Selectable chip (symptoms, filters). 44pt tall, blue tint + check when selected. */
+/** Selectable chip: raised control; selected = latched inset + primary label + check (never colour alone). */
 export const Chip: React.FC<ChipProps> = ({ label, selected, onPress, icon, style }) => (
-  <Pressable
-    onPress={() => {
-      haptic.selection();
-      onPress();
-    }}
+  <NeuPressable
+    onPress={onPress}
+    selected={selected}
+    radius={radii.md}
+    compact
+    haptics="selection"
     accessibilityRole="checkbox"
     accessibilityState={{ checked: selected }}
     accessibilityLabel={label}
-    style={({ pressed }) => [
-      styles.chip,
-      selected ? styles.chipSelected : styles.chipIdle,
-      pressed && styles.chipPressed,
-      style,
-    ]}
+    containerStyle={style}
+    style={styles.chip}
   >
-    {icon && <Icon name={icon} size={18} color={selected ? colors.blue : colors.secondary} />}
-    <AppText variant="subhead" weight={selected ? 600 : 500} color={selected ? 'blue' : 'label'} compact>
-      {label}
-    </AppText>
-    {selected && <Icon name="check" size={16} color={colors.blue} />}
-  </Pressable>
+    {(down) => (
+      <>
+        {icon && <Icon name={icon} size={20} color={down ? colors.primary : colors.inkMuted} active={down} />}
+        <AppText variant="subhead" weight={selected ? 700 : 500} color={selected ? 'primary' : 'ink'} compact>
+          {label}
+        </AppText>
+        {selected && <Icon name="check" size={16} color={colors.primary} />}
+      </>
+    )}
+  </NeuPressable>
 );
 
 const styles = StyleSheet.create({
@@ -70,6 +80,11 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     borderRadius: radii.pill,
     gap: spacing.xs,
+    borderWidth: 1,
+    borderTopColor: neu.inset.soft.edgeDark,
+    borderLeftColor: neu.inset.soft.edgeDark,
+    borderBottomColor: neu.inset.soft.edgeLight,
+    borderRightColor: neu.inset.soft.edgeLight,
   },
   badgeSm: {
     paddingHorizontal: spacing.sm,
@@ -77,12 +92,17 @@ const styles = StyleSheet.create({
   },
   badgeMd: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: 3,
+  },
+  solidBase: {
+    alignSelf: 'flex-start',
+    borderRadius: radii.pill,
+    backgroundColor: colors.base,
   },
   dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   chip: {
     flexDirection: 'row',
@@ -91,18 +111,5 @@ const styles = StyleSheet.create({
     minHeight: touch.compact,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    borderRadius: radii.md,
-    borderWidth: 1,
-  },
-  chipIdle: {
-    backgroundColor: colors.gray6,
-    borderColor: colors.hairline,
-  },
-  chipSelected: {
-    backgroundColor: tints.blue,
-    borderColor: colors.blue,
-  },
-  chipPressed: {
-    transform: [{ scale: 0.97 }],
   },
 });

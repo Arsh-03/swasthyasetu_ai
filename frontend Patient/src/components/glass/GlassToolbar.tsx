@@ -1,13 +1,13 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { shadows, spacing } from '../../theme/tokens';
+import { colors, shadows, spacing } from '../../theme/tokens';
 import { GlassSurface } from './GlassSurface';
 
 /** Height of the toolbar row, excluding the top safe-area inset. */
-export const TOOLBAR_HEIGHT = 60;
+export const TOOLBAR_HEIGHT = 64;
 
-/** `.liquid-glass-toolbar`: fixed top bar that blurs the content scrolling under it. */
+/** Glass toolbar: fixed top bar that blurs the content scrolling under it. */
 export const GlassToolbar: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const insets = useSafeAreaInsets();
   return (
@@ -28,7 +28,10 @@ const styles = StyleSheet.create({
     zIndex: 50,
   },
   surface: {
+    // Only the bottom edge shows: a dark hairline under the specular glass
+    borderWidth: 0,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.separator,
   },
   row: {
     height: TOOLBAR_HEIGHT,

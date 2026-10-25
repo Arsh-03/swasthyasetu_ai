@@ -1,6 +1,10 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "paths": {
+      // Type per-icon Phosphor imports from the package's .d.ts (Metro still bundles src/icons/*.tsx via its exports map)
+      "phosphor-react-native/src/icons/*": ["./node_modules/phosphor-react-native/lib/typescript/icons/*"]
+    }
   }
 }

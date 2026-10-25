@@ -1,32 +1,29 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, glow, radii, shadows, spacing, tints, touch } from '../../theme/tokens';
-import { haptic } from '../../utils/haptics';
+import { ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, radii, spacing, touch, type ColorRole } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { NeuPressable } from './Neu';
 
-interface ButtonProps {
+export interface ButtonProps {
   label: string;
   onPress: () => void;
   icon?: IconName;
   loading?: boolean;
   disabled?: boolean;
-  /** `md` = 48pt main action, `sm` = 36pt inline action (hit area still ≥ 48). */
+  /** `md` = 52pt main action, `sm` = 40pt inline action (hit area still ≥ 48). */
   size?: 'md' | 'sm';
+  /** Outer layout (flex, margins). */
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
   accessibilityHint?: string;
 }
 
-interface Look {
-  bg: string;
-  pressedBg: string;
-  fg: keyof typeof colors;
-  border?: string;
-  shadow?: ViewStyle;
-}
-
-const ButtonBase: React.FC<ButtonProps & { look: Look; haptics?: boolean }> = ({
+/**
+ * Non-critical buttons: STRONG raised neumorphic controls that press to inset. The label
+ * colour carries the role. Critical actions (SOS, consent, join / end call) use CriticalButton.
+ */
+const NeuButtonBase: React.FC<ButtonProps & { fg: ColorRole; weight?: 600 | 700 }> = ({
   label,
   onPress,
   icon,
@@ -36,43 +33,36 @@ const ButtonBase: React.FC<ButtonProps & { look: Look; haptics?: boolean }> = ({
   style,
   accessibilityLabel,
   accessibilityHint,
-  look,
-  haptics = false,
+  fg,
+  weight = 600,
 }) => {
-  const inactive = disabled || loading;
   const isSm = size === 'sm';
+  const inactive = disabled || loading;
   return (
-    <Pressable
-      onPress={() => {
-        if (haptics) haptic.tap();
-        onPress();
-      }}
+    <NeuPressable
+      onPress={onPress}
       disabled={inactive}
-      hitSlop={isSm ? (touch.min - 36) / 2 : undefined}
-      accessibilityRole="button"
+      radius={isSm ? radii.sm : radii.md}
+      compact={isSm}
+      hitSlop={isSm ? (touch.min - 40) / 2 : undefined}
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
-      accessibilityState={{ disabled: inactive, busy: loading }}
-      style={({ pressed }) => [
-        styles.base,
-        isSm ? styles.sm : styles.md,
-        { backgroundColor: pressed ? look.pressedBg : look.bg },
-        look.border ? { borderWidth: 1, borderColor: look.border } : null,
-        look.shadow,
-        pressed && styles.pressed,
-        inactive && styles.disabled,
-        style,
-      ]}
+      accessibilityState={{ busy: loading }}
+      containerStyle={style}
+      style={[styles.base, isSm ? styles.sm : styles.md]}
     >
-      {loading ? (
-        <ActivityIndicator color={colors[look.fg]} />
-      ) : (
+      {(down) => (
         <>
-          {icon && <Icon name={icon} size={isSm ? 16 : 20} color={colors[look.fg]} />}
+          {/* Loading keeps the label visible next to the spinner, so the state is never silent */}
+          {loading ? (
+            <ActivityIndicator color={colors[fg]} />
+          ) : (
+            icon && <Icon name={icon} size={isSm ? 18 : 22} color={colors[fg]} active={!down} />
+          )}
           <AppText
             variant={isSm ? 'footnote' : 'callout'}
-            weight={600}
-            color={look.fg}
+            weight={weight}
+            color={fg}
             numberOfLines={2}
             align="center"
             compact
@@ -82,57 +72,25 @@ const ButtonBase: React.FC<ButtonProps & { look: Look; haptics?: boolean }> = ({
           </AppText>
         </>
       )}
-    </Pressable>
+    </NeuPressable>
   );
 };
 
-/** bg-[#007AFF] hover:bg-[#0062CC] … shadow-apple-sm */
-export const PrimaryButton: React.FC<ButtonProps> = (props) => (
-  <ButtonBase
-    {...props}
-    haptics
-    look={{ bg: colors.blue, pressedBg: colors.blueHover, fg: 'onTint', shadow: props.size === 'sm' ? undefined : glow(colors.blue) }}
-  />
-);
+/** Main non-critical action (Sign in, Continue): raised, bold primary label + duotone icon. */
+export const PrimaryButton: React.FC<ButtonProps> = (props) => <NeuButtonBase {...props} fg="primary" weight={700} />;
 
-const SECONDARY_LOOKS: Record<'neutral' | 'blue' | 'green', Look> = {
-  // bg-[#F2F2F7] border-black/5 (Doctor's demo button)
-  neutral: { bg: colors.gray6, pressedBg: colors.gray5, fg: 'label', border: colors.hairline },
-  // bg-[#007AFF]/10 (View Scan)
-  blue: { bg: tints.blue, pressedBg: tints.blueRing, fg: 'blue' },
-  // bg-[#34C759]/15 (Call)
-  green: { bg: tints.greenStrong, pressedBg: tints.greenRing, fg: 'greenDeep' },
+const SECONDARY_FG: Record<'neutral' | 'primary' | 'success', ColorRole> = {
+  neutral: 'ink',
+  primary: 'primary',
+  success: 'successDeep',
 };
 
-export const SecondaryButton: React.FC<ButtonProps & { tone?: keyof typeof SECONDARY_LOOKS; elevated?: boolean }> = ({
-  tone = 'neutral',
-  elevated = false,
-  ...props
-}) => {
-  const look = SECONDARY_LOOKS[tone];
-  return (
-    <ButtonBase
-      {...props}
-      look={elevated ? { ...look, bg: colors.card, shadow: shadows.sm } : look}
-    />
-  );
-};
-
-/** `filled` for SOS / hang-up, `tinted` (bg-[#FF3B30]/10) for revoke / decline. */
-export const DestructiveButton: React.FC<ButtonProps & { variant?: 'filled' | 'tinted' }> = ({
-  variant = 'tinted',
-  ...props
-}) => (
-  <ButtonBase
-    {...props}
-    haptics={variant === 'filled'}
-    look={
-      variant === 'filled'
-        ? { bg: colors.red, pressedBg: '#E0352B', fg: 'onTint', shadow: glow(colors.red) }
-        : { bg: tints.red, pressedBg: tints.redRing, fg: 'red' }
-    }
-  />
+export const SecondaryButton: React.FC<ButtonProps & { tone?: keyof typeof SECONDARY_FG }> = ({ tone = 'neutral', ...props }) => (
+  <NeuButtonBase {...props} fg={SECONDARY_FG[tone]} />
 );
+
+/** Non-critical destructive action (Revoke access): raised with a dangerDeep label. */
+export const DestructiveButton: React.FC<ButtonProps> = (props) => <NeuButtonBase {...props} fg="dangerDeep" />;
 
 const styles = StyleSheet.create({
   base: {
@@ -140,26 +98,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    borderRadius: radii.md,
   },
   md: {
-    minHeight: touch.min,
+    minHeight: touch.min + 4,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.sm,
   },
   sm: {
-    minHeight: 36,
+    minHeight: 40,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     gap: spacing.xs,
   },
   label: {
     flexShrink: 1,
-  },
-  pressed: {
-    transform: [{ scale: 0.98 }],
-  },
-  disabled: {
-    opacity: 0.5,
   },
 });

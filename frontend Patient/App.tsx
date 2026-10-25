@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useFonts } from 'expo-font';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from './src/theme/tokens';
-import { FONT_MAP } from './src/theme/fonts';
+import { FontsProvider } from './src/theme/FontsProvider';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import {
   patientApi,
@@ -13,11 +12,13 @@ import {
   ConsentRequestData,
   NextAppointment,
 } from './src/services/api';
-import { BlurTargetProvider, GlassTabBar, TAB_BAR_HEIGHT, TOOLBAR_HEIGHT, type GlassTab } from './src/components/glass';
+import { BlurTargetProvider, GlassTabBar, tabBarChromeHeight, TOOLBAR_HEIGHT, type GlassTab } from './src/components/glass';
 import { ChromeInsetsProvider, Toast, type ToastMessage, type ToastTone } from './src/components/ui';
+import { AmbientBackground } from './src/components/illustrations';
 import { PatientHeader } from './src/components/PatientHeader';
 import { HomeView } from './src/components/HomeView';
-import { type PatientAppointmentInfo } from './src/components/HeroAppointmentCard';
+import { type AppointmentStatus, type PatientAppointmentInfo } from './src/components/HeroAppointmentCard';
+import { formatDateLabel } from './src/utils/dates';
 import { ConsentGateModal } from './src/components/ConsentGateModal';
 import { PatientTelehealthCall } from './src/components/PatientTelehealthCall';
 import { CarePlanView } from './src/components/CarePlanView';
@@ -31,13 +32,21 @@ import { IncomingCallModal } from './src/components/IncomingCallModal';
 type TabType = 'home' | 'careplan' | 'records' | 'whosaw';
 type ScreenType = 'home' | 'call' | 'careplan' | 'whosaw' | 'records';
 
+// Dev-only design reference. A conditional require (folded away when __DEV__ is false)
+// keeps it out of production bundles, which a static import would not.
+const StyleGuideScreen: React.FC<{ onClose: () => void }> | null = __DEV__
+  ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./src/dev/StyleGuideScreen').StyleGuideScreen
+  : null;
+
 export default function App() {
-  // Fall back to system fonts if loading fails rather than blocking the app
-  const [fontsLoaded, fontError] = useFonts(FONT_MAP);
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        {fontsLoaded || fontError ? <PatientApp /> : <View style={styles.root} />}
+        {/* Active language's fonts load first; on failure the app falls back to system fonts */}
+        <FontsProvider fallback={<View style={styles.root} />}>
+          <PatientApp />
+        </FontsProvider>
       </LanguageProvider>
     </SafeAreaProvider>
   );
@@ -45,12 +54,14 @@ export default function App() {
 
 function PatientApp() {
   const insets = useSafeAreaInsets();
-  const { t, applyProfileLanguage } = useLanguage();
-  // The WebSocket handler is created once per login, so read translations through a ref
+  const { lang, t, applyProfileLanguage } = useLanguage();
+  // The WebSocket handler is created once per login, so read translations through refs
   const tRef = useRef(t);
+  const langRef = useRef(lang);
   useEffect(() => {
     tRef.current = t;
-  }, [t]);
+    langRef.current = lang;
+  }, [t, lang]);
   const [user, setUser] = useState<PatientUser | null>(() => patientApi.getCurrentUser());
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('home');
   // Where the Privacy screen's back button should return to
@@ -74,15 +85,24 @@ function PatientApp() {
     toastTimer.current = setTimeout(() => setToastMessage(null), 4000);
   };
   const [appointmentInfo, setAppointmentInfo] = useState<PatientAppointmentInfo | undefined>(undefined);
+  // Display-only: lets the Today card tell loading / none / failed apart
+  const [appointmentStatus, setAppointmentStatus] = useState<AppointmentStatus>('loading');
   // Doctor on the current/last video call (from the call invitation)
   const [callDoctorName, setCallDoctorName] = useState<string | null>(null);
+  // Dev on web: open with /#styleguide (used for headless visual checks)
+  const [showStyleGuide, setShowStyleGuide] = useState(
+    () => __DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.hash === '#styleguide'
+  );
+  // Long-press on the brand mark opens the style guide in development builds only
+  const openStyleGuide = StyleGuideScreen ? () => setShowStyleGuide(true) : undefined;
 
   const toAppointmentInfo = (apt: NextAppointment): PatientAppointmentInfo => ({
     date: apt.date,
     time: apt.time,
     relativeTime: apt.relativeTime,
     doctorName: apt.doctorName,
-    clinic: [apt.facility, apt.specialty].filter(Boolean).join(' • '),
+    facility: apt.facility,
+    specialty: apt.specialty,
     agenda: apt.agenda,
     isRescheduled: apt.isRescheduled,
   });
@@ -92,8 +112,14 @@ function PatientApp() {
     if (!user) return;
     patientApi
       .getNextAppointment()
-      .then((apt) => setAppointmentInfo(apt ? toAppointmentInfo(apt) : undefined))
-      .catch(() => setAppointmentInfo(undefined));
+      .then((apt) => {
+        setAppointmentInfo(apt ? toAppointmentInfo(apt) : undefined);
+        setAppointmentStatus('ready');
+      })
+      .catch(() => {
+        setAppointmentInfo(undefined);
+        setAppointmentStatus('error');
+      });
     patientApi
       .getPendingConsents()
       .then((pending) => {
@@ -161,11 +187,12 @@ function PatientApp() {
               time: data.time,
               relativeTime: data.relativeTime || 'Rescheduled',
               doctorName: data.doctor_name || prev?.doctorName,
-              clinic: data.facility || prev?.clinic,
+              facility: data.facility || prev?.facility,
+              specialty: data.facility ? data.specialty : prev?.specialty,
               agenda: data.agenda || prev?.agenda,
               isRescheduled: true,
             }));
-            showToast(tr('toastRescheduled', { date: data.date, time: data.time }), 'calendar');
+            showToast(tr('toastRescheduled', { date: formatDateLabel(data.date, langRef.current), time: data.time }), 'calendar');
           }
         } catch {
           // ignore non-json
@@ -259,13 +286,20 @@ function PatientApp() {
     />
   );
 
+  if (showStyleGuide && StyleGuideScreen) {
+    return <StyleGuideScreen onClose={() => setShowStyleGuide(false)} />;
+  }
+
   // Not logged in: ABHA sign-in screen
   if (!user) {
     return (
       <View style={styles.root}>
         <StatusBar style="dark" />
+        <AmbientBackground />
         <PatientLoginView
+          onBrandLongPress={openStyleGuide}
           onLoginSuccess={(loggedInUser) => {
+            setAppointmentStatus('loading');
             setUser(loggedInUser);
             if (loggedInUser.preferred_language) {
               applyProfileLanguage(loggedInUser.preferred_language);
@@ -303,13 +337,13 @@ function PatientApp() {
   const tabs: GlassTab<TabType>[] = [
     { key: 'home', label: t('tabToday'), icon: 'home' },
     { key: 'careplan', label: t('tabMedications'), icon: 'medication' },
-    { key: 'records', label: t('tabRecords'), icon: 'folder-open' },
-    { key: 'whosaw', label: t('tabPrivacy'), icon: 'verified-user' },
+    { key: 'records', label: t('tabRecords'), icon: 'records' },
+    { key: 'whosaw', label: t('tabPrivacy'), icon: 'shieldCheck' },
   ];
 
   const chromeInsets = {
     top: insets.top + TOOLBAR_HEIGHT,
-    bottom: Math.max(insets.bottom, 6) + TAB_BAR_HEIGHT,
+    bottom: tabBarChromeHeight(insets.bottom),
   };
 
   return (
@@ -323,6 +357,7 @@ function PatientApp() {
             <>
               <PatientHeader
                 user={user}
+                onBrandLongPress={openStyleGuide}
                 onOpenProfile={() => setIsIntakeVisible(true)}
                 onLogout={() => {
                   patientApi.clearToken();
@@ -341,10 +376,13 @@ function PatientApp() {
             </>
           }
         >
+          {/* Inside the blur target so the Android glass bars blur it too */}
+          <AmbientBackground />
           {currentScreen === 'home' && (
             <HomeView
               user={user}
               appointment={appointmentInfo}
+              appointmentStatus={appointmentStatus}
               onJoinCall={() => setIsIntakeVisible(true)}
               onOpenDoctors={() => setIsIntakeVisible(true)}
               onOpenRecords={() => setCurrentScreen('records')}
@@ -371,6 +409,7 @@ function PatientApp() {
             <WhoSawMyRecordsView
               onBack={() => setCurrentScreen(privacyBackTarget)}
               backLabel={privacyBackTarget === 'records' ? t('tabRecords') : t('home')}
+              onRevoked={(doctor) => showToast(t('accessRevoked', { name: doctor }), 'success')}
             />
           )}
         </BlurTargetProvider>
@@ -417,10 +456,10 @@ function PatientApp() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.base,
   },
   fullscreen: {
     flex: 1,
-    backgroundColor: colors.black,
+    backgroundColor: colors.night,
   },
 });

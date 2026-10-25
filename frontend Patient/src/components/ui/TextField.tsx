@@ -1,41 +1,46 @@
 import React, { useState } from 'react';
 import { Platform, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
-import { colors, radii, spacing, touch } from '../../theme/tokens';
+import { colors, neu, radii, spacing, touch } from '../../theme/tokens';
 import { fontFamilyFor, SCRIPT_METRICS } from '../../theme/fonts';
+import { useFontsLoaded } from '../../theme/FontsProvider';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { NeuInset } from './Neu';
 
 interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
-  icon?: IconName;
+  /** Required: the leading icon keeps the field identifiable even where the inset edge is subtle. */
+  icon: IconName;
   hint?: string;
   /** Large centred digits for OTP entry. */
   otp?: boolean;
 }
 
 /**
- * Doctor login input: `h-11 rounded-xl bg-[#F2F2F7] border-black/5`, white with a
- * blue border on focus, leading icon in #8E8E93.
+ * Input / OTP / text area: a clearly pressed-in STRONG inset well. Focus adds a 2px primary
+ * ring and a duotone primary icon. Visible label above, placeholder inside, text ≥ 4.5:1.
  */
 export const TextField: React.FC<TextFieldProps> = ({ label, icon, hint, otp = false, multiline, onFocus, onBlur, ...rest }) => {
   const { lang } = useLanguage();
+  const fontsLoaded = useFontsLoaded();
   const [focused, setFocused] = useState(false);
   const m = SCRIPT_METRICS[lang];
-  const fontSize = otp ? 20 : 15 * m.sizeScale;
+  const fontSize = otp ? 22 : 16 * m.sizeScale;
+  const fontLang = otp ? 'en' : lang;
 
   return (
     <View style={styles.wrap}>
-      <AppText variant="eyebrow" color="label" compact>
+      <AppText variant="eyebrow" color="ink" compact>
         {label}
       </AppText>
-      <View style={[styles.field, multiline && styles.fieldMultiline, focused && styles.fieldFocused]}>
-        {icon && !otp && <Icon name={icon} size={18} color={colors.tertiary} />}
+      <NeuInset radius={radii.md} focused={focused} style={[styles.field, multiline && styles.fieldMultiline]}>
+        <Icon name={icon} size={20} color={focused ? colors.primary : colors.inkInset} active={focused} surface={neu.inset.strong.fill[0]} />
         <TextInput
           {...rest}
           multiline={multiline}
           accessibilityLabel={rest.accessibilityLabel ?? label}
-          placeholderTextColor={colors.tertiary}
+          placeholderTextColor={colors.inkInset}
           onFocus={(e) => {
             setFocused(true);
             onFocus?.(e);
@@ -46,17 +51,15 @@ export const TextField: React.FC<TextFieldProps> = ({ label, icon, hint, otp = f
           }}
           style={[
             styles.input,
-            {
-              fontFamily: fontFamilyFor(otp ? 'en' : lang, otp ? 700 : 500),
-              fontSize,
-            },
+            fontsLoaded[fontLang] ? { fontFamily: fontFamilyFor(fontLang, otp ? 700 : 500) } : { fontWeight: otp ? '700' : '500' },
+            { fontSize },
             multiline && { lineHeight: Math.ceil(fontSize * m.lineHeight), textAlignVertical: 'top' },
             otp && styles.otp,
           ]}
         />
-      </View>
+      </NeuInset>
       {hint ? (
-        <AppText variant="caption" color="tertiary" align={otp ? 'center' : undefined}>
+        <AppText variant="caption" color="inkMuted" align={otp ? 'center' : undefined}>
           {hint}
         </AppText>
       ) : null}
@@ -72,31 +75,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    minHeight: touch.min,
+    minHeight: touch.min + 4,
     paddingHorizontal: 14,
-    borderRadius: radii.md,
-    backgroundColor: colors.gray6,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   fieldMultiline: {
     alignItems: 'flex-start',
     paddingVertical: spacing.md,
-    minHeight: 88,
-  },
-  fieldFocused: {
-    backgroundColor: colors.card,
-    borderColor: colors.blue,
+    minHeight: 96,
   },
   input: {
     flex: 1,
-    color: colors.label,
+    // Inputs have an intrinsic width on web; without this a wide OTP value squeezes the leading icon
+    minWidth: 0,
+    color: colors.ink,
     paddingVertical: Platform.OS === 'android' ? 8 : 12,
-    // Remove the browser focus outline; the border shows focus instead
+    // Remove the browser focus outline; the ring shows focus instead
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null),
   },
   otp: {
     textAlign: 'center',
     letterSpacing: 8,
+    // Keep digits optically centred despite the leading icon
+    marginRight: 20,
   },
 });

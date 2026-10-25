@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import type { LocalizedText } from '../utils/localized';
 
 // Backend host, in priority order:
 // 1. EXPO_PUBLIC_API_HOST env var (manual override)
@@ -45,15 +46,17 @@ export interface HealthRecord {
   record_id: string;
   patient_id: string;
   record_type: string;
-  title: string;
+  /** Display fields may be a string or { en, kn, hi } (resolve with `localized`). */
+  title: LocalizedText;
   date_str: string;
   file_mime_type: string;
   file_size_bytes: number;
   summary_findings: string | null;
   consent_status: 'approved' | 'expired' | 'protected';
-  facility: string | null;
+  facility: LocalizedText | null;
+  /** Stable code ('lab', 'imaging', …); the app shows its own translated label. */
   category: string | null;
-  type_label: string | null;
+  type_label: LocalizedText | null;
   shared_with: string | null;
   consent_expires_at: string | null;
   created_at: string | null;
@@ -64,14 +67,14 @@ export interface NextAppointment {
   patientId: string;
   date: string;
   time: string;
-  relativeTime: string;
+  relativeTime: LocalizedText;
   mode: string;
   doctorName: string;
-  specialty: string;
-  facility: string;
-  agenda: string;
+  specialty: LocalizedText;
+  facility: LocalizedText;
+  agenda: LocalizedText;
   status: string;
-  instructionsForPatient: string[];
+  instructionsForPatient: LocalizedText[];
   isRescheduled: boolean;
 }
 
@@ -79,36 +82,39 @@ export type DoseSlot = 'morning' | 'afternoon' | 'night' | 'prn';
 
 export interface CarePlanMedication {
   id: string;
+  /** Drug name: always Latin script, never translated. */
   name: string;
-  dosage: string;
-  frequency: string;
-  timing: string;
-  duration: string;
-  purpose: string;
+  /** Optional name in the patient's script, shown as a secondary line. */
+  nameLocal?: LocalizedText | null;
+  dosage: LocalizedText;
+  frequency: LocalizedText;
+  timing: LocalizedText;
+  duration: LocalizedText;
+  purpose: LocalizedText;
   schedule: { morning?: boolean; afternoon?: boolean; night?: boolean };
   prescribedBy?: string;
 }
 
 export interface CarePlan {
   doctor_name: string | null;
-  facility: string | null;
+  facility: LocalizedText | null;
   medications: CarePlanMedication[];
   /** Keyed by "medicationId:slot" */
   doses_today: Record<string, boolean>;
   checkin_today: 'better' | 'same' | 'worse' | null;
-  latest_note: { assessment: string; plan: Record<string, string>; signed_at: string } | null;
+  latest_note: { assessment: string; plan: Record<string, LocalizedText>; signed_at: string } | null;
 }
 
 export interface ConsentHistoryItem {
   consent_id: string;
   doctor: string;
   reg: string;
-  facility: string;
-  record: string;
-  purpose: string;
+  facility: LocalizedText;
+  record: LocalizedText;
+  purpose: LocalizedText;
   status: 'approved' | 'requested' | 'expired' | 'revoked' | 'declined';
   active: boolean;
-  remaining: string | null;
+  remaining: LocalizedText | null;
   created_at: string;
   expires_at: string | null;
 }

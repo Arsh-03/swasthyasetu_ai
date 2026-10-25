@@ -9,7 +9,7 @@ import {
   Chip,
   IconButton,
   type IconName,
-  PrimaryButton,
+  CriticalButton,
   SectionHeader,
   SegmentedControl,
   SheetHeader,
@@ -24,12 +24,12 @@ interface SymptomIntakeModalProps {
 
 // `value` is what the backend receives (unchanged); `label` is what the patient sees
 const SYMPTOMS: { value: string; label: TranslationKey; icon: IconName }[] = [
-  { value: 'Fever (ಜ್ವರ / बुखार)', label: 'symptomFever', icon: 'thermostat' },
-  { value: 'Stomach Pain (ಹೊಟ್ಟೆ ನೋವು)', label: 'symptomStomach', icon: 'sick' },
-  { value: 'Cough (ಕೆಮ್ಮು / खांसी)', label: 'symptomCough', icon: 'air' },
-  { value: 'Joint Ache (ಕೀಲು ನೋವು)', label: 'symptomJoints', icon: 'accessibility' },
-  { value: 'Headache (ತಲೆನೋವು)', label: 'symptomHeadache', icon: 'psychology' },
-  { value: 'Nausea (ವಾಕರಿಕೆ)', label: 'symptomNausea', icon: 'healing' },
+  { value: 'Fever (ಜ್ವರ / बुखार)', label: 'symptomFever', icon: 'fever' },
+  { value: 'Stomach Pain (ಹೊಟ್ಟೆ ನೋವು)', label: 'symptomStomach', icon: 'stomach' },
+  { value: 'Cough (ಕೆಮ್ಮು / खांसी)', label: 'symptomCough', icon: 'cough' },
+  { value: 'Joint Ache (ಕೀಲು ನೋವು)', label: 'symptomJoints', icon: 'joint' },
+  { value: 'Headache (ತಲೆನೋವು)', label: 'symptomHeadache', icon: 'headache' },
+  { value: 'Nausea (ವಾಕರಿಕೆ)', label: 'symptomNausea', icon: 'nausea' },
 ];
 
 export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible, onClose, onSubmit }) => {
@@ -55,7 +55,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
 
   return (
     <GlassSheet visible={visible} onClose={onClose} closeOnBackdrop>
-      <SheetHeader icon="assignment" title={t('symptomIntake')} subtitle={t('symptomIntakeSubtitle')} onClose={onClose} />
+      <SheetHeader icon="clipboard" title={t('symptomIntake')} subtitle={t('symptomIntakeSubtitle')} onClose={onClose} />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Who is consulting */}
@@ -63,15 +63,15 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
           <SectionHeader title={t('whoIsConsulting')} />
           <SegmentedControl
             options={[
-              { value: 'self', label: t('patientSelf'), icon: 'person' },
-              { value: 'rep', label: t('representative'), icon: 'group' },
+              { value: 'self', label: t('segSelf'), icon: 'person' },
+              { value: 'rep', label: t('segRepresentative'), icon: 'people' },
             ]}
             value={isRepresentative ? 'rep' : 'self'}
             onChange={(v) => setIsRepresentative(v === 'rep')}
           />
           {isRepresentative && (
             <View style={styles.repBadge}>
-              <AppText variant="footnote" weight={600} color="blue">
+              <AppText variant="footnote" weight={600} color="primary">
                 {t('nomineeVerified')}
               </AppText>
             </View>
@@ -101,8 +101,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
             <View style={styles.voiceHeader}>
               <IconButton
                 icon={isRecording ? 'stop' : 'mic'}
-                tone={isRecording ? 'red' : 'blue'}
-                size={48}
+                size={52}
                 iconSize={24}
                 accessibilityLabel={isRecording ? t('stopVoiceInput') : t('startVoiceInput')}
                 onPress={handleVoiceInput}
@@ -113,7 +112,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
                 <AppText variant="subhead" weight={600}>
                   {isRecording ? t('listeningVoice') : t('tapToSpeak')}
                 </AppText>
-                <AppText variant="caption" color="secondary">
+                <AppText variant="caption" color="inkMuted">
                   {t('voiceEngine')}
                 </AppText>
               </View>
@@ -123,6 +122,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
               value={notes}
               onChangeText={setNotes}
               placeholder={t('notesPlaceholder')}
+              icon="clipboard"
               multiline
             />
           </View>
@@ -130,9 +130,10 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
       </ScrollView>
 
       <View style={styles.footer}>
-        <PrimaryButton
+        <CriticalButton
+          tone="primary"
           label={t('joinVideoConsultation')}
-          icon="videocam"
+          icon="video"
           onPress={() => onSubmit(selectedSymptoms, isRepresentative, notes)}
         />
       </View>
@@ -156,7 +157,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   repBadge: {
-    backgroundColor: tints.blue,
+    backgroundColor: tints.primary,
     borderRadius: radii.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -167,7 +168,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   voiceCard: {
-    backgroundColor: colors.gray6,
+    backgroundColor: colors.base,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.hairline,

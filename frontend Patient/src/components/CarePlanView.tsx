@@ -1,23 +1,28 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, radii, spacing, tints, tones, touch, type Tone } from '../theme/tokens';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { colors, spacing, touch, type Tone } from '../theme/tokens';
 import { patientApi, type CarePlan, type CarePlanMedication, type DoseSlot } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
-import type { TranslationKey } from '../utils/translations';
+import type { SupportedLanguage, TranslationKey } from '../utils/translations';
 import { haptic } from '../utils/haptics';
+import { localized } from '../utils/localized';
+import { EmptyMedications } from './illustrations';
 import {
   AppText,
   AudioListenButton,
   Badge,
   Card,
-  Divider,
+  ChoiceTiles,
+  Groove,
   Icon,
   type IconName,
   LIST_ROW_TEXT_INSET,
   ListRow,
   NavBar,
+  NeuPressable,
   ScreenScroll,
   ScreenHeader,
+  SecondaryButton,
   SectionHeader,
 } from './ui';
 
@@ -29,17 +34,17 @@ type CheckinStatus = 'better' | 'same' | 'worse';
 
 // How each dose slot looks in the list
 const SLOT_STYLE: Record<DoseSlot, { icon: IconName; time: TranslationKey; tone: Tone }> = {
-  morning: { icon: 'wb-sunny', time: 'slotMorning', tone: 'green' },
-  afternoon: { icon: 'wb-twilight', time: 'slotAfternoon', tone: 'orange' },
-  night: { icon: 'nightlight', time: 'slotNight', tone: 'indigo' },
-  prn: { icon: 'medication', time: 'slotPrn', tone: 'green' },
+  morning: { icon: 'morning', time: 'slotMorning', tone: 'success' },
+  afternoon: { icon: 'afternoon', time: 'slotAfternoon', tone: 'warning' },
+  night: { icon: 'night', time: 'slotNight', tone: 'primary' },
+  prn: { icon: 'medication', time: 'slotPrn', tone: 'success' },
 };
 const SLOT_ORDER: DoseSlot[] = ['morning', 'afternoon', 'night', 'prn'];
 
 const CHECKIN_OPTIONS: { value: CheckinStatus; label: TranslationKey; icon: IconName; tone: Tone }[] = [
-  { value: 'better', label: 'feelingBetter', icon: 'sentiment-satisfied', tone: 'green' },
-  { value: 'same', label: 'feelingSame', icon: 'sentiment-neutral', tone: 'blue' },
-  { value: 'worse', label: 'feelingWorse', icon: 'sos', tone: 'red' },
+  { value: 'better', label: 'feelingBetter', icon: 'feelingBetter', tone: 'success' },
+  { value: 'same', label: 'feelingSame', icon: 'feelingSame', tone: 'primary' },
+  { value: 'worse', label: 'feelingWorse', icon: 'help', tone: 'danger' },
 ];
 
 interface DoseRow {
@@ -61,12 +66,13 @@ const buildDoseRows = (meds: CarePlanMedication[]): DoseRow[] => {
 };
 
 export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
-  const { t } = useLanguage();
+  const { lang, t } = useLanguage();
   const [plan, setPlan] = useState<CarePlan | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [followUpStatus, setFollowUpStatus] = useState<CheckinStatus | null>(null);
   const [loggedDoses, setLoggedDoses] = useState<Record<string, boolean>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,13 +91,16 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const buildAudioText = () => {
     const meds = plan?.medications || [];
     if (meds.length === 0) return `${t('audioIntro')} ${t('audioNoMeds')}`;
-    const lines = meds.map((m) => `${m.name}, ${m.dosage}, ${m.frequency}, ${m.timing}.`);
-    const advice = plan?.latest_note?.plan?.advice ? ` ${plan.latest_note.plan.advice}.` : '';
+    const lines = meds.map(
+      (m) => `${[m.name, localized(m.dosage, lang), localized(m.frequency, lang), localized(m.timing, lang)].filter(Boolean).join(', ')}.`
+    );
+    const adviceText = localized(plan?.latest_note?.plan?.advice, lang);
+    const advice = adviceText ? ` ${adviceText}.` : '';
     return `${t('audioIntro')} ${lines.join(' ')}${advice}`;
   };
 
@@ -99,6 +108,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
   const toggleDose = async (row: DoseRow) => {
     const taken = !loggedDoses[row.key];
     if (taken) haptic.success();
+    else haptic.tap();
     setLoggedDoses((prev) => ({ ...prev, [row.key]: taken }));
     setSaveError(null);
     try {
@@ -110,7 +120,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
   };
 
   const submitCheckin = async (value: CheckinStatus) => {
-    haptic.tap();
+    haptic.selection();
     const previous = followUpStatus;
     setFollowUpStatus(value);
     setSaveError(null);
@@ -123,7 +133,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
   };
 
   const doseRows = buildDoseRows(plan?.medications || []);
-  const subtitle = [plan?.doctor_name, plan?.facility].filter(Boolean).join(' • ');
+  const subtitle = [plan?.doctor_name, localized(plan?.facility, lang)].filter(Boolean).join(' • ');
 
   return (
     <ScreenScroll contentContainerStyle={styles.content}>
@@ -144,50 +154,76 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
         subtitle={t('audioMeta', { count: plan?.medications.length || 0 })}
       />
 
-      {/* Medications */}
+      {/* Doses: one row per medicine per time slot (the Listen card counts medicines) */}
       <View style={styles.section}>
-        <SectionHeader title={t('medicationsSection')} count={doseRows.length} />
-        <Card padded={false} style={styles.group}>
+        <SectionHeader title={t('dosesSection')} count={doseRows.length} />
+        <Card padded={false}>
           {doseRows.length === 0 && (
-            <AppText variant="footnote" color="tertiary" style={styles.emptyRow}>
-              {status === 'loading' ? t('loadingMedications') : status === 'error' ? t('carePlanError') : t('noMedications')}
-            </AppText>
+            <View style={styles.empty} accessibilityLiveRegion="polite">
+              <EmptyMedications width={150} />
+              {status === 'loading' ? (
+                <View style={styles.inline}>
+                  <ActivityIndicator color={colors.primary} />
+                  <AppText variant="subhead" weight={600}>
+                    {t('loadingMedications')}
+                  </AppText>
+                </View>
+              ) : status === 'error' ? (
+                <>
+                  <View style={styles.inline} accessibilityRole="alert">
+                    <Icon name="network" size={20} color={colors.warningDeep} active />
+                    <AppText variant="subhead" weight={600} color="warningDeep" style={styles.shrink}>
+                      {t('carePlanError')}
+                    </AppText>
+                  </View>
+                  <SecondaryButton label={t('retry')} tone="primary" size="sm" onPress={() => {
+                      setStatus('loading');
+                      setReloadKey((k) => k + 1);
+                    }}
+                  />
+                </>
+              ) : (
+                <AppText variant="headline" align="center">
+                  {t('noMedications')}
+                </AppText>
+              )}
+            </View>
           )}
           {doseRows.map((row, index) => {
             const look = SLOT_STYLE[row.slot];
             const taken = !!loggedDoses[row.key];
+            // Drug name stays in Latin script; a local-script name, if sent, is a secondary line
+            const nameLocal = localized(row.med.nameLocal, lang);
             return (
               <React.Fragment key={row.key}>
-                {index > 0 && <Divider inset={LIST_ROW_TEXT_INSET} />}
+                {index > 0 && <Groove inset={LIST_ROW_TEXT_INSET} />}
                 <ListRow
                   icon={look.icon}
                   iconTone={look.tone}
                   title={row.med.name}
-                  subtitle={[row.med.dosage, row.med.timing].filter(Boolean).join(' • ')}
+                  subtitle={[localized(row.med.dosage, lang), localized(row.med.timing, lang)].filter(Boolean).join(' • ')}
                   trailing={
-                    <Pressable
-                      onPress={() => toggleDose(row)}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: taken }}
+                    <DoseButton
+                      taken={taken}
+                      label={taken ? t('taken') : t('take')}
                       accessibilityLabel={t('markDoseTaken', { name: row.med.name })}
-                      hitSlop={4}
-                      style={({ pressed }) => [styles.doseBtn, taken && styles.doseBtnTaken, pressed && styles.pressed]}
-                    >
-                      {taken && <Icon name="check" size={16} color={colors.onTint} />}
-                      <AppText variant="footnote" weight={600} color={taken ? 'onTint' : 'blue'} compact>
-                        {taken ? t('taken') : t('take')}
-                      </AppText>
-                    </Pressable>
+                      onPress={() => toggleDose(row)}
+                    />
                   }
                 >
-                  <Badge label={t(look.time)} tone={look.tone} icon="schedule" style={styles.slotBadge} />
+                  {nameLocal && nameLocal !== row.med.name ? (
+                    <AppText variant="footnote" color="inkMuted">
+                      {nameLocal}
+                    </AppText>
+                  ) : null}
+                  <Badge label={t(look.time)} tone={look.tone} icon="clock" style={styles.slotBadge} />
                 </ListRow>
               </React.Fragment>
             );
           })}
         </Card>
         {saveError && (
-          <AppText variant="footnote" color="red" accessibilityRole="alert">
+          <AppText variant="footnote" color="dangerDeep" accessibilityRole="alert">
             {saveError}
           </AppText>
         )}
@@ -198,46 +234,22 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
         <SectionHeader title={t('recoveryCheckin')} />
         <Card style={styles.checkinCard}>
           <AppText variant="headline">{t('howAreYouFeeling')}</AppText>
-          <AppText variant="footnote" color="secondary">
+          <AppText variant="footnote" color="inkMuted">
             {t('checkinSub')}
           </AppText>
 
-          <View style={styles.checkinRow} accessibilityRole="radiogroup">
-            {CHECKIN_OPTIONS.map((opt) => {
-              const selected = followUpStatus === opt.value;
-              const c = tones[opt.tone];
-              return (
-                <Pressable
-                  key={opt.value}
-                  onPress={() => submitCheckin(opt.value)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: selected }}
-                  accessibilityLabel={t(opt.label)}
-                  style={({ pressed }) => [
-                    styles.checkinBtn,
-                    selected && { backgroundColor: c.bg, borderColor: c.fg },
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Icon name={opt.icon} size={26} color={selected ? c.fg : colors.secondary} />
-                  <AppText
-                    variant="footnote"
-                    weight={selected ? 700 : 600}
-                    color={selected ? c.text : 'secondary'}
-                    align="center"
-                    compact
-                  >
-                    {t(opt.label)}
-                  </AppText>
-                </Pressable>
-              );
-            })}
-          </View>
+          <ChoiceTiles
+            options={CHECKIN_OPTIONS.map((opt) => ({ ...opt, label: t(opt.label) }))}
+            value={followUpStatus}
+            onChange={submitCheckin}
+            accessibilityLabel={t('howAreYouFeeling')}
+            style={styles.checkinRow}
+          />
 
           {followUpStatus && (
             <View style={styles.recorded}>
-              <Icon name="check-circle" size={18} color={colors.greenDeep} />
-              <AppText variant="footnote" weight={600} color="greenDeep" style={styles.flex}>
+              <Icon name="checkCircle" size={18} color={colors.successDeep} active />
+              <AppText variant="footnote" weight={600} color="successDeep" style={styles.flex}>
                 {t('checkinLogged')}
               </AppText>
             </View>
@@ -248,9 +260,37 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
   );
 };
 
+/** Raised "Take" control; once taken it stays pressed in with a tick. Compact: never stretched to the row. */
+export const DoseButton: React.FC<{
+  taken: boolean;
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  lang?: SupportedLanguage;
+}> = ({ taken, label, accessibilityLabel, onPress, lang }) => (
+  <NeuPressable
+    onPress={onPress}
+    selected={taken}
+    haptics="none"
+    accessibilityRole="checkbox"
+    accessibilityState={{ checked: taken }}
+    accessibilityLabel={accessibilityLabel}
+    containerStyle={styles.doseBtnWrap}
+    style={styles.doseBtn}
+  >
+    {taken && <Icon name="check" size={18} color={colors.successDeep} />}
+    <AppText variant="footnote" weight={700} color={taken ? 'ink' : 'primary'} lang={lang} compact>
+      {label}
+    </AppText>
+  </NeuPressable>
+);
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  shrink: {
+    flexShrink: 1,
   },
   content: {
     paddingHorizontal: spacing.gutter,
@@ -261,63 +301,44 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.md,
   },
-  group: {
-    overflow: 'hidden',
+  empty: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.xl,
   },
-  emptyRow: {
-    padding: spacing.lg,
+  inline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   slotBadge: {
     marginTop: spacing.xs,
+    alignSelf: 'flex-start',
+  },
+  // Compact control: centred in the row at its own height (never stretched to the row)
+  doseBtnWrap: {
+    alignSelf: 'center',
   },
   doseBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    minHeight: touch.compact - 4,
-    minWidth: 72,
     justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: touch.min,
+    minWidth: 84,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: tints.blue,
-  },
-  doseBtnTaken: {
-    backgroundColor: colors.green,
-  },
-  pressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.97 }],
   },
   checkinCard: {
     gap: spacing.sm,
     padding: spacing.xl,
   },
   checkinRow: {
-    flexDirection: 'row',
-    gap: 10,
     marginTop: spacing.sm,
-  },
-  checkinBtn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    minHeight: 76,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.lg,
-    backgroundColor: colors.gray6,
-    borderWidth: 1,
-    borderColor: colors.hairline,
   },
   recorded: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginTop: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 10,
-    borderRadius: radii.md,
-    backgroundColor: tints.green,
   },
 });

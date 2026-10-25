@@ -8,8 +8,7 @@ import {
   AppText,
   AudioListenButton,
   Badge,
-  DestructiveButton,
-  PrimaryButton,
+  CriticalButton,
   SheetHeader,
   TextField,
   Well,
@@ -61,11 +60,11 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
   const purpose = request?.clinical_purpose || '—';
   const notice = t('consentNotice', { minutes });
 
-  const rows: { label: string; value: string; tone?: 'green' }[] = [
+  const rows: { label: string; value: string; tone?: 'success' }[] = [
     { label: t('practitioner'), value: practitioner },
     { label: t('recordSought'), value: record },
     { label: t('explicitPurpose'), value: purpose },
-    { label: t('tokenValidity'), value: t('tokenValidityValue', { minutes }), tone: 'green' },
+    { label: t('tokenValidity'), value: t('tokenValidityValue', { minutes }), tone: 'success' },
   ];
 
   // Non-dismissible: the patient must explicitly authorize or decline
@@ -77,7 +76,7 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
         subtitle={t('consentSubtitle')}
         right={
           <View accessible accessibilityLabel={`${t('timeRemaining')} ${formatCountdown(timeLeft)}`}>
-            <Badge label={formatCountdown(timeLeft)} tone="orange" icon="timer" size="md" />
+            <Badge label={formatCountdown(timeLeft)} tone="warning" icon="timer" size="md" />
           </View>
         }
       />
@@ -85,7 +84,7 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Plain-language notice with audio read-out */}
         <View style={styles.noticeRow}>
-          <AppText variant="footnote" color="secondary" style={styles.flex}>
+          <AppText variant="footnote" color="inkMuted" style={styles.flex}>
             {notice}
           </AppText>
           <AudioListenButton
@@ -97,10 +96,10 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
         <Well style={styles.details}>
           {rows.map((row) => (
             <View key={row.label} style={styles.detailRow}>
-              <AppText variant="eyebrow" color="tertiary" compact>
+              <AppText variant="eyebrow" color="inkMuted" compact>
                 {row.label}
               </AppText>
-              <AppText variant="subhead" weight={600} color={row.tone === 'green' ? 'greenDeep' : 'label'}>
+              <AppText variant="subhead" weight={600} color={row.tone === 'success' ? 'successDeep' : 'ink'}>
                 {row.value}
               </AppText>
             </View>
@@ -117,16 +116,27 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
           textContentType="oneTimeCode"
           autoComplete="sms-otp"
           hint={t('consentOtpHint')}
+          icon="key"
           otp
         />
 
         <View style={styles.actions}>
-          <DestructiveButton label={t('decline')} icon="close" onPress={onDecline} disabled={submitting} style={styles.decline} />
-          <PrimaryButton
+          <CriticalButton
+            tone="danger"
+            label={t('decline')}
+            icon="close"
+            onPress={onDecline}
+            disabled={submitting}
+            fullWidth={false}
+            style={styles.decline}
+          />
+          <CriticalButton
+            tone="success"
             label={t('authorizeAccess')}
-            icon="verified-user"
+            icon="shieldCheck"
             onPress={handleConfirm}
             loading={submitting}
+            fullWidth={false}
             style={styles.approve}
           />
         </View>

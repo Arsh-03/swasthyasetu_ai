@@ -1,16 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { colors, radii, spacing, tints } from '../theme/tokens';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { colors, spacing } from '../theme/tokens';
 import { patientApi, type HealthRecord } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
+import { formatDateLabel } from '../utils/dates';
+import { localized, type LocalizedText } from '../utils/localized';
+import { EmptyRecords } from './illustrations';
 import {
   AppText,
   Badge,
   Card,
   Icon,
   type IconName,
-  IconTile,
+  IconDisc,
+  LIST_ROW_TEXT_INSET,
+  ListRow,
   NavBar,
+  NeuList,
   ScreenScroll,
   ScreenHeader,
   SecondaryButton,
@@ -20,9 +26,10 @@ import {
 
 interface LockerRecord {
   id: string;
-  title: string;
+  title: LocalizedText;
   category: 'diagnostic' | 'lab';
-  facility: string | null;
+  facility: LocalizedText | null;
+  /** Backend date label ("14 Sep 2026"), localised at render. */
   date: string;
   icon: IconName;
   sharedWith: string | null;
@@ -53,12 +60,14 @@ const toLockerRecord = (r: HealthRecord): LockerRecord => {
     category: isLab ? 'lab' : 'diagnostic',
     facility: r.facility,
     date: r.date_str,
-    icon: isLab ? 'science' : r.record_type.includes('discharge') ? 'description' : 'monitor-heart',
+    icon: isLab ? 'lab' : r.record_type.includes('discharge') ? 'document' : 'heartbeat',
     sharedWith: shared ? r.shared_with : null,
     minutesLeft: shared ? left : null,
     size: formatSize(r.file_size_bytes, r.file_mime_type),
   };
 };
+
+type Filter = 'all' | 'diagnostic' | 'lab';
 
 interface RecordsLockerViewProps {
   patientId: string;
@@ -67,10 +76,11 @@ interface RecordsLockerViewProps {
 }
 
 export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId, onBack, onOpenAudit }) => {
-  const { t } = useLanguage();
-  const [activeFilter, setActiveFilter] = useState<'all' | 'diagnostic' | 'lab'>('all');
+  const { lang, t } = useLanguage();
+  const [activeFilter, setActiveFilter] = useState<Filter>('all');
   const [records, setRecords] = useState<LockerRecord[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,28 +97,41 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
     return () => {
       cancelled = true;
     };
-  }, [patientId]);
+  }, [patientId, reloadKey]);
 
   const filteredRecords = activeFilter === 'all' ? records : records.filter((r) => r.category === activeFilter);
   const sharedCount = records.filter((r) => r.sharedWith).length;
+
+  const retry = () => {
+    setStatus('loading');
+    setReloadKey((k) => k + 1);
+  };
+
+  const timeLeft = (minutes: number) =>
+    minutes < 60 ? t('minutesLeft', { minutes }) : t('hoursLeft', { hours: Math.floor(minutes / 60) });
 
   return (
     <ScreenScroll contentContainerStyle={styles.content}>
       <NavBar
         backLabel={t('home')}
         onBack={onBack}
-        right={<SecondaryButton label={t('privacyLog')} icon="verified-user" tone="blue" size="sm" onPress={onOpenAudit} />}
+        right={<SecondaryButton label={t('privacyLog')} icon="shieldCheck" tone="primary" size="sm" onPress={onOpenAudit} />}
       />
 
       <ScreenHeader
+        icon="records"
         title={t('healthRecords')}
         subtitle={t('recordsSubtitle')}
         accessory={
-          <>
-            <Badge label={t('fhirEncrypted')} tone="blue" icon="shield" />
-            <Badge label={t('sharedCount', { count: sharedCount })} tone="green" dot />
-            <Badge label={t('lockedCount', { count: records.length - sharedCount })} tone="neutral" dot />
-          </>
+          status === 'ready' ? (
+            <>
+              <Badge label={t('fhirEncrypted')} tone="primary" icon="shield" />
+              <Badge label={t('sharedCount', { count: sharedCount })} tone="success" dot />
+              <Badge label={t('lockedCount', { count: records.length - sharedCount })} tone="neutral" dot />
+            </>
+          ) : (
+            <Badge label={t('fhirEncrypted')} tone="primary" icon="shield" />
+          )
         }
       />
 
@@ -116,79 +139,103 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
         options={[
           { value: 'all', label: t('filterAll') },
           { value: 'diagnostic', label: t('filterImaging') },
-          { value: 'lab', label: t('filterLab') },
+          { value: 'lab', label: t('segLab') },
         ]}
         value={activeFilter}
         onChange={setActiveFilter}
+        accessibilityLabel={t('filterRecords')}
       />
 
       <View style={styles.section}>
-        <SectionHeader title={t('clinicalDocuments')} count={filteredRecords.length} />
+        <SectionHeader title={t('clinicalDocuments')} count={status === 'ready' ? filteredRecords.length : undefined} />
 
-        {filteredRecords.length === 0 && (
-          <AppText variant="footnote" color="tertiary" align="center" style={styles.empty}>
-            {status === 'loading' ? t('loadingRecords') : status === 'error' ? t('recordsError') : t('noRecordsInCategory')}
-          </AppText>
+        {filteredRecords.length === 0 ? (
+          // Empty / loading / error: raised panel so the retry button never sits inside an inset
+          <Card>
+            <View style={styles.empty} accessibilityLiveRegion="polite">
+              <EmptyRecords width={150} />
+              {status === 'loading' ? (
+                <View style={styles.inline}>
+                  <ActivityIndicator color={colors.primary} />
+                  <AppText variant="subhead" weight={600}>
+                    {t('loadingRecords')}
+                  </AppText>
+                </View>
+              ) : status === 'error' ? (
+                <>
+                  <View style={styles.inline} accessibilityRole="alert">
+                    <Icon name="network" size={20} color={colors.warningDeep} active />
+                    <AppText variant="subhead" weight={600} color="warningDeep" style={styles.shrink}>
+                      {t('recordsError')}
+                    </AppText>
+                  </View>
+                  <SecondaryButton label={t('retry')} tone="primary" size="sm" onPress={retry} />
+                </>
+              ) : (
+                <AppText variant="headline" align="center">
+                  {records.length === 0 ? t('noRecordsYet') : t('noRecordsInCategory')}
+                </AppText>
+              )}
+            </View>
+          </Card>
+        ) : (
+          // Read-only list: one inset tray, rows separated by grooves
+          <NeuList variant="tray" grooveInset={LIST_ROW_TEXT_INSET}>
+            {filteredRecords.map((r) => {
+              const shared = !!r.sharedWith;
+              const title = localized(r.title, lang);
+              return (
+                <ListRow
+                  key={r.id}
+                  icon={r.icon}
+                  iconTone={shared ? 'success' : 'primary'}
+                  title={title}
+                  subtitle={`${r.category === 'lab' ? t('categoryLab') : t('categoryImaging')} • ${formatDateLabel(r.date, lang)}`}
+                >
+                  <View style={styles.meta}>
+                    <Icon name="building" size={14} color={colors.inkMuted} />
+                    <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
+                      {localized(r.facility, lang) || t('abdmLinkedFacility')}
+                    </AppText>
+                  </View>
+
+                  <View style={styles.badges}>
+                    {shared ? (
+                      <Badge label={t('statusShared')} tone="success" icon="people" />
+                    ) : (
+                      <Badge label={t('statusLocked')} tone="neutral" icon="lock" />
+                    )}
+                    {r.minutesLeft !== null && <Badge label={timeLeft(r.minutesLeft)} tone="success" icon="clock" />}
+                  </View>
+
+                  {shared && (
+                    <AppText variant="footnote" weight={600} color="successDeep">
+                      {t('canView', { name: r.sharedWith ?? '' })}
+                    </AppText>
+                  )}
+
+                  <AppText variant="mono" color="inkMuted">
+                    {r.size}
+                  </AppText>
+                </ListRow>
+              );
+            })}
+          </NeuList>
         )}
-
-        {filteredRecords.map((r) => {
-          const shared = !!r.sharedWith;
-          return (
-            <Card key={r.id} style={[styles.recordCard, shared ? styles.recordShared : styles.recordLocked]}>
-              {/* Eyebrow + status */}
-              <View style={styles.eyebrowRow}>
-                <AppText variant="eyebrow" color="tertiary" compact style={styles.flex}>
-                  {r.category === 'lab' ? t('categoryLab') : t('categoryImaging')}
-                </AppText>
-                {shared ? (
-                  <Badge label={t('sharedWith', { name: r.sharedWith ?? '' })} tone="green" icon="verified" />
-                ) : (
-                  <Badge label={t('encryptedVault')} tone="neutral" icon="lock" />
-                )}
-              </View>
-
-              <View style={styles.titleRow}>
-                <IconTile icon={r.icon} tone={shared ? 'green' : 'blue'} size={40} />
-                <AppText variant="headline" style={styles.flex}>
-                  {r.title}
-                </AppText>
-              </View>
-
-              <View style={styles.metaRow}>
-                <Icon name="apartment" size={14} color={colors.tertiary} />
-                <AppText variant="footnote" weight={500} style={styles.metaFacility}>
-                  {r.facility || t('abdmLinkedFacility')}
-                </AppText>
-                <AppText variant="footnote" color="tertiary">
-                  • {r.date}
-                </AppText>
-              </View>
-
-              <View style={styles.footer}>
-                <AppText variant="mono" color="tertiary">
-                  {r.size}
-                </AppText>
-                {r.minutesLeft !== null && (
-                  <Badge label={t('minutesLeft', { minutes: r.minutesLeft })} tone="green" icon="schedule" />
-                )}
-              </View>
-            </Card>
-          );
-        })}
       </View>
 
-      {/* Security banner */}
-      <View style={styles.trustBanner}>
-        <IconTile icon="lock" tone="blue" />
+      {/* Security note */}
+      <Card style={styles.trust}>
+        <IconDisc icon="lock" tone="primary" />
         <View style={styles.flex}>
           <AppText variant="subhead" weight={600}>
             {t('encryptionTitle')}
           </AppText>
-          <AppText variant="footnote" color="secondary">
+          <AppText variant="footnote" color="inkMuted">
             {t('encryptionBody')}
           </AppText>
         </View>
-      </View>
+      </Card>
     </ScreenScroll>
   );
 };
@@ -196,6 +243,9 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  shrink: {
+    flexShrink: 1,
   },
   content: {
     paddingHorizontal: spacing.gutter,
@@ -207,56 +257,29 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   empty: {
-    paddingVertical: spacing.xxxl,
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
   },
-  recordCard: {
-    gap: spacing.md,
-    padding: spacing.xl,
-  },
-  recordShared: {
-    borderColor: tints.greenRing,
-  },
-  recordLocked: {
-    backgroundColor: colors.cardMuted,
-    borderColor: colors.border,
-  },
-  eyebrowRow: {
+  inline: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.sm,
   },
-  titleRow: {
+  meta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  badges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  trust: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-  },
-  metaFacility: {
-    flexShrink: 1,
-  },
-  footer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.separator,
-  },
-  trustBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    padding: spacing.lg,
-    borderRadius: radii.lg,
-    backgroundColor: tints.blueSubtle,
-    borderWidth: 1,
-    borderColor: tints.blueRing,
   },
 });

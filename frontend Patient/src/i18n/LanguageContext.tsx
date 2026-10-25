@@ -7,6 +7,8 @@ const DEFAULT_LANGUAGE: SupportedLanguage = 'kn';
 
 interface LanguageContextValue {
   lang: SupportedLanguage;
+  /** True once the saved choice has been read from storage (or found missing). */
+  hydrated: boolean;
   setLang: (lang: SupportedLanguage) => void;
   /** Same order as before: kn → hi → en → kn. */
   cycleLang: () => void;
@@ -23,6 +25,7 @@ const isLanguage = (v: unknown): v is SupportedLanguage =>
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<SupportedLanguage>(DEFAULT_LANGUAGE);
   const [hasSavedChoice, setHasSavedChoice] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -34,7 +37,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       })
       .catch(() => {
         // Storage unavailable (private browsing etc.): keep the default
-      });
+      })
+      .finally(() => setHydrated(true));
   }, []);
 
   const setLang = useCallback((next: SupportedLanguage) => {
@@ -57,12 +61,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const value = useMemo<LanguageContextValue>(
     () => ({
       lang,
+      hydrated,
       setLang,
       cycleLang,
       applyProfileLanguage,
       t: (key, vars) => translate(lang, key, vars),
     }),
-    [lang, setLang, cycleLang, applyProfileLanguage]
+    [lang, hydrated, setLang, cycleLang, applyProfileLanguage]
   );
 
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;

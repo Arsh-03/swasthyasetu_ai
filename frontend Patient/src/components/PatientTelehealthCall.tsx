@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Image, Platform, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radii, shadows, spacing } from '../theme/tokens';
+import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { haptic } from '../utils/haptics';
 import { GlassSurface } from './glass';
-import { AppText, Icon, IconButton } from './ui';
+import { AppText, CriticalButton, Icon, IconButton } from './ui';
 
 interface PatientTelehealthCallProps {
   doctorName: string;
@@ -20,7 +20,7 @@ const SELF_PIP_URL =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuAMknnrL1azNBnB58uMox-l1CcLlCOqWvUimLBiLkJDaWKKrtkqvKnzs2xdOeVF8iSMHpTSk0ENugY-yF1k0JbvFHTOYCtzwJVjaqx9vKZdAogAGrJm1fLfa22lW6sdm1aSSRYxv0craALN6s1BZNS6itFWOoWj_QWMP-wF772FTz5PEDVqxhkesTSt97veSZTFlDJhJgLUmUjUgo1fQDzUqUL_PXosFUri_P1ve9yPukx2vFxzlUA5NQ';
 
 const NEXT_TIER: Record<NetworkTier, NetworkTier> = { hd: 'audio', audio: 'async', async: 'hd' };
-const TIER_COLOR: Record<NetworkTier, string> = { hd: colors.green, audio: colors.orange, async: colors.red };
+const TIER_COLOR: Record<NetworkTier, string> = { hd: colors.success, audio: colors.warning, async: colors.danger };
 
 export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ onEndCall, doctorName }) => {
   const { t } = useLanguage();
@@ -145,12 +145,12 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
         ) : (
           <View style={styles.cameraOffPlaceholder}>
             <View style={styles.avatarPlaceholder}>
-              <Icon name="person" size={44} color={colors.onTint} />
+              <Icon name="person" size={44} color={colors.onPrimary} />
             </View>
-            <AppText variant="title" color="onTint">
+            <AppText variant="title" color="onPrimary">
               {doctorName}
             </AppText>
-            <AppText variant="footnote" weight={500} color="gray2">
+            <AppText variant="footnote" weight={500} color="onNightMuted">
               {t('audioPrioritized')}
             </AppText>
           </View>
@@ -164,8 +164,8 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
                 <View key={i} style={[styles.waveBar, { height: h }]} />
               ))}
             </View>
-            <GlassSurface material="dark" style={styles.glassPill}>
-              <AppText variant="footnote" weight={600} color="onTint" compact>
+            <GlassSurface material="night" style={styles.glassPill}>
+              <AppText variant="footnote" weight={600} color="onPrimary" compact>
                 {t('weakSignal')}
               </AppText>
             </GlassSurface>
@@ -180,28 +180,28 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
             accessibilityLabel={`${t('switchNetworkTier')}: ${tierLabel}`}
             hitSlop={8}
           >
-            <GlassSurface material="dark" style={styles.glassPill}>
+            <GlassSurface material="night" style={styles.glassPill}>
               <View style={[styles.statusDot, { backgroundColor: TIER_COLOR[networkTier] }]} />
-              <AppText variant="caption" weight={600} color="onTint" compact>
+              <AppText variant="caption" weight={600} color="onPrimary" compact>
                 {tierLabel}
               </AppText>
             </GlassSurface>
           </Pressable>
 
-          <GlassSurface material="dark" style={styles.glassPill}>
+          <GlassSurface material="night" style={styles.glassPill}>
             <View style={[styles.statusDot, styles.recordingDot]} />
-            <AppText variant="mono" color="onTint" style={styles.tabular}>
+            <AppText variant="mono" color="onPrimary" style={styles.tabular}>
               {formatTimer(callSeconds)}
             </AppText>
           </GlassSurface>
         </View>
 
         {/* Clinician info */}
-        <GlassSurface material="dark" style={[styles.doctorInfo, { top: overlayTop + 48 }]}>
-          <AppText variant="subhead" weight={700} color="onTint" numberOfLines={1}>
+        <GlassSurface material="night" style={[styles.doctorInfo, { top: overlayTop + 48 }]}>
+          <AppText variant="subhead" weight={700} color="onPrimary" numberOfLines={1}>
             {doctorName}
           </AppText>
-          <AppText variant="caption" color="gray3" numberOfLines={1}>
+          <AppText variant="caption" color="onNightMuted" numberOfLines={1}>
             {t('telehealthBrand')}
           </AppText>
         </GlassSurface>
@@ -220,11 +220,11 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
             <Image source={{ uri: SELF_PIP_URL }} style={styles.pipImage} accessibilityIgnoresInvertColors />
           ) : (
             <View style={styles.pipOff}>
-              <Icon name="videocam-off" size={28} color={colors.gray2} />
+              <Icon name="videoOff" size={28} color={colors.onNightMuted} />
             </View>
           )}
           <View style={styles.pipLabel}>
-            <AppText variant="caption" weight={600} color="onTint" compact>
+            <AppText variant="caption" weight={600} color="onPrimary" compact>
               {t('you')}
             </AppText>
           </View>
@@ -232,9 +232,9 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
 
         {/* Live translated caption */}
         <View style={styles.captionContainer}>
-          <GlassSurface material="dark" style={styles.captionBanner}>
-            <Icon name="auto-awesome" size={16} color="#64D2FF" />
-            <AppText variant="subhead" weight={500} color="onTint" style={styles.captionText}>
+          <GlassSurface material="night" style={styles.captionBanner}>
+            <Icon name="sparkle" size={18} color={colors.onNightMuted} active />
+            <AppText variant="subhead" weight={500} color="onPrimary" style={styles.captionText}>
               {t('liveCaption')}
             </AppText>
           </GlassSurface>
@@ -243,10 +243,10 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
 
       {/* Floating call controls */}
       <View style={[styles.controlsContainer, { paddingBottom: Math.max(insets.bottom, spacing.lg) + spacing.sm }]}>
-        <GlassSurface material="dark" style={styles.controlsPill}>
+        <GlassSurface material="night" style={styles.controlsPill}>
           <IconButton
-            icon={isMicOn ? 'mic' : 'mic-off'}
-            tone={isMicOn ? 'dark' : 'darkOff'}
+            icon={isMicOn ? 'mic' : 'micOff'}
+            tone={isMicOn ? 'night' : 'nightOff'}
             size={52}
             iconSize={24}
             selected={!isMicOn}
@@ -255,8 +255,8 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
             haptics
           />
           <IconButton
-            icon={isCamOn ? 'videocam' : 'videocam-off'}
-            tone={isCamOn ? 'dark' : 'darkOff'}
+            icon={isCamOn ? 'video' : 'videoOff'}
+            tone={isCamOn ? 'night' : 'nightOff'}
             size={52}
             iconSize={24}
             selected={!isCamOn}
@@ -265,15 +265,15 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
             haptics
           />
           <IconButton
-            icon="network-check"
-            tone="dark"
+            icon="network"
+            tone="night"
             size={52}
             iconSize={24}
             accessibilityLabel={t('switchNetworkTier')}
             onPress={cycleNetworkTier}
             haptics
           />
-          <IconButton icon="call-end" tone="red" size={60} iconSize={28} accessibilityLabel={t('endCall')} onPress={handleEnd} />
+          <CriticalButton tone="danger" label={t('endCall')} icon="callEnd" onPress={handleEnd} fullWidth={false} />
         </GlassSurface>
       </View>
     </View>
@@ -283,11 +283,11 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ on
 const styles = StyleSheet.create({
   callContainer: {
     flex: 1,
-    backgroundColor: colors.black,
+    backgroundColor: colors.night,
   },
   videoStage: {
     flex: 1,
-    backgroundColor: colors.dark,
+    backgroundColor: colors.night,
     overflow: 'hidden',
   },
   doctorFeedImage: {
@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: tints.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -317,7 +317,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: colors.scrimStrong,
     gap: spacing.lg,
   },
   waveRow: {
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
   },
   waveBar: {
     width: 5,
-    backgroundColor: colors.green,
+    backgroundColor: colors.success,
     borderRadius: 2.5,
   },
   topBar: {
@@ -354,7 +354,7 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   recordingDot: {
-    backgroundColor: colors.red,
+    backgroundColor: colors.danger,
   },
   tabular: {
     fontVariant: ['tabular-nums'],
@@ -377,8 +377,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
-    backgroundColor: colors.dark,
+    borderColor: tints.whiteStrong,
+    backgroundColor: colors.night,
     ...shadows.lg,
   },
   pipImage: {
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     left: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: colors.scrimStrong,
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: radii.xs,
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
   controlsContainer: {
     alignItems: 'center',
     paddingTop: spacing.lg,
-    backgroundColor: colors.black,
+    backgroundColor: colors.night,
   },
   controlsPill: {
     flexDirection: 'row',

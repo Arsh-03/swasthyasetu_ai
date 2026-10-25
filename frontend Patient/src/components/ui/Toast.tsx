@@ -9,12 +9,12 @@ import { Icon, type IconName } from './Icon';
 export type ToastTone = 'info' | 'success' | 'warning' | 'error' | 'call' | 'calendar';
 
 const TONE_ICON: Record<ToastTone, { icon: IconName; color: string }> = {
-  info: { icon: 'info', color: colors.onTint },
-  success: { icon: 'check-circle', color: colors.green },
-  warning: { icon: 'warning', color: colors.orange },
-  error: { icon: 'error', color: colors.red },
-  call: { icon: 'videocam', color: colors.green },
-  calendar: { icon: 'event', color: '#64D2FF' },
+  info: { icon: 'info', color: colors.onNight },
+  success: { icon: 'checkCircle', color: colors.success },
+  warning: { icon: 'warning', color: colors.warning },
+  error: { icon: 'error', color: colors.danger },
+  call: { icon: 'video', color: colors.success },
+  calendar: { icon: 'calendar', color: colors.onNightMuted },
 };
 
 export interface ToastMessage {
@@ -24,7 +24,7 @@ export interface ToastMessage {
 
 const useNative = Platform.OS !== 'web';
 
-/** Dynamic-Island style capsule in dark glass. Announced to screen readers. */
+/** Capsule toast in night glass. Announced to screen readers. */
 export const Toast: React.FC<{ message: ToastMessage | null }> = ({ message }) => {
   const insets = useSafeAreaInsets();
   const [anim] = useState(() => new Animated.Value(0));
@@ -61,9 +61,9 @@ export const Toast: React.FC<{ message: ToastMessage | null }> = ({ message }) =
           },
         ]}
       >
-        <GlassSurface material="dark" style={styles.pill}>
-          <Icon name={look.icon} size={18} color={look.color} />
-          <AppText variant="subhead" weight={600} color="onTint" style={styles.text}>
+        <GlassSurface material="night" style={styles.pill}>
+          <Icon name={look.icon} size={20} color={look.color} active />
+          <AppText variant="subhead" weight={600} color="onNight" style={styles.text}>
             {shown.text}
           </AppText>
         </GlassSurface>

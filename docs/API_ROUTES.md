@@ -998,3 +998,50 @@ Demo script test: add Amoxicillin → `POST /ddi/check` returns the blocking all
 9. **Extras:** triage, explain-medicine, captions, assistant chat (flagged off).
 
 For a demo that has to work with limited time, do steps 1 to 3 and 6 first. Those cover login, consent with real enforcement, and the drug-allergy catch, which are the strongest parts of the story.
+
+---
+
+## 24. Open to-dos raised by the Patient app
+
+### `GET /appointments/next`: send machine-readable time, not English labels
+
+Current shape (from `serializers.appointment_to_dict`): `date` = `"Tomorrow, 23 Oct 2026"`, `time` = `"10:30 AM IST"`, `relativeTime` = `"Scheduled for Tomorrow at 10:30 AM"`.
+
+- The relative words are baked in when the row is written, so they go stale ("Tomorrow" two days after the date) and are English-only.
+- The Patient app currently parses the `DD Mon YYYY` and `hh:mm AM/PM` parts and computes today / tomorrow / in N days / past on the device in en / kn / hi. It falls back to `relativeTime` only when `date` cannot be parsed.
+- **To do:** add `startsAt` (ISO 8601 with offset, e.g. `2026-10-23T10:30:00+05:30`) and `timezone` (`Asia/Kolkata`); keep `date` / `time` as plain labels without relative words; drop or localise `relativeTime`.
+- **Backend / product decisions the app does not make:** whether a past appointment can still be joined (the app keeps Join call enabled, unchanged), whether past appointments should still be returned as "next", the join window (how early / late a call may start), and the appointment `status` transitions (scheduled → missed / completed).
+
+
+### Localised display fields (backend to-do)
+
+**Status: backend to-do.** Today these fields arrive as plain English strings. The Patient app already accepts either shape, so the backend can switch one field at a time without breaking the app.
+
+**Shape.** Each field below may be a plain string (current behaviour) or an object with one entry per language:
+
+```json
+{ "agenda": { "en": "Review blood sugar report", "kn": "ರಕ್ತದ ಸಕ್ಕರೆ ವರದಿ ಪರಿಶೀಲನೆ", "hi": "ब्लड शुगर रिपोर्ट की समीक्षा" } }
+```
+
+The app shows the active language. If that entry is missing or empty it shows English, then any language that has text. The app never translates clinical text itself (no phrase dictionary on the device).
+
+| Route (as used by the Patient app today) | Fields to localise `{en, kn, hi}` | Not translated |
+|---|---|---|
+| `GET /appointments/next` | `agenda`, `facility`, `specialty`, `relativeTime` (or drop it, see above), each item of `instructionsForPatient` | `doctorName`, `date` / `time` labels (the app formats dates itself) |
+| `WS appointment_rescheduled` event | `agenda`, `facility`, `specialty`, `relativeTime` | `doctor_name`, `date`, `time` |
+| `GET /careplan` | per medication: `dosage`, `frequency`, `timing`, `duration`, `purpose`; plan-level `facility`; `latest_note.plan.*` (for example `advice`) | medication `name` (always Latin script, e.g. `Amoxicillin 500mg`) |
+| `GET /records/patient/{patient_id}` | `title`, `facility`, `type_label` | `category` stays a stable code (`lab`, `imaging`, …); the app shows its own translated label for known codes |
+| `GET /consents/history` | `record`, `purpose`, `facility`, `remaining` (relative-time text such as "2 hours left") | `doctor`, `reg` |
+
+**Optional field:** `nameLocal` on a care-plan medication, `{en, kn, hi}` or a string. It is the drug name written in the patient's script. The app shows it as a second, smaller line under the Latin-script `name`. It never replaces `name`.
+
+**Dates.** Send dates as ISO 8601 (or the existing `DD Mon YYYY` label). Do not send localised month names: the app formats every date in the active language itself.
+
+**When to translate.** Produce the translations when the prescription, care plan or record is created, not on every read:
+
+1. The doctor saves the English text.
+2. The backend requests kn and hi from a translation service (for example Bhashini, used within its terms of use and data-handling rules; no patient identifiers in the request).
+3. The doctor (or a designated reviewer) sees the translations and approves or edits them before the care plan or record is published to the patient. Store who approved them and when.
+4. Only approved translations are returned. Anything not yet approved is left out, so the app falls back to English.
+
+Facility and hospital names can be translated once and stored with the facility, not per record.

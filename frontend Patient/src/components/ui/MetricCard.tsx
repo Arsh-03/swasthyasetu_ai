@@ -1,10 +1,12 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radii, shadows, spacing, tones, type Tone } from '../../theme/tokens';
-import { haptic } from '../../utils/haptics';
+import { StyleSheet, useWindowDimensions, View, type StyleProp, type ViewStyle } from 'react-native';
+import { colors, radii, spacing, tones, typography, type Tone } from '../../theme/tokens';
+import { scriptFontSize, scriptLineHeight, splitScriptRuns } from '../../theme/scripts';
+import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText } from './AppText';
-import { IconTile } from './Card';
 import { Icon, type IconName } from './Icon';
+import { IconDisc } from './IconDisc';
+import { NeuPanel, NeuPressable } from './Neu';
 
 interface MetricCardProps {
   /** Uppercase eyebrow (e.g. "Next Appointment"). */
@@ -14,34 +16,55 @@ interface MetricCardProps {
   caption?: string;
   icon: IconName;
   tone?: Tone;
-  /** `row` = Doctor queue metric (text left, tile right); `stacked` = tile on top for 2-up grids. */
+  /** `row` = text left, disc right; `stacked` = disc on top for 2-up grids. */
   layout?: 'row' | 'stacked';
-  /** Use a headline-size value instead of the 30pt metric number (for word values). */
+  /** Use a headline-size value instead of the 32pt serif metric (for word values). */
   compact?: boolean;
   onPress?: () => void;
   accessibilityHint?: string;
+  /**
+   * Quick-action grids (stacked + tappable only): the card grows to its row's tallest sibling,
+   * the disc stays at the top and the label gets a fixed two-line area, so values line up.
+   */
+  equalHeight?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-/** Mobile version of the Doctor queue's glanceable metric cards. */
+// Same cap AppText uses for Dynamic Type / Android font scale
+const MAX_FONT_SCALE = 1.6;
+
+/**
+ * Glanceable metric. Read-only = soft raised panel with an INSET disc (informational).
+ * Tappable (quick action) = soft raised panel that presses to inset, with a RAISED disc.
+ */
 export const MetricCard: React.FC<MetricCardProps> = ({
   label,
   value,
   caption,
   icon,
-  tone = 'blue',
+  tone = 'primary',
   layout = 'row',
   compact = false,
   onPress,
   accessibilityHint,
+  equalHeight = false,
   style,
 }) => {
+  const { lang } = useLanguage();
+  const { fontScale } = useWindowDimensions();
   const stacked = layout === 'stacked';
+  const fixedLabel = equalHeight && stacked && !!onPress;
+  // Two lines of the eyebrow at the label's tallest script, as AppText sets it (compact)
+  const labelLine = Math.max(
+    ...splitScriptRuns(label, lang).map((r) => scriptLineHeight(scriptFontSize(typography.eyebrow.fontSize, r.script, 'eyebrow'), r.script, true)),
+  );
+  const labelBox = fixedLabel ? { minHeight: Math.ceil(labelLine * 2 * Math.min(Math.max(fontScale, 1), MAX_FONT_SCALE)) } : null;
+  const disc = <IconDisc icon={icon} tone={tone} size={46} variant={onPress ? 'raised' : 'inset'} shape="square" />;
   const content = (
     <>
-      {stacked && <IconTile icon={icon} tone={tone} />}
+      {stacked && disc}
       <View style={styles.textCol}>
-        <AppText variant="eyebrow" color="tertiary" numberOfLines={2} compact>
+        <AppText variant="eyebrow" color="inkMuted" numberOfLines={2} compact style={labelBox}>
           {label}
         </AppText>
         <AppText variant={compact ? 'headline' : 'metric'} numberOfLines={2} style={styles.value}>
@@ -52,41 +75,37 @@ export const MetricCard: React.FC<MetricCardProps> = ({
             <AppText variant="caption" weight={500} color={tones[tone].text} numberOfLines={2} style={styles.caption}>
               {caption}
             </AppText>
-            {onPress && <Icon name="chevron-right" size={14} color={colors[tones[tone].text]} />}
+            {onPress && <Icon name="chevronRight" size={14} color={colors[tones[tone].text]} />}
           </View>
         ) : null}
       </View>
-      {!stacked && <IconTile icon={icon} tone={tone} />}
+      {!stacked && disc}
     </>
   );
 
+  const layoutStyle = stacked ? styles.stacked : styles.row;
   if (!onPress) {
-    return <View style={[styles.card, stacked ? styles.stacked : styles.row, style]}>{content}</View>;
+    return <NeuPanel style={[layoutStyle, style]}>{content}</NeuPanel>;
   }
   return (
-    <Pressable
-      onPress={() => {
-        haptic.tap();
-        onPress();
-      }}
-      accessibilityRole="button"
+    <NeuPressable
+      onPress={onPress}
+      strength="soft"
+      radius={radii.lg}
       accessibilityLabel={[label, value, caption].filter(Boolean).join(', ')}
       accessibilityHint={accessibilityHint}
-      style={({ pressed }) => [styles.card, stacked ? styles.stacked : styles.row, pressed && styles.pressed, style]}
+      fillHeight={fixedLabel}
+      containerStyle={style}
+      style={[styles.pad, layoutStyle]}
     >
       {content}
-    </Pressable>
+    </NeuPressable>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.card,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+  pad: {
     padding: spacing.lg,
-    ...shadows.sm,
   },
   row: {
     flexDirection: 'row',
@@ -109,9 +128,5 @@ const styles = StyleSheet.create({
   },
   caption: {
     flexShrink: 1,
-  },
-  pressed: {
-    backgroundColor: colors.cardMuted,
-    transform: [{ scale: 0.98 }],
   },
 });

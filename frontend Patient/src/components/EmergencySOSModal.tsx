@@ -1,9 +1,9 @@
 import React from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
-import { spacing } from '../theme/tokens';
+import { colors, spacing } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { GlassSheet } from './glass';
-import { AppText, DestructiveButton, IconTile, SecondaryButton } from './ui';
+import { AppText, CriticalButton, EmbossedIcon, SecondaryButton } from './ui';
 
 interface EmergencySOSModalProps {
   visible: boolean;
@@ -22,24 +22,24 @@ export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({ visible, o
   return (
     <GlassSheet visible={visible} onClose={onClose} closeOnBackdrop placement="center" strongScrim>
       <View style={styles.body}>
-        <IconTile icon="emergency" tone="red" size={68} />
+        <EmbossedIcon icon="emergency" size={56} color={colors.dangerDeep} />
 
         <View style={styles.text}>
-          <AppText variant="title" color="red" align="center" accessibilityRole="header">
+          <AppText variant="title" color="dangerDeep" align="center" accessibilityRole="header">
             {t('emergencyTitle')}
           </AppText>
           <AppText variant="subhead" weight={600} align="center">
             {t('emergencySubtitle')}
           </AppText>
-          <AppText variant="footnote" color="secondary" align="center" style={styles.desc}>
+          <AppText variant="footnote" color="inkMuted" align="center" style={styles.desc}>
             {t('emergencyDescription')}
           </AppText>
         </View>
 
         <View style={styles.buttons}>
-          <DestructiveButton variant="filled" label={t('dial108')} icon="call" onPress={() => dial('108')} />
-          <SecondaryButton label={t('dial112')} icon="emergency" onPress={() => dial('112')} />
-          <SecondaryButton label={t('cancel')} tone="blue" onPress={onClose} />
+          <CriticalButton tone="danger" label={t('dial108')} icon="call" onPress={() => dial('108')} />
+          <CriticalButton tone="danger" label={t('dial112')} icon="emergency" onPress={() => dial('112')} />
+          <SecondaryButton label={t('cancel')} tone="primary" onPress={onClose} />
         </View>
       </View>
     </GlassSheet>

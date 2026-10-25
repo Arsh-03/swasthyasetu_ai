@@ -1,28 +1,38 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { brandGradient, colors, shadows } from '../../theme/tokens';
+import { brandGradient, colors, shadows, tints } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 
 interface BrandMarkProps {
   size?: number;
   icon?: IconName;
+  /** Dev hook (style guide). Not announced to screen readers. */
+  onLongPress?: () => void;
 }
 
-/** `rounded-xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] ring-1 ring-white/30` brand tile. */
-export const BrandMark: React.FC<BrandMarkProps> = ({ size = 36, icon = 'health-and-safety' }) => (
-  <LinearGradient
-    colors={brandGradient}
-    start={{ x: 0, y: 0 }}
-    end={{ x: 1, y: 1 }}
-    style={[styles.mark, shadows.sm, { width: size, height: size, borderRadius: size * 0.33 }]}
-  >
-    <Icon name={icon} size={Math.round(size * 0.55)} color={colors.onTint} />
-  </LinearGradient>
-);
+/** Brand tile: primary → ink gradient with a soft white ring. */
+export const BrandMark: React.FC<BrandMarkProps> = ({ size = 36, icon = 'brand', onLongPress }) => {
+  const mark = (
+    <LinearGradient
+      colors={brandGradient}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.mark, shadows.sm, { width: size, height: size, borderRadius: size * 0.33 }]}
+    >
+      <Icon name={icon} size={Math.round(size * 0.56)} color={colors.onPrimary} active />
+    </LinearGradient>
+  );
+  if (!onLongPress) return mark;
+  return (
+    <Pressable onLongPress={onLongPress} delayLongPress={600} accessible={false}>
+      {mark}
+    </Pressable>
+  );
+};
 
-/** Monogram avatar: `rounded-full bg-gradient-to-tr from-[#007AFF] to-[#5856D6]`. */
+/** Monogram avatar on the brand gradient. */
 export const Avatar: React.FC<{ initials: string; size?: number }> = ({ initials, size = 28 }) => (
   <LinearGradient
     colors={brandGradient}
@@ -30,7 +40,14 @@ export const Avatar: React.FC<{ initials: string; size?: number }> = ({ initials
     end={{ x: 1, y: 0 }}
     style={[styles.mark, { width: size, height: size, borderRadius: size / 2 }]}
   >
-    <AppText variant="caption" weight={600} color="onTint" lang="en" compact style={{ fontSize: size * 0.4, lineHeight: size * 0.5 }}>
+    <AppText
+      variant="caption"
+      weight={600}
+      color="onPrimary"
+      lang="en"
+      compact
+      style={{ fontSize: Math.round(size * 0.4), lineHeight: Math.round(size * 0.5) }}
+    >
       {initials}
     </AppText>
   </LinearGradient>
@@ -41,6 +58,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: tints.whiteStrong,
   },
 });

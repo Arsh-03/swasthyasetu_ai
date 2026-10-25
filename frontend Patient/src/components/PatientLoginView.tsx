@@ -1,41 +1,85 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
+import { colors, radii, spacing } from '../theme/tokens';
 import { patientApi, type PatientUser } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
-import { LANGUAGE_NAMES, t as translate } from '../utils/translations';
-import { GlassSurface } from './glass';
+import { LANGUAGE_NAMES, t as translate, type SupportedLanguage } from '../utils/translations';
+import { LoginHero } from './illustrations';
 import {
   AppText,
   AudioListenButton,
   Badge,
   BrandMark,
   Icon,
+  IconDisc,
   type IconName,
+  NeuPanel,
+  NeuPressable,
   PrimaryButton,
   SecondaryButton,
   SegmentedControl,
   StableLabel,
+  Stepper,
   TextField,
+  Well,
 } from './ui';
 
 interface PatientLoginViewProps {
   onLoginSuccess: (user: PatientUser) => void;
+  onBrandLongPress?: () => void;
 }
 
 const DEMO_ABHA = '91-4820-1928-1120@abdm';
 const DEMO_MOBILE = '9845012345';
 
-export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSuccess }) => {
-  const { t, cycleLang } = useLanguage();
+/** Which sign-in failure to show. Raw network / server text is never shown to the patient. */
+export type SignInErrorKind = 'network' | 'rejected';
+
+/**
+ * `fetch` rejects with a TypeError when no response arrives (offline, server down, DNS):
+ * that is a connection problem. Anything else means the server answered and refused
+ * (or sent an unreadable error page). Server `detail` text is English-only, so it is not shown.
+ */
+const classifySignInError = (err: unknown): SignInErrorKind => (err instanceof TypeError ? 'network' : 'rejected');
+
+const ERROR_LOOK: Record<SignInErrorKind, { icon: IconName; color: 'warningDeep' | 'dangerDeep'; key: 'loginNetworkError' | 'loginRejected' }> = {
+  // Not the patient's fault: warning tone + signal icon
+  network: { icon: 'network', color: 'warningDeep', key: 'loginNetworkError' },
+  rejected: { icon: 'error', color: 'dangerDeep', key: 'loginRejected' },
+};
+
+/** Sign-in alert in a soft inset well. `lang` lets the dev Style Guide render any language. */
+export const SignInError: React.FC<{ kind: SignInErrorKind; lang?: SupportedLanguage }> = ({ kind, lang }) => {
+  const { lang: appLang } = useLanguage();
+  const look = ERROR_LOOK[kind];
+  const l = lang ?? appLang;
+  return (
+    <Well style={styles.error}>
+      <View style={styles.errorRow} accessibilityRole="alert">
+        <Icon name={look.icon} size={22} color={colors[look.color]} active />
+        <AppText variant="footnote" weight={600} color={look.color} lang={l} style={styles.flex}>
+          {translate(l, look.key)}
+        </AppText>
+      </View>
+    </Well>
+  );
+};
+
+/**
+ * Sign-in (visual-first): illustration + one headline, trust shown as icon discs, the
+ * two-step flow shown as a stepper, everything else spoken by the Listen button.
+ * Logic (ABHA / mobile, OTP step, demo fill, patientApi.loginPatient) is unchanged.
+ */
+export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSuccess, onBrandLongPress }) => {
+  const { lang, t, cycleLang } = useLanguage();
   const insets = useSafeAreaInsets();
   const [authMode, setAuthMode] = useState<'abha' | 'mobile'>('abha');
   const [identifier, setIdentifier] = useState(DEMO_ABHA);
   const [otp, setOtp] = useState('123456');
   const [showOtpField, setShowOtpField] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<SignInErrorKind | null>(null);
 
   const handleContinue = async () => {
     if (!showOtpField) {
@@ -44,7 +88,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
     }
 
     setLoading(true);
-    setErrorMsg(null);
+    setErrorKind(null);
     try {
       // In demo environment, authenticates via patientApi.loginPatient
       const cleanId = identifier.includes('@') ? DEMO_MOBILE : identifier;
@@ -52,8 +96,9 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
       if (res.user) {
         onLoginSuccess(res.user);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || t('loginFailed'));
+    } catch (err) {
+      if (__DEV__) console.warn('[Sign in] failed:', err);
+      setErrorKind(classifySignInError(err));
     } finally {
       setLoading(false);
     }
@@ -63,14 +108,18 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
     setIdentifier(DEMO_ABHA);
     setOtp('123456');
     setShowOtpField(true);
-    setErrorMsg(null);
+    setErrorKind(null);
   };
 
   const trust: { icon: IconName; label: string }[] = [
     { icon: 'lock', label: t('trustOnlyYou') },
     { icon: 'shield', label: t('trustNeverShared') },
-    { icon: 'badge', label: t('trustGovtId') },
+    { icon: 'idCard', label: t('trustGovtId') },
   ];
+
+  // Everything the screen no longer prints is spoken instead
+  const listenText = () =>
+    [t('brandHeadline'), t('brandDescription'), t('signIn'), t('signInSubtitle'), ...trust.map((x) => x.label), t('brandAbdm'), t('brandDpdp')].join('. ');
 
   return (
     <ScrollView
@@ -78,107 +127,82 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
       contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.xxxl }]}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Branding panel (Doctor login's dark left column, stacked on top for mobile) */}
-      <View style={styles.brandPanel}>
-        <View style={[styles.glow, styles.glowBlue]} />
-        <View style={[styles.glow, styles.glowIndigo]} />
-
-        <View style={styles.brandTop}>
-          <View style={styles.brandRow}>
-            <BrandMark size={44} />
-            <View style={styles.brandText}>
-              <AppText variant="title2" color="onTint" lang="en" compact>
-                {t('appName')}
-              </AppText>
-              <StableLabel text={(l) => translate(l, 'patientApp')} variant="eyebrow" color="blue" compact />
-            </View>
-          </View>
-
-          <Pressable
-            onPress={cycleLang}
-            accessibilityRole="button"
-            accessibilityLabel={t('switchLanguage')}
-            hitSlop={6}
-            style={({ pressed }) => [styles.langPillWrap, pressed && styles.pressed]}
-          >
-            <GlassSurface material="dark" style={styles.langPill}>
-              <Icon name="translate" size={16} color={colors.onTint} />
-              <StableLabel text={(l) => LANGUAGE_NAMES[l]} variant="footnote" weight={600} color="onTint" compact />
-            </GlassSurface>
-          </Pressable>
-        </View>
-
-        <View style={styles.brandCopy}>
-          <AppText variant="title" color="onTint">
-            {t('brandHeadline')}
-          </AppText>
-          <AppText variant="footnote" color="tertiary">
-            {t('brandDescription')}
-          </AppText>
-        </View>
-
-        <View style={styles.brandFooter}>
-          <View style={styles.brandFooterRow}>
-            <Icon name="verified" size={16} color={colors.green} />
-            <AppText variant="footnote" weight={500} color="gray4" style={styles.flex}>
-              {t('brandAbdm')}
+      {/* Brand + language */}
+      <View style={styles.topBar}>
+        <View style={styles.brandRow}>
+          <BrandMark size={44} onLongPress={onBrandLongPress} />
+          <View style={styles.brandText}>
+            <AppText variant="title2" lang="en" compact>
+              {t('appName')}
             </AppText>
+            <StableLabel text={(l) => translate(l, 'patientApp')} variant="caption" color="inkMuted" compact />
           </View>
-          <View style={styles.brandFooterRow}>
-            <Icon name="lock" size={16} color={colors.blue} />
-            <AppText variant="footnote" weight={500} color="gray4" style={styles.flex}>
-              {t('brandDpdp')}
-            </AppText>
-          </View>
+        </View>
+        <NeuPressable
+          onPress={cycleLang}
+          radius={radii.md}
+          compact
+          haptics="selection"
+          hitSlop={4}
+          accessibilityLabel={`${t('switchLanguage')}: ${LANGUAGE_NAMES[lang]}`}
+          style={styles.langPill}
+        >
+          <Icon name="translate" size={18} color={colors.primary} active />
+          <StableLabel text={(l) => LANGUAGE_NAMES[l]} variant="subhead" weight={600} compact />
+        </NeuPressable>
+      </View>
+
+      {/* Hero: illustration first, one headline, two trust marks */}
+      <View style={styles.hero}>
+        <LoginHero width={200} />
+        <AppText variant="title" align="center">
+          {t('brandHeadline')}
+        </AppText>
+        <View style={styles.heroBadges}>
+          <Badge label={t('badgeAbdm')} tone="gold" icon="verified" size="md" solid />
+          <Badge label={t('badgeDpdp')} tone="primary" icon="shieldCheck" size="md" solid />
         </View>
       </View>
 
-      {/* Authentication card */}
-      <View style={styles.formCard}>
-        <View style={styles.formHeaderRow}>
-          <AppText variant="eyebrow" color="blue" style={styles.flex}>
-            {t('patientAuthentication')}
-          </AppText>
-          <Badge label={t('loginGate')} tone="neutral" />
-        </View>
-
+      {/* Sign-in panel */}
+      <NeuPanel radius={radii.xl} style={styles.panel}>
         <View style={styles.titleRow}>
           <View style={styles.flex}>
             <AppText variant="largeTitle">{t('signIn')}</AppText>
-            <AppText variant="footnote" color="tertiary">
+            <AppText variant="footnote" color="inkMuted">
               {t('signInSubtitle')}
             </AppText>
           </View>
-          <AudioListenButton text={() => t('signInSubtitle')} />
+          <AudioListenButton text={listenText} />
         </View>
 
-        {/* Privacy trust safeguards */}
+        <Stepper
+          accessibilityLabel={t('signInSteps')}
+          current={showOtpField ? 1 : 0}
+          steps={[
+            { icon: authMode === 'abha' ? 'idCard' : 'mobile', label: t('stepId') },
+            { icon: 'key', label: t('stepOtp') },
+          ]}
+        />
+
+        {/* Privacy trust safeguards (informational → inset discs) */}
         <View style={styles.trustRow}>
           {trust.map((item) => (
             <View key={item.icon} style={styles.trustItem}>
-              <View style={styles.trustTile}>
-                <Icon name={item.icon} size={22} color={colors.blue} />
-              </View>
-              <AppText variant="caption" weight={600} color="secondary" align="center">
+              <IconDisc icon={item.icon} size={52} variant="inset" />
+              <AppText variant="caption" weight={600} color="inkMuted" align="center">
                 {item.label}
               </AppText>
             </View>
           ))}
         </View>
 
-        {errorMsg && (
-          <View style={styles.errorBox} accessibilityRole="alert">
-            <Icon name="error" size={18} color={colors.red} />
-            <AppText variant="footnote" weight={500} color="red" style={styles.flex}>
-              {errorMsg}
-            </AppText>
-          </View>
-        )}
+        {errorKind && <SignInError kind={errorKind} />}
 
         <SegmentedControl
           options={[
-            { value: 'abha', label: t('abhaAddress'), icon: 'badge' },
-            { value: 'mobile', label: t('mobileNumber'), icon: 'smartphone' },
+            { value: 'abha', label: t('segAbha'), icon: 'idCard' },
+            { value: 'mobile', label: t('segMobile'), icon: 'mobile' },
           ]}
           value={authMode}
           onChange={(mode) => {
@@ -189,7 +213,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
 
         <TextField
           label={authMode === 'abha' ? t('abhaAddressLabel') : t('mobileNumberLabel')}
-          icon={authMode === 'abha' ? 'badge' : 'smartphone'}
+          icon={authMode === 'abha' ? 'idCard' : 'mobile'}
           value={identifier}
           onChangeText={setIdentifier}
           placeholder={authMode === 'abha' ? t('abhaPlaceholder') : DEMO_MOBILE}
@@ -209,6 +233,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
             textContentType="oneTimeCode"
             autoComplete="sms-otp"
             hint={t('otpDemoHint')}
+            icon="key"
             otp
           />
         )}
@@ -216,13 +241,13 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
         <View style={styles.actions}>
           <PrimaryButton
             label={loading ? t('signingIn') : showOtpField ? t('verifyAndSignIn') : t('continueWithAbha')}
-            icon="login"
+            icon="signIn"
             onPress={handleContinue}
             loading={loading}
           />
           <SecondaryButton label={t('demoLogin')} icon="bolt" onPress={handleQuickDemoFill} />
         </View>
-      </View>
+      </NeuPanel>
     </ScrollView>
   );
 };
@@ -230,45 +255,16 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bg,
+    // Transparent: the ambient background (App.tsx) shows through
   },
   content: {
     paddingHorizontal: spacing.gutter,
-    gap: spacing.lg,
+    gap: spacing.xl,
   },
   flex: {
     flex: 1,
   },
-  pressed: {
-    opacity: 0.8,
-  },
-  brandPanel: {
-    backgroundColor: colors.dark,
-    borderRadius: radii.xl,
-    padding: spacing.xxl,
-    gap: spacing.xl,
-    overflow: 'hidden',
-    ...shadows.lg,
-  },
-  glow: {
-    position: 'absolute',
-    borderRadius: 9999,
-  },
-  glowBlue: {
-    width: 260,
-    height: 260,
-    top: -110,
-    right: -90,
-    backgroundColor: 'rgba(0, 122, 255, 0.22)',
-  },
-  glowIndigo: {
-    width: 220,
-    height: 220,
-    bottom: -110,
-    left: -80,
-    backgroundColor: 'rgba(88, 86, 214, 0.18)',
-  },
-  brandTop: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -283,45 +279,27 @@ const styles = StyleSheet.create({
   brandText: {
     flexShrink: 1,
   },
-  langPillWrap: {
-    borderRadius: radii.pill,
-  },
   langPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 36,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
-    borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
   },
-  brandCopy: {
-    gap: spacing.sm,
-  },
-  brandFooter: {
-    gap: 10,
-    paddingTop: spacing.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  brandFooterRow: {
-    flexDirection: 'row',
+  hero: {
     alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  heroBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: spacing.sm,
   },
-  formCard: {
-    backgroundColor: colors.card,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+  panel: {
     padding: spacing.xl,
-    gap: spacing.lg,
-    ...shadows.lg,
-  },
-  formHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xl,
   },
   titleRow: {
     flexDirection: 'row',
@@ -337,28 +315,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  trustTile: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.lg,
-    backgroundColor: tints.blue,
-    borderWidth: 1,
-    borderColor: tints.blueRing,
-    alignItems: 'center',
-    justifyContent: 'center',
+  error: {
+    padding: spacing.md,
   },
-  errorBox: {
+  errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: tints.red,
-    borderWidth: 1,
-    borderColor: tints.redRing,
   },
   actions: {
-    gap: 10,
+    gap: spacing.md,
     paddingTop: spacing.xs,
   },
 });

@@ -155,10 +155,11 @@ swasthyasetu_ai/
 │   ├── App.tsx                       # Root view, tab bar & WebSocket event handling
 │   └── src/
 │       ├── components/
-│       │   ├── PatientLoginView.tsx        # ABHA / mobile OTP sign-in
-│       │   ├── PatientHeader.tsx           # Greeting, language switch, sign-out
-│       │   ├── HeroAppointmentCard.tsx     # Next appointment & join call
-│       │   ├── TactileGrid.tsx             # Home shortcuts & emergency SOS bar
+│       │   ├── PatientLoginView.tsx        # ABHA / mobile + OTP sign-in (illustrated, stepper, Listen)
+│       │   ├── PatientHeader.tsx           # Glass toolbar: brand, language pill, avatar, sign-out
+│       │   ├── HomeView.tsx                # Today tab: greeting, appointment, quick actions, SOS
+│       │   ├── HeroAppointmentCard.tsx     # Next appointment (loading / none / error states), Listen, join call
+│       │   ├── TactileGrid.tsx             # Quick-action tiles & Emergency SOS
 │       │   ├── SymptomIntakeModal.tsx      # Pre-call symptom intake
 │       │   ├── PatientTelehealthCall.tsx   # Network-adaptive video call
 │       │   ├── IncomingCallModal.tsx       # Doctor is calling
@@ -255,7 +256,7 @@ Then:
 | **Representative** | Sunita Devi | Chosen in the symptom intake form | Family member with nominee consent. |
 | **Doctor** | Dr. Ananya Sharma | `NMC-KA-581920` / `password123` | MD (General Medicine), Hassan District Tele-Care Hub. |
 
-> 💡 **Tip:** On the patient login screen, tap **"Demo 1-Click: Ramesh Gowda"** to fill in the demo details automatically.
+> 💡 **Tip:** On the patient sign-in screen, tap **"Demo 1-Click: Ramesh Gowda"** to fill in the demo ABHA ID and OTP automatically. The screen shows a two-step indicator (ID → OTP), a **Listen** button that reads the whole screen aloud, and a language pill (ಕನ್ನಡ / हिंदी / English) whose choice is remembered.
 
 ### Try the full flow
 1. Sign in as the **doctor** in the web portal and as the **patient** in the mobile app.
@@ -263,13 +264,6 @@ Then:
 3. Start a call from the doctor side. The patient sees an incoming call and accepts.
 4. End the call. The patient app opens the care plan automatically.
 5. On the patient's **Privacy** tab, see who accessed which record and revoke access.
-
---- | :--- | :--- | :--- |
-| **Patient** | Ramesh Gowda | `91-4820-1928-1120@abdm` | 54 M, Hassan, Karnataka. Kannada/English native. |
-| **Representative** | Sunita Devi | Authorized Family Proxy | Daughter-in-law with legal proxy consent authorization. |
-| **Doctor** | Dr. Ananya Sharma | `NMC-581920` | MD (General Medicine), Hassan District Tele-Care Hub. |
-
-> 💡 **Tip:** You can also click **"Don't have an ABHA ID? Create ABHA ID"** on the patient login page to generate a fresh custom identity with Aadhaar OTP verification.
 
 ---
 

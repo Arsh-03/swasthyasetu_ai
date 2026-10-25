@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
-import { colors, spacing } from '../theme/tokens';
+import { colors, spacing, tints } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { haptic } from '../utils/haptics';
 import { GlassSheet } from './glass';
-import { AppText, Icon, IconButton } from './ui';
+import { AppText, CriticalButton, Icon } from './ui';
 
 interface IncomingCallModalProps {
   visible: boolean;
@@ -41,7 +41,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, c
   }, [visible, pulse]);
 
   return (
-    <GlassSheet visible={visible} onClose={onDecline} material="dark" strongScrim>
+    <GlassSheet visible={visible} onClose={onDecline} material="night" strongScrim>
       <View style={styles.body}>
         <View style={styles.avatarWrap}>
           <Animated.View
@@ -54,41 +54,31 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, c
             ]}
           />
           <View style={styles.avatar}>
-            <Icon name="medical-services" size={40} color={colors.onTint} />
+            <Icon name="doctor" size={40} color={colors.onPrimary} />
           </View>
         </View>
 
         <View style={styles.text}>
-          <AppText variant="eyebrow" color="green" align="center" compact>
+          <AppText variant="eyebrow" color="successDeep" align="center" compact>
             {t('incomingVideoCall')}
           </AppText>
-          <AppText variant="title" color="onTint" align="center">
+          <AppText variant="title" color="onPrimary" align="center">
             {callerName}
           </AppText>
-          <AppText variant="footnote" color="gray3" align="center">
+          <AppText variant="footnote" color="onNightMuted" align="center">
             {t('callerFacility')}
           </AppText>
           <View style={styles.compliance}>
-            <Icon name="verified-user" size={14} color={colors.teal} />
-            <AppText variant="caption" weight={600} color="teal" compact>
+            <Icon name="shieldCheck" size={14} color={colors.onNightMuted} />
+            <AppText variant="caption" weight={600} color="onNightMuted" compact>
               {t('callCompliance')}
             </AppText>
           </View>
         </View>
 
         <View style={styles.actions}>
-          <View style={styles.action}>
-            <IconButton icon="call-end" tone="red" size={68} iconSize={30} accessibilityLabel={t('decline')} onPress={onDecline} haptics />
-            <AppText variant="footnote" weight={600} color="gray3" compact>
-              {t('decline')}
-            </AppText>
-          </View>
-          <View style={styles.action}>
-            <IconButton icon="videocam" tone="green" size={68} iconSize={30} accessibilityLabel={t('accept')} onPress={onAccept} haptics />
-            <AppText variant="footnote" weight={600} color="gray3" compact>
-              {t('accept')}
-            </AppText>
-          </View>
+          <CriticalButton tone="danger" label={t('decline')} icon="callEnd" onPress={onDecline} fullWidth={false} style={styles.action} />
+          <CriticalButton tone="primary" label={t('accept')} icon="video" onPress={onAccept} fullWidth={false} style={styles.action} />
         </View>
       </View>
     </GlassSheet>
@@ -112,15 +102,15 @@ const styles = StyleSheet.create({
     width: 104,
     height: 104,
     borderRadius: 52,
-    backgroundColor: 'rgba(52, 199, 89, 0.45)',
+    backgroundColor: tints.successRing,
   },
   avatar: {
     width: 92,
     height: 92,
     borderRadius: 46,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: tints.white,
     borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: tints.whiteStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -136,13 +126,11 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    maxWidth: 320,
+    gap: spacing.md,
+    alignSelf: 'stretch',
     marginTop: spacing.md,
   },
   action: {
-    alignItems: 'center',
-    gap: spacing.sm,
+    flex: 1,
   },
 });

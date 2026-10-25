@@ -11,14 +11,14 @@ interface SectionHeaderProps {
   right?: React.ReactNode;
 }
 
-/** `text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider` section label. */
+/** Uppercase eyebrow section label with an optional count pill. */
 export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, count, right }) => (
   <View style={styles.row} accessibilityRole="header">
     <View style={styles.left}>
-      <AppText variant="eyebrow" color="tertiary" style={styles.title}>
+      <AppText variant="eyebrow" color="inkMuted" style={styles.title}>
         {title}
       </AppText>
-      {count !== undefined && <Badge label={String(count)} tone="blue" />}
+      {count !== undefined && <Badge label={String(count)} tone="primary" />}
     </View>
     {right}
   </View>
