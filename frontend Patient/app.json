@@ -22,7 +22,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "SwasthyaSetu uses the camera for video consultations with your doctor.",
+          "microphonePermission": "SwasthyaSetu uses the microphone so you can talk to your doctor during consultations."
+        }
+      ]
     ]
   }
 }

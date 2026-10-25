@@ -1,6 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { PatientSummary } from '../services/api';
 import { api } from '../services/api';
+import type { ConsultationCallApi } from '../services/call/useConsultationCall';
+import type { AiState } from '../services/call/callTypes';
+import { useCallTimer } from '../services/call/useCallTimer';
+
+const AI_LABEL: Record<AiState, string> = {
+  off: 'Off',
+  waiting_consent: "Waiting for the patient's consent…",
+  recording: 'On · recording audio',
+  finishing: 'Call ended · finishing the minutes…',
+  declined: 'Patient declined recording',
+  withdrawn: 'Patient stopped the recording',
+  unavailable: 'Speech-to-text not available',
+};
 
 interface ConsultationWorkspaceProps {
   patient: PatientSummary | null;
@@ -8,11 +21,18 @@ interface ConsultationWorkspaceProps {
   /** Called after the note is signed so the queue can refresh. */
   onConsultationSigned?: () => void;
   callState: 'idle' | 'calling' | 'connected' | 'declined';
-  onStartCall: (patient: PatientSummary) => void;
+  /** Why the last attempt failed, for the "declined" screen. */
+  callEndMessage?: string | null;
+  onStartCall: (patient: PatientSummary, video?: boolean) => void;
   onEndCall: () => void;
   onRequestRecordAccess: () => void;
-  onPatientAccept?: () => void;
   onGoToQueue: () => void;
+  /** The live call (state lives in App, so it survives tab changes). */
+  call: ConsultationCallApi;
+  /** The AI IntelliSense notepad for this consultation. */
+  notepad: React.ReactNode;
+  speakerOn: boolean;
+  onToggleSpeaker: () => void;
 }
 
 export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
@@ -20,28 +40,25 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   doctorName,
   onConsultationSigned,
   callState,
+  callEndMessage,
   onStartCall,
   onEndCall,
   onRequestRecordAccess,
-  onPatientAccept,
   onGoToQueue,
+  call,
+  notepad,
+  speakerOn,
+  onToggleSpeaker,
 }) => {
-  // Timer state - starts from 0 on connected call
-  const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [callingSeconds, setCallingSeconds] = useState(0);
-  const [isMicOn, setIsMicOn] = useState(true);
-  const [isCamOn, setIsCamOn] = useState(true);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
-  const [networkTier, setNetworkTier] = useState<'hd' | 'audio' | 'async'>('hd');
   const [isSwappedView, setIsSwappedView] = useState(false);
-
-  // WebRTC Local Media Stream State
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [mediaPermission, setMediaPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
-  const [mediaError, setMediaError] = useState<string | null>(null);
+  const callTimer = useCallTimer(call.callStartedAt);
+  const isMicOn = !call.micOff;
+  const isCamOn = !call.camOff;
+  const localStream = call.localStream;
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const fullVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
   // AI Scribe Items
   // SOAP note fields, filled in by the doctor during the call
@@ -71,90 +88,6 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
   const [consultationCompleted, setConsultationCompleted] = useState(false);
 
-  // Unconditionally stops all camera and microphone tracks
-  const stopTracks = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop();
-          track.enabled = false;
-        } catch (e) {
-          console.warn('Track stop error:', e);
-        }
-      });
-      streamRef.current = null;
-    }
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = null;
-    }
-    if (fullVideoRef.current) {
-      fullVideoRef.current.srcObject = null;
-    }
-    setLocalStream(null);
-  };
-
-  // Request Camera & Microphone Permissions and stream video
-  const requestMediaAccess = async () => {
-    try {
-      setMediaError(null);
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setMediaError('Media devices API not supported in this browser environment.');
-        setMediaPermission('denied');
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          facingMode: 'user',
-        },
-        audio: true,
-      });
-
-      streamRef.current = stream;
-      setLocalStream(stream);
-      setMediaPermission('granted');
-
-      // Attach stream to video elements
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      if (fullVideoRef.current) {
-        fullVideoRef.current.srcObject = stream;
-      }
-    } catch (err: any) {
-      console.warn('Camera / Microphone permission denied or not found:', err);
-      setMediaPermission('denied');
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setMediaError('Camera and Microphone permission was declined. Please allow access in browser bar.');
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setMediaError('No camera or microphone hardware found on this system.');
-      } else {
-        setMediaError(`Media device error: ${err.message || 'Unable to access camera'}`);
-      }
-    }
-  };
-
-  // Only request camera when callState becomes 'connected'
-  useEffect(() => {
-    if (callState === 'connected') {
-      requestMediaAccess();
-    } else {
-      stopTracks();
-    }
-
-    const handleBeforeUnload = () => {
-      stopTracks();
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      stopTracks();
-    };
-  }, [callState]);
-
   // Outgoing ringing timer
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -169,62 +102,20 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
     };
   }, [callState]);
 
-  // Connected call duration timer
+  // Show the real streams. The other side's voice plays from the portal's <RemoteAudio>, so videos are muted.
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    if (callState === 'connected') {
-      setSecondsElapsed(0);
-      timer = setInterval(() => {
-        setSecondsElapsed((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (timer) clearInterval(timer);
-    };
-  }, [callState]);
+    const big = isSwappedView ? localStream : call.remoteStream;
+    const small = isSwappedView ? call.remoteStream : localStream;
+    if (fullVideoRef.current && fullVideoRef.current.srcObject !== big) fullVideoRef.current.srcObject = big;
+    if (localVideoRef.current && localVideoRef.current.srcObject !== small) localVideoRef.current.srcObject = small;
+    if (remoteVideoRef.current && remoteVideoRef.current.srcObject !== call.remoteStream) remoteVideoRef.current.srcObject = call.remoteStream;
+  });
 
-  // Update video element srcObject when stream or swap view changes
-  useEffect(() => {
-    const activeStream = streamRef.current || localStream;
-    if (activeStream) {
-      if (localVideoRef.current && localVideoRef.current.srcObject !== activeStream) {
-        localVideoRef.current.srcObject = activeStream;
-      }
-      if (fullVideoRef.current && fullVideoRef.current.srcObject !== activeStream) {
-        fullVideoRef.current.srcObject = activeStream;
-      }
-    }
-  }, [localStream, isSwappedView, isCamOn, callState]);
-
-  // Handle Mute / Unmute Microphone
-  const toggleMic = () => {
-    const nextState = !isMicOn;
-    setIsMicOn(nextState);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream) {
-      activeStream.getAudioTracks().forEach((track) => {
-        track.enabled = nextState;
-      });
-    }
-  };
-
-  // Handle Camera On / Off
-  const toggleCam = () => {
-    const nextState = !isCamOn;
-    setIsCamOn(nextState);
-    const activeStream = streamRef.current || localStream;
-    if (activeStream) {
-      activeStream.getVideoTracks().forEach((track) => {
-        track.enabled = nextState;
-      });
-    }
-  };
-
-  // Safe End Call with camera track cleanup
-  const handleEndCall = () => {
-    stopTracks();
-    onEndCall();
-  };
+  const toggleMic = call.toggleMic;
+  const toggleCam = call.toggleCam;
+  const handleEndCall = () => onEndCall();
+  const quality = call.quality;
+  const slow = !!quality && (quality.limitedBy === 'cpu' || (quality.networkMs ?? 0) > 300 || (quality.audioDelayMs ?? 0) > 250);
 
   const formatTimer = (totalSeconds: number) => {
     const m = Math.floor(totalSeconds / 60);
@@ -275,9 +166,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
       });
       setConsultationCompleted(true);
       onConsultationSigned?.();
-      setTimeout(() => {
-        handleEndCall();
-      }, 2500);
+      if (call.callState === 'in_call') setTimeout(() => handleEndCall(), 2500);
     } catch (err) {
       setSignError(err instanceof Error ? err.message : 'Could not sign the note');
     } finally {
@@ -285,48 +174,59 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
     }
   };
 
-  // 1. STATE: IDLE (No Active Call)
+  // 1. STATE: IDLE (no call right now): start a call, and keep writing the note (the AI minutes from a
+  //    finished call are added here).
   if (callState === 'idle' || !patient) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-full bg-white rounded-3xl p-8 sm:p-12 shadow-apple-md border border-black/5 flex flex-col items-center text-center gap-6">
-          <div className="w-20 h-20 rounded-3xl bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center ring-1 ring-[#007AFF]/20">
-            <span className="material-symbols-outlined text-4xl">video_camera_front</span>
-          </div>
-
-          <div className="flex flex-col gap-2 max-w-md">
-            <h2 className="text-2xl font-bold text-[#1C1C1E] tracking-tight">No Active Consultation</h2>
-            <p className="text-sm text-[#636366] leading-relaxed">
-              Consultations do not connect automatically. Select a triage patient from the queue to start an outgoing call.
-            </p>
-          </div>
-
-          {patient ? (
-            <div className="flex flex-col sm:flex-row items-center gap-3 mt-2">
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-4">
+        {patient && (
+          <div className="w-full bg-white rounded-2xl p-4 px-5 shadow-apple-sm border border-black/5 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-2xl bg-[#007AFF]/10 text-[#007AFF] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">video_camera_front</span>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-base font-bold text-[#1C1C1E] truncate">Consultation · {patient.full_name}</span>
+                <span className="text-xs text-[#636366] flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${call.peerPresent ? 'bg-[#34C759]' : 'bg-[#C7C7CC]'}`} />
+                  {call.connection !== 'open' ? 'Connecting…' : call.peerPresent ? 'Patient app online' : 'Patient app offline'}
+                  {call.aiState === 'finishing' && <span className="ml-1 text-[#5856D6] font-semibold">· {AI_LABEL.finishing}</span>}
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => onStartCall(patient)}
-                className="px-6 py-3 rounded-2xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-sm flex items-center gap-2.5 shadow-apple-sm transition-all active:scale-95 cursor-pointer"
+                onClick={() => onStartCall(patient, true)}
+                disabled={call.connection !== 'open'}
+                className="disabled:opacity-50 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#007AFF] hover:bg-[#0062CC] text-white text-xs font-semibold transition-all active:scale-95 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[20px]">call</span>
-                <span>Call {patient.full_name}</span>
+                <span className="material-symbols-outlined text-[18px]">videocam</span>
+                Video call
+              </button>
+              <button
+                onClick={() => onStartCall(patient, false)}
+                disabled={call.connection !== 'open'}
+                className="disabled:opacity-50 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#E5E5EA] hover:bg-[#D1D1D6] text-[#1C1C1E] text-xs font-semibold transition-all active:scale-95 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">call</span>
+                Audio call
               </button>
               <button
                 onClick={onGoToQueue}
-                className="px-6 py-3 rounded-2xl bg-[#E5E5EA]/80 hover:bg-[#E5E5EA] text-[#1C1C1E] font-medium text-sm transition-all cursor-pointer"
+                className="px-3 py-2 rounded-xl text-[#636366] hover:bg-[#F2F2F7] text-xs font-medium cursor-pointer"
               >
-                Return to Patient Queue
+                Patient chart
               </button>
             </div>
-          ) : (
-            <button
-              onClick={onGoToQueue}
-              className="px-6 py-3 rounded-2xl bg-[#007AFF] hover:bg-[#0062CC] text-white font-semibold text-sm flex items-center gap-2 shadow-apple-sm transition-all active:scale-95 cursor-pointer mt-2"
-            >
-              <span className="material-symbols-outlined text-[20px]">group</span>
-              <span>Go to Patient Queue</span>
-            </button>
-          )}
-        </div>
+            {call.notice && <div className="w-full text-xs text-[#636366]">{call.notice}</div>}
+          </div>
+        )}
+        {!patient && (
+          <div className="w-full bg-white rounded-3xl p-8 shadow-apple-md border border-black/5 text-center text-sm text-[#636366]">
+            Select a patient from the queue to start a consultation.
+          </div>
+        )}
+        {patient && notepad}
       </div>
     );
   }
@@ -352,7 +252,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
           <div className="flex flex-col gap-1.5 z-10">
             <span className="text-xs uppercase tracking-widest text-[#34C759] font-bold">
-              Outgoing Telehealth Video Call
+              Outgoing {call.withVideo ? 'Video' : 'Audio'} Call
             </span>
             <h2 className="text-3xl font-bold tracking-tight text-white">{patient.full_name}</h2>
             <span className="text-sm text-white/60 font-mono mt-1">{patient.abha_address}</span>
@@ -374,15 +274,6 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             </button>
             <span className="text-xs text-white/70 font-medium">Cancel Call</span>
 
-            {/* Demo Simulation Button */}
-            {onPatientAccept && (
-              <button
-                onClick={onPatientAccept}
-                className="mt-4 px-4 py-2 rounded-full bg-white/15 hover:bg-white/25 text-xs text-white/90 font-medium border border-white/20 transition-all cursor-pointer backdrop-blur-md"
-              >
-                📱 Simulate Patient Answering Call (Demo)
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -398,9 +289,9 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             <span className="material-symbols-outlined text-3xl">phone_disabled</span>
           </div>
           <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-bold text-[#1C1C1E]">Call Declined by Patient</h2>
+            <h2 className="text-2xl font-bold text-[#1C1C1E]">Call not connected</h2>
             <p className="text-sm text-[#636366]">
-              {patient.full_name} declined or was unavailable for the consultation.
+              {callEndMessage || `${patient.full_name} declined or was unavailable for the consultation.`}
             </p>
           </div>
           <div className="flex items-center gap-3 mt-3">
@@ -442,7 +333,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#34C759]/15 text-[#248A3D] text-[11px] font-semibold shrink-0">
               <span className="material-symbols-outlined text-[14px]">verified</span>
-              Call Connected (Live)
+              {call.withVideo ? 'Video' : 'Audio'} call connected
             </span>
           </div>
         </div>
@@ -451,7 +342,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           {/* Live Call Duration */}
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F2F2F7] text-[#1C1C1E] font-mono text-[13px] font-semibold border border-black/5">
             <span className="w-2 h-2 rounded-full bg-[#34C759] animate-ping"></span>
-            <span>{formatTimer(secondsElapsed)}</span>
+            <span>{callTimer || '0:00'}</span>
           </div>
 
           <div className="hidden sm:flex items-center gap-1 text-[#636366] text-xs font-medium bg-[#F2F2F7] px-2.5 py-1 rounded-full border border-black/5">
@@ -469,21 +360,15 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
         </div>
       </div>
 
-      {/* Permission Notification Banner if Denied */}
-      {mediaPermission === 'denied' && (
+      {/* Call notices (camera not available, etc.) */}
+      {call.notice && (
         <div className="w-full bg-[#FF9500]/10 border border-[#FF9500]/30 rounded-2xl p-3 px-4 flex items-center justify-between text-xs text-[#1C1C1E]">
           <div className="flex items-center gap-2.5">
             <span className="material-symbols-outlined text-[#FF9500] text-xl">videocam_off</span>
             <span className="font-medium">
-              {mediaError || 'Camera & microphone permission needed for telehealth video stream.'}
+              {call.notice}
             </span>
           </div>
-          <button
-            onClick={requestMediaAccess}
-            className="px-3 py-1 rounded-lg bg-[#FF9500] text-white font-semibold text-xs hover:bg-[#E08500] active:scale-95 transition-all cursor-pointer shadow-xs"
-          >
-            Grant Camera Access
-          </button>
         </div>
       )}
 
@@ -572,7 +457,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             {/* MAIN STAGE VIDEO: Swappable between Patient Feed and Doctor Webcam */}
             {isSwappedView ? (
               /* Doctor Webcam is on Main Stage */
-              isCamOn && localStream ? (
+              isCamOn && localStream && call.withVideo ? (
                 <video
                   ref={fullVideoRef}
                   autoPlay
@@ -588,55 +473,39 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
               )
             ) : (
               /* Patient Feed is on Main Stage */
-              networkTier !== 'async' ? (
-                <img
-                  src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                  alt="Patient video feed"
-                  className={`absolute inset-0 w-full h-full object-cover ${networkTier === 'audio' ? 'blur-md opacity-40' : ''}`}
-                />
+              call.remoteHasVideo ? (
+                <video ref={remoteVideoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
               ) : (
-                <div className="flex flex-col items-center justify-center gap-2 text-white">
-                  <span className="material-symbols-outlined text-4xl text-[#8E8E93]">cloud_sync</span>
-                  <span className="text-xs text-[#8E8E93]">Store & Forward Offline Mode</span>
+                <div className="flex flex-col items-center justify-center gap-3 text-white">
+                  <img
+                    src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
+                    alt={patient.full_name}
+                    className="w-24 h-24 rounded-full object-cover ring-4 ring-white/20"
+                  />
+                  <span className="text-xs text-white/80 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[16px]">call</span>
+                    {call.remoteStream ? `Audio call with ${patient.full_name}` : 'Connecting…'}
+                  </span>
                 </div>
               )
             )}
 
-            {/* Audio Waveform Overlay when in Audio mode */}
-            {networkTier === 'audio' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-black/60 backdrop-blur-xs">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <span className="w-1.5 h-6 bg-[#34C759] rounded-full animate-bounce"></span>
-                  <span className="w-1.5 h-12 bg-[#007AFF] rounded-full animate-pulse"></span>
-                  <span className="w-1.5 h-8 bg-[#FF9500] rounded-full animate-bounce"></span>
-                  <span className="w-1.5 h-14 bg-[#34C759] rounded-full animate-pulse"></span>
-                  <span className="w-1.5 h-6 bg-[#007AFF] rounded-full animate-bounce"></span>
+            {/* Connection quality (measured) */}
+            {quality && (
+              <div className="absolute top-3 left-3 z-30">
+                <div className={`inline-flex items-center gap-1.5 p-1 px-2.5 rounded-full backdrop-blur-md shadow-md text-[11px] font-semibold border border-white/10 ${slow ? 'bg-[#FF9500]/80 text-white' : 'bg-black/60 text-white'}`}
+                  title={slow ? 'Slow connection or busy computer: turning the camera off keeps the voice clear.' : 'Call quality'}>
+                  <span className={`w-2 h-2 rounded-full ${slow ? 'bg-white' : 'bg-[#34C759]'}`}></span>
+                  <span>{quality.networkMs ?? '–'} ms · audio {quality.audioDelayMs ?? '–'} ms{quality.video ? ` · ${quality.video}` : ''}</span>
                 </div>
-                <span className="text-[11px] font-semibold text-white bg-black/70 px-3 py-1 rounded-full">
-                  Audio Priority Mode (50 kbps)
-                </span>
               </div>
             )}
 
-            {/* Network Tier Selector Badge */}
-            <div className="absolute top-3 left-3 z-30">
-              <div className="inline-flex items-center gap-1.5 p-1 px-2.5 rounded-full bg-black/60 backdrop-blur-md shadow-md text-xs font-semibold text-white border border-white/10">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    networkTier === 'hd' ? 'bg-[#34C759]' : networkTier === 'audio' ? 'bg-[#FF9500]' : 'bg-[#FF3B30]'
-                  }`}
-                ></span>
-                <select
-                  value={networkTier}
-                  onChange={(e) => setNetworkTier(e.target.value as any)}
-                  className="bg-transparent font-medium text-[11px] focus:outline-none cursor-pointer text-white"
-                >
-                  <option value="hd" className="text-black">HD Video (450 kbps)</option>
-                  <option value="audio" className="text-black">Audio Priority (50 kbps)</option>
-                  <option value="async" className="text-black">Store & Forward (5 kbps)</option>
-                </select>
+            {call.recordingSession && (
+              <div className="absolute top-12 left-3 z-30 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#FF3B30]/90 text-white text-[10px] font-bold">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> REC · audio only
               </div>
-            </div>
+            )}
 
             {/* Audio Live Indicator */}
             <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
@@ -656,7 +525,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             >
               {!isSwappedView ? (
                 /* Doctor Live Webcam in PIP */
-                isCamOn && localStream ? (
+                isCamOn && localStream && call.withVideo ? (
                   <video
                     ref={localVideoRef}
                     autoPlay
@@ -668,17 +537,13 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                   <div className="w-full h-full flex flex-col items-center justify-center bg-[#1C1C1E] text-white/70 p-2 text-center">
                     <span className="material-symbols-outlined text-2xl text-[#8E8E93]">videocam_off</span>
                     <span className="text-[10px] mt-1 font-medium leading-tight">
-                      {mediaPermission === 'denied' ? 'Cam Blocked' : 'Camera Off'}
+                      {call.withVideo ? 'Camera Off' : 'Audio call'}
                     </span>
                   </div>
                 )
               ) : (
                 /* Patient Feed in PIP when swapped */
-                <img
-                  src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                  alt="Patient feed"
-                  className="w-full h-full object-cover"
-                />
+                <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               )}
 
               {/* PIP Label badge with status */}
@@ -707,7 +572,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
               </button>
 
               {/* Camera Toggle */}
-              <button
+              {call.withVideo && <button
                 onClick={toggleCam}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                   isCamOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
@@ -715,17 +580,17 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 title={isCamOn ? 'Turn Video Off' : 'Turn Video On'}
               >
                 <span className="material-symbols-outlined text-[18px]">{isCamOn ? 'videocam' : 'videocam_off'}</span>
-              </button>
+              </button>}
 
               {/* Speaker Toggle */}
               <button
-                onClick={() => setIsSpeakerOn(!isSpeakerOn)}
+                onClick={onToggleSpeaker}
                 className={`w-9 h-9 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                  isSpeakerOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
+                  speakerOn ? 'bg-[#E5E5EA]/80 text-[#1C1C1E] hover:bg-[#E5E5EA]' : 'bg-[#FF3B30] text-white'
                 }`}
                 title="Toggle Speaker"
               >
-                <span className="material-symbols-outlined text-[18px]">{isSpeakerOn ? 'volume_up' : 'volume_off'}</span>
+                <span className="material-symbols-outlined text-[18px]">{speakerOn ? 'volume_up' : 'volume_off'}</span>
               </button>
 
               {/* Swap View Button */}
@@ -748,15 +613,28 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
             </div>
           </div>
 
-          {/* Vernacular Bhashini Transcription Banner */}
-          <div className="w-full bg-white p-2.5 px-3.5 rounded-xl flex items-center justify-between text-xs border border-black/5 shadow-apple-sm">
-            <div className="flex items-center gap-2 text-[#1C1C1E] font-medium">
-              <span className="material-symbols-outlined text-[#007AFF] text-[18px]">hearing</span>
-              <span>Bhashini Multilingual Speech Engine (Kannada / Hindi)</span>
+          {/* Quick AI minutes: transcribe (with the patient's consent) and add what's missing to the notes */}
+          <div className={`w-full bg-white p-3 px-3.5 rounded-xl flex items-start gap-3 text-xs border shadow-apple-sm ${call.aiOn ? 'border-[#5856D6]/40 bg-[#5856D6]/5' : 'border-black/5'}`}>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={call.aiOn}
+              aria-label="Quick AI minutes and auto-update notes"
+              onClick={call.toggleAi}
+              disabled={call.callState !== 'in_call' || !call.speechAvailable}
+              className={`mt-0.5 relative w-11 h-6 rounded-full shrink-0 transition-colors cursor-pointer disabled:opacity-50 ${call.aiOn ? 'bg-[#5856D6]' : 'bg-[#D1D1D6]'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${call.aiOn ? 'translate-x-5' : ''}`} />
+            </button>
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="font-semibold text-[#5856D6] flex items-center gap-1">
+                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                Quick AI minutes &amp; auto-update notes
+              </span>
+              <span className="text-[#1C1C1E]">{call.speechAvailable ? AI_LABEL[call.aiState] : AI_LABEL.unavailable}</span>
+              {call.aiDetail && <span className="text-[11px] text-[#B25000]">{call.aiDetail}</span>}
+              <span className="text-[10px] text-[#8E8E93]">Needs the patient's consent. Names, phone and ID numbers are removed before AI; processing stays on CareBridge servers.</span>
             </div>
-            <span className="text-[10px] font-semibold text-[#248A3D] bg-[#34C759]/15 px-2 py-0.5 rounded-full">
-              98% Clinical Accuracy
-            </span>
           </div>
         </section>
 
@@ -847,6 +725,9 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           </div>
         </section>
       </div>
+
+      {/* AI IntelliSense notepad: AI minutes from the call are added here */}
+      {notepad}
     </div>
   );
 };

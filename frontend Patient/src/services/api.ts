@@ -11,8 +11,10 @@ export const API_HOST =
   process.env.EXPO_PUBLIC_API_HOST ||
   (expoHost && expoHost !== 'localhost' && expoHost !== '127.0.0.1' ? expoHost : '') ||
   (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
-export const API_BASE_URL = `http://${API_HOST}:8000/api/v1`;
-export const WS_BASE_URL = `ws://${API_HOST}:8000/ws/telehealth`;
+// Backend port; override with EXPO_PUBLIC_API_PORT (e.g. for a second test backend). Default: 8000.
+const API_PORT = process.env.EXPO_PUBLIC_API_PORT || '8000';
+export const API_BASE_URL = `http://${API_HOST}:${API_PORT}/api/v1`;
+export const WS_BASE_URL = `ws://${API_HOST}:${API_PORT}/ws/telehealth`;
 
 export interface PatientUser {
   user_id: string;
@@ -189,11 +191,17 @@ class PatientApiService {
     return data as T;
   }
 
-  async approveConsent(consentId: string, otpCode: string) {
-    return this.request(`/consents/${consentId}/verify-otp-and-grant`, {
+  /** One tap: the patient is already signed in, so no OTP; the server checks it's their request. */
+  async approveConsent(consentId: string) {
+    return this.request(`/consents/${consentId}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ otp_code: otpCode }),
+      body: JSON.stringify({ approved: true }),
     });
+  }
+
+  /** The patient's open consultation (where the doctor's call room is). */
+  async getActiveEncounter(): Promise<{ encounter_id: string | null; doctor_name?: string }> {
+    return this.request('/calls/active-encounter');
   }
 
   async declineConsent(consentId: string) {

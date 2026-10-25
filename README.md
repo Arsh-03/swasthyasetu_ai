@@ -191,13 +191,19 @@ Start the backend first. Both apps talk to it at `http://localhost:8000`.
 
 ### Quick start (recommended)
 
-One command sets everything up and starts both servers. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the frontend packages, creates `.env` with a random `SECRET_KEY`, and starts the backend (port 8000) and the web app in `frontend/` (port 5173), which has the AI IntelliSense notepad, consultation calls and AI minutes. The new Doctor and Patient apps below are started separately.
+One command sets everything up and starts everything. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the packages of both apps, creates `.env` with a random `SECRET_KEY`, and starts:
+
+- the backend on port **8000**,
+- the **Doctor portal** on port **5173** (login `NMC-KA-581920` / `password123`),
+- the **Patient app's web version** on port **8081** (tap "Demo 1-Click").
+
+Consultation calls (video or audio, either side can call), consent-based AI minutes and the AI IntelliSense notepad work between these two. On a phone (Expo Go) the Patient app shows a note instead of the call: real calls on a phone need a development build with a WebRTC module.
 
 **Windows:** double-click `start.bat`, or in PowerShell:
 ```powershell
 .\start.ps1                # set up if needed, then start (opens the browser)
 .\start.ps1 -SetupData     # first time: also download + import ICD-11, RxNorm and DDInter (~95 MB)
-.\stop.ps1                 # stop both servers
+.\stop.ps1                 # stop all servers
 ```
 
 **macOS / Linux:**
@@ -206,7 +212,7 @@ One command sets everything up and starts both servers. It creates a Python virt
 ./start.sh --setup-data    # first time: also download + import the clinical datasets
 ```
 
-Later runs skip the installs and only reinstall when `backend/requirements.txt` or `frontend/package-lock.json` change (`-Reinstall` / `--reinstall` rebuilds the virtual environment).
+Later runs skip the installs and only reinstall when `backend/requirements.txt` or an app's `package-lock.json` change (`-Reinstall` / `--reinstall` rebuilds the virtual environment).
 
 **Clinical datasets:** `backend/data/terminology.db` is not in git, so each machine builds it once with `-SetupData`. The free datasets (WHO ICD-11/ICD-10, NLM RxNorm, DDInter 2.0) download automatically. SNOMED CT, LOINC and CDCI need accounts; see [docs/08_standards_integration](docs/08_standards_integration/). DDInter is CC BY-NC-SA 4.0 (non-commercial use only).
 

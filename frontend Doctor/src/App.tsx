@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DoctorHeader } from './components/DoctorHeader';
 import { PatientQueueView } from './components/PatientQueueView';
 import { PatientMedicalChartView } from './components/PatientMedicalChartView';
@@ -11,6 +11,13 @@ import type { PatientSummary, DoctorProfile } from './services/api';
 import { api, WS_BASE_URL } from './services/api';
 import { type SupportedLanguage, t } from './utils/translations';
 import type { UpcomingAppointment } from './data/patientRecords';
+import { useConsultationCall } from './services/call/useConsultationCall';
+import { useDoctorLobby } from './services/call/useDoctorLobby';
+import { ClinicalNotepad } from './components/ClinicalNotepad';
+import { CallPanel } from './components/call/CallPanel';
+import { CallWindow } from './components/call/CallWindow';
+import { IncomingCallCard } from './components/call/CallOverlays';
+import { RemoteAudio } from './components/call/RemoteAudio';
 
 
 export function App() {
@@ -65,8 +72,44 @@ export function App() {
     if (isAuthenticated) loadQueue();
   }, [isAuthenticated]);
 
-  const [callState, setCallState] = useState<'idle' | 'calling' | 'connected' | 'declined'>('idle');
-  const wsRef = useRef<WebSocket | null>(null);
+  // ---- Consultation call (real WebRTC call; state here so it keeps running on every tab) ----
+  const [notepadText, setNotepadText] = useState('');
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [lobbyAnswer, setLobbyAnswer] = useState<{ video: boolean } | null>(null);
+  const [pendingStart, setPendingStart] = useState<{ encounterId: string; video: boolean } | null>(null);
+  const clearLobbyAnswer = useCallback(() => setLobbyAnswer(null), []);
+  const call = useConsultationCall({
+    role: 'doctor',
+    encounterId: isAuthenticated ? selectedPatient?.encounter_id ?? null : null,
+    peerName: selectedPatient?.full_name || 'Patient',
+    noteText: notepadText,
+    autoAnswer: lobbyAnswer,
+    onAutoAnswered: clearLobbyAnswer,
+  });
+  const lobby = useDoctorLobby(isAuthenticated);
+  // A patient calling on a consultation that isn't the one open here (the open one rings by itself)
+  const lobbyCall = lobby.ringing && lobby.ringing.encounterId !== selectedPatient?.encounter_id ? lobby.ringing : null;
+  const inCall = call.callState === 'calling' || call.callState === 'in_call';
+  const callState: 'idle' | 'calling' | 'connected' | 'declined' =
+    call.callState === 'in_call' ? 'connected'
+      : call.callState === 'calling' ? 'calling'
+      : call.endReason === 'declined' || call.endReason === 'unavailable' || call.endReason === 'no_answer' ? 'declined'
+      : 'idle';
+
+  // Start a call once this patient's call room is connected (selecting a patient switches rooms).
+  useEffect(() => {
+    if (pendingStart && call.roomEncounterId === pendingStart.encounterId && call.callState === 'idle') {
+      void call.startCall(pendingStart.video);
+      setPendingStart(null);
+    }
+  }, [pendingStart, call]);
+
+  // A call that connects (answered here or from another page) opens the consultation.
+  const [wasInCall, setWasInCall] = useState(false);
+  if (inCall !== wasInCall) {
+    setWasInCall(inCall);
+    if (call.callState === 'in_call') setActiveTab('active-consultation');
+  }
 
   // WebSocket signaling & consent listener
   useEffect(() => {
@@ -74,7 +117,6 @@ export function App() {
 
     const wsUrl = `${WS_BASE_URL}?role=doctor&session_id=doc_sess_${Date.now()}`;
     const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
 
     ws.onopen = () => {
       // The server only delivers events to signed-in users, so identify first.
@@ -87,26 +129,7 @@ export function App() {
         const msg = JSON.parse(event.data);
         console.log('Doctor received WS message:', msg);
 
-        if (msg.type === 'call_event') {
-          if (msg.event === 'call_accepted') {
-            setCallState('connected');
-            setNotification('Patient accepted tele-consultation! Live video connected.');
-            setTimeout(() => setNotification(null), 4000);
-          } else if (msg.event === 'call_declined') {
-            setCallState('declined');
-            setNotification('Patient declined the call invitation.');
-            setTimeout(() => {
-              setCallState('idle');
-              setActiveTab('patient-chart');
-              setNotification(null);
-            }, 3000);
-          } else if (msg.event === 'call_ended') {
-            setCallState('idle');
-            setActiveTab('patient-chart');
-            setNotification('Call terminated by patient.');
-            setTimeout(() => setNotification(null), 3000);
-          }
-        } else if (msg.type === 'consent_granted' || msg.type === 'ABHA_LINK_APPROVED') {
+        if (msg.type === 'consent_granted' || msg.type === 'ABHA_LINK_APPROVED') {
           setNotification(`Consent Token GRANTED by ${msg.patient_name || 'Patient'} under DPDP Act!`);
           setTimeout(() => setNotification(null), 4000);
           setRecordsVersion((v) => v + 1);
@@ -133,50 +156,57 @@ export function App() {
     };
   }, [isAuthenticated]);
 
-  const handleStartConsultation = (patient: PatientSummary) => {
-    setSelectedPatient(patient);
-    setCallState('calling');
-    setActiveTab('active-consultation');
-    setNotification(`Calling ${patient.full_name}... Ringing.`);
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'call_invitation',
-            event: 'incoming_call',
-            patient_id: patient.patient_id,
-            patient_name: patient.full_name,
-            doctor_name: doctor?.display_name || 'Your doctor',
-            call_id: `call_${Date.now()}`,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call invitation:', e);
-      }
+  // Open the consultation and ring the patient's app (video, or audio only).
+  const handleStartConsultation = (patient: PatientSummary, video = true) => {
+    if (!patient.encounter_id) {
+      setNotification(`${patient.full_name} has no open consultation to call into.`);
+      setTimeout(() => setNotification(null), 4000);
+      return;
     }
+    setSelectedPatient(patient);
+    setActiveTab('active-consultation');
+    setPendingStart({ encounterId: patient.encounter_id, video });
   };
 
+  // Hang up but stay on the consultation: the AI minutes (if on) are finished and added to the notes.
   const handleEndConsultation = () => {
-    setCallState('idle');
-    setActiveTab('patient-chart');
+    call.endCall();
     setNotification('Call ended. Camera & microphone disconnected.');
     setTimeout(() => setNotification(null), 3500);
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      try {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_ended',
-            by: 'doctor',
-          })
-        );
-      } catch (e) {
-        console.warn('Error broadcasting call end:', e);
-      }
-    }
   };
+
+  // A patient calling from another consultation: open it and answer.
+  const answerLobbyCall = async (video: boolean) => {
+    if (!lobbyCall) return;
+    const ringing = lobbyCall;
+    lobby.clear();
+    let patient = patients.find((p) => p.encounter_id === ringing.encounterId || p.patient_id === ringing.patientId);
+    if (!patient) {
+      try {
+        const queue = await api.getQueue();
+        setPatients(queue);
+        patient = queue.find((p) => p.encounter_id === ringing.encounterId || p.patient_id === ringing.patientId);
+      } catch { /* handled below */ }
+    }
+    if (!patient) {
+      setNotification(`Could not open ${ringing.callerName}'s consultation.`);
+      return;
+    }
+    setSelectedPatient({ ...patient, encounter_id: ringing.encounterId });
+    setLobbyAnswer({ video });            // answered automatically once that consultation's room connects
+    setActiveTab('active-consultation');
+  };
+
+  const notepad = selectedPatient?.encounter_id ? (
+    <ClinicalNotepad
+      key={selectedPatient.encounter_id}
+      encounterId={selectedPatient.encounter_id}
+      patientName={selectedPatient.full_name}
+      callMinutes={call.minutes}
+      autoApplyCall={call.aiState === 'recording' || call.aiState === 'finishing'}
+      onTextChange={setNotepadText}
+    />
+  ) : null;
 
   const handleRescheduleAppointment = async (apt: UpcomingAppointment): Promise<UpcomingAppointment> => {
     // Saved to the database; the backend notifies the patient app over WebSocket
@@ -222,7 +252,7 @@ export function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         selectedPatientName={selectedPatient?.full_name}
-        isCallActive={callState === 'calling' || callState === 'connected'}
+        isCallActive={inCall}
         onReturnToCall={() => setActiveTab('active-consultation')}
         onLogout={logout}
       />
@@ -294,16 +324,16 @@ export function App() {
             patient={selectedPatient}
             doctorName={doctor?.display_name || ''}
             callState={callState}
+            callEndMessage={call.notice}
             onStartCall={handleStartConsultation}
             onEndCall={handleEndConsultation}
             onConsultationSigned={loadQueue}
             onRequestRecordAccess={() => setIsConsentModalOpen(true)}
-            onPatientAccept={() => {
-              setCallState('connected');
-              setNotification(`${selectedPatient.full_name} answered call. Connected!`);
-              setTimeout(() => setNotification(null), 3000);
-            }}
             onGoToQueue={() => setActiveTab('patient-chart')}
+            call={call}
+            notepad={notepad}
+            speakerOn={speakerOn}
+            onToggleSpeaker={() => setSpeakerOn((v) => !v)}
           />
         )}
 
@@ -318,6 +348,40 @@ export function App() {
 
         {activeTab === 'audit-trail' && <AuditLedgerView />}
       </main>
+
+      {/* The other person's voice: one audio element for the whole portal */}
+      {inCall && <RemoteAudio stream={call.remoteStream} muted={!speakerOn} />}
+
+      {/* In a call but looking at another tab: a small floating call window */}
+      {inCall && activeTab !== 'active-consultation' && (
+        <CallWindow call={call} title={`Consultation · ${selectedPatient?.full_name ?? ''}`} panel={<CallPanel call={call} compact hideStart />}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('active-consultation')}
+            className="w-full py-2 rounded-xl bg-[#007AFF] text-white text-xs font-semibold cursor-pointer"
+          >
+            Back to the consultation (notes &amp; AI minutes)
+          </button>
+        </CallWindow>
+      )}
+
+      {/* Ringing: the open consultation's patient, or a patient from another consultation */}
+      {call.callState === 'incoming' && call.incoming && (
+        <IncomingCallCard
+          callerName={call.incoming.callerName}
+          video={call.incoming.video}
+          onAccept={(video) => { setActiveTab('active-consultation'); void call.acceptCall(video); }}
+          onDecline={call.declineCall}
+        />
+      )}
+      {lobbyCall && call.callState !== 'incoming' && !inCall && (
+        <IncomingCallCard
+          callerName={lobbyCall.callerName}
+          video={lobbyCall.video}
+          onAccept={(video) => void answerLobbyCall(video)}
+          onDecline={lobby.decline}
+        />
+      )}
 
       {/* Purpose-Bound Consent Modal */}
       <ConsentRequestModal

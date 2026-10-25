@@ -287,6 +287,21 @@ const en = {
   dial108: 'Dial 108 Ambulance',
   dial112: 'Dial 112 Unified SOS',
   cancel: 'Cancel',
+
+  // Consultation call (real call) & one-tap consent
+  incomingAudioCall: 'Incoming Audio Call',
+  answerAudioOnly: 'Audio only',
+  callCalling: 'Calling {name}…',
+  callConnecting: 'Connecting…',
+  callAudioWith: 'Audio call with {name}',
+  callCancel: 'Cancel',
+  callWebOnly: 'Video calls need the full SwasthyaSetu app. In Expo Go, open the app in a web browser to talk to your doctor.',
+  callSlow: 'Slow connection: turning your camera off keeps the voice clear.',
+  toastDoctorDeclined: '{name} could not take the call right now.',
+  toastDoctorOffline: '{name} is not online right now. Please try again later.',
+  toastNoAnswer: '{name} did not answer. Please try again.',
+  toastMissedCall: 'Missed call from {name}.',
+  consentOneTap: 'You are signed in with your ABHA account, so one tap is enough. Allow gives this doctor access for {minutes} minutes only; you can withdraw it at any time. Decline keeps your records private.',
 };
 
 export type TranslationKey = keyof typeof en;
@@ -547,6 +562,21 @@ const kn: Record<TranslationKey, string> = {
   dial108: '108 ಆಂಬ್ಯುಲೆನ್ಸ್‌ಗೆ ಕರೆ ಮಾಡಿ',
   dial112: '112 ತುರ್ತು ಸೇವೆಗೆ ಕರೆ ಮಾಡಿ',
   cancel: 'ರದ್ದುಮಾಡಿ',
+
+  // Consultation call (real call) & one-tap consent
+  incomingAudioCall: 'ಒಳಬರುವ ಧ್ವನಿ ಕರೆ',
+  answerAudioOnly: 'ಧ್ವನಿ ಮಾತ್ರ',
+  callCalling: '{name} ಅವರಿಗೆ ಕರೆ ಮಾಡಲಾಗುತ್ತಿದೆ…',
+  callConnecting: 'ಸಂಪರ್ಕಿಸಲಾಗುತ್ತಿದೆ…',
+  callAudioWith: '{name} ಅವರೊಂದಿಗೆ ಧ್ವನಿ ಕರೆ',
+  callCancel: 'ರದ್ದುಮಾಡಿ',
+  callWebOnly: 'ವೀಡಿಯೊ ಕರೆಗಳಿಗೆ ಪೂರ್ಣ ಸ್ವಾಸ್ಥ್ಯಸೇತು ಆ್ಯಪ್ ಬೇಕು. Expo Go ನಲ್ಲಿ ಇದ್ದರೆ, ವೈದ್ಯರೊಂದಿಗೆ ಮಾತನಾಡಲು ಆ್ಯಪ್ ಅನ್ನು ವೆಬ್ ಬ್ರೌಸರ್\u200cನಲ್ಲಿ ತೆರೆಯಿರಿ.',
+  callSlow: 'ಸಂಪರ್ಕ ನಿಧಾನವಾಗಿದೆ: ಕ್ಯಾಮೆರಾ ಆಫ್ ಮಾಡಿದರೆ ಧ್ವನಿ ಸ್ಪಷ್ಟವಾಗಿರುತ್ತದೆ.',
+  toastDoctorDeclined: '{name} ಅವರು ಈಗ ಕರೆ ಸ್ವೀಕರಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ.',
+  toastDoctorOffline: '{name} ಅವರು ಈಗ ಆನ್\u200cಲೈನ್\u200cನಲ್ಲಿಲ್ಲ. ದಯವಿಟ್ಟು ನಂತರ ಪ್ರಯತ್ನಿಸಿ.',
+  toastNoAnswer: '{name} ಅವರು ಉತ್ತರಿಸಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
+  toastMissedCall: '{name} ಅವರಿಂದ ತಪ್ಪಿದ ಕರೆ.',
+  consentOneTap: 'ನೀವು ನಿಮ್ಮ ABHA ಖಾತೆಯಿಂದ ಲಾಗಿನ್ ಆಗಿದ್ದೀರಿ, ಆದ್ದರಿಂದ ಒಂದು ಟ್ಯಾಪ್ ಸಾಕು. ಅನುಮತಿಸಿದರೆ ಈ ವೈದ್ಯರಿಗೆ {minutes} ನಿಮಿಷ ಮಾತ್ರ ಪ್ರವೇಶ ಸಿಗುತ್ತದೆ; ನೀವು ಯಾವಾಗ ಬೇಕಾದರೂ ಹಿಂಪಡೆಯಬಹುದು. ತಿರಸ್ಕರಿಸಿದರೆ ನಿಮ್ಮ ದಾಖಲೆಗಳು ಖಾಸಗಿಯಾಗಿರುತ್ತವೆ.',
 };
 
 const hi: Record<TranslationKey, string> = {
@@ -805,6 +835,21 @@ const hi: Record<TranslationKey, string> = {
   dial108: '108 एम्बुलेंस को कॉल करें',
   dial112: '112 आपातकालीन सेवा को कॉल करें',
   cancel: 'रद्द करें',
+
+  // Consultation call (real call) & one-tap consent
+  incomingAudioCall: 'आने वाली ऑडियो कॉल',
+  answerAudioOnly: 'केवल ऑडियो',
+  callCalling: '{name} को कॉल किया जा रहा है…',
+  callConnecting: 'कनेक्ट हो रहा है…',
+  callAudioWith: '{name} के साथ ऑडियो कॉल',
+  callCancel: 'रद्द करें',
+  callWebOnly: 'वीडियो कॉल के लिए पूरा स्वास्थ्यसेतु ऐप चाहिए। Expo Go में हों तो डॉक्टर से बात करने के लिए ऐप को वेब ब्राउज़र में खोलें।',
+  callSlow: 'कनेक्शन धीमा है: कैमरा बंद करने से आवाज़ साफ़ रहती है।',
+  toastDoctorDeclined: '{name} अभी कॉल नहीं ले सके।',
+  toastDoctorOffline: '{name} अभी ऑनलाइन नहीं हैं। कृपया बाद में कोशिश करें।',
+  toastNoAnswer: '{name} ने जवाब नहीं दिया। कृपया फिर से कोशिश करें।',
+  toastMissedCall: '{name} से छूटी हुई कॉल।',
+  consentOneTap: 'आप अपने ABHA खाते से लॉग इन हैं, इसलिए एक टैप काफ़ी है। अनुमति देने पर इस डॉक्टर को केवल {minutes} मिनट के लिए पहुँच मिलेगी; आप इसे कभी भी वापस ले सकते हैं। अस्वीकार करने पर आपके रिकॉर्ड निजी रहेंगे।',
 };
 
 export const TRANSLATIONS: Record<SupportedLanguage, Record<TranslationKey, string>> = { en, kn, hi };

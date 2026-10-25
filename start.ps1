@@ -1,11 +1,12 @@
 <#
 .SYNOPSIS
-  Set up and start CareBridge (SwasthyaSetu AI): backend + frontend.
+  Set up and start CareBridge (SwasthyaSetu AI): backend + Doctor portal + Patient app (web).
 
 .DESCRIPTION
   First run: creates a Python virtual environment in backend\.venv, installs the backend
-  requirements into it, installs the frontend packages, creates .env, then starts the
-  backend (port 8000) and frontend (port 5173) in their own windows and opens the browser.
+  requirements into it, installs the packages of both apps, creates .env, then starts the
+  backend (port 8000), the Doctor portal (port 5173) and the Patient app's web version
+  (port 8081) in their own windows and opens the browser.
   Later runs only reinstall when requirements.txt / package-lock.json change.
 
 .EXAMPLE
@@ -13,7 +14,7 @@
   .\start.ps1 -SetupData      # also download + import ICD-11, RxNorm and DDInter (~95 MB, once)
   .\start.ps1 -Reinstall      # rebuild the virtual environment from scratch
   .\start.ps1 -NoBrowser      # don't open the browser
-  .\stop.ps1                  # stop both servers
+  .\stop.ps1                  # stop all servers
 #>
 param(
     [switch]$SetupData,
@@ -24,11 +25,13 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root      = $PSScriptRoot
 $Backend   = Join-Path $Root 'backend'
-$Frontend  = Join-Path $Root 'frontend'
+$DoctorApp  = Join-Path $Root 'frontend Doctor'
+$PatientApp = Join-Path $Root 'frontend Patient'
 $Venv      = Join-Path $Backend '.venv'
 $VenvPy    = Join-Path $Venv 'Scripts\python.exe'
 $BackendPort  = 8000
-$FrontendPort = 5173
+$DoctorPort   = 5173
+$PatientPort  = 8081
 
 function Step([string]$msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Info([string]$msg) { Write-Host "    $msg" -ForegroundColor Gray }
@@ -98,25 +101,28 @@ if ($reqHash -ne $haveHash) {
 }
 
 # ---------------------------------------------------------------------------
-# 2. Frontend packages
+# 2. Packages for the Doctor portal and the Patient app
 # ---------------------------------------------------------------------------
-Step "Frontend packages (frontend\node_modules)"
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     Fail "Node.js (with npm) is required. Install the LTS version from https://nodejs.org/ and run again."
 }
-$lock = Join-Path $Frontend 'package-lock.json'
-$pkgStamp = Join-Path $Frontend 'node_modules\.install.sha256'
-$pkgHash = Get-FileSha (Join-Path $Frontend 'package.json')
-if (Test-Path $lock) { $pkgHash += Get-FileSha $lock }
-$havePkg = if (Test-Path $pkgStamp) { (Get-Content $pkgStamp -Raw).Trim() } else { '' }
-if ($pkgHash -ne $havePkg) {
-    Info "Running npm install (first run takes a minute)"
-    Push-Location $Frontend
-    try { npm install --no-fund --no-audit } finally { Pop-Location }
-    if ($LASTEXITCODE -ne 0) { Fail "npm install failed (see messages above)." }
-    Set-Content -Path $pkgStamp -Value $pkgHash -Encoding ascii
-} else {
-    Info "Frontend packages already installed"
+foreach ($app in @($DoctorApp, $PatientApp)) {
+    $name = Split-Path $app -Leaf
+    Step "Packages ($name\node_modules)"
+    $lock = Join-Path $app 'package-lock.json'
+    $pkgStamp = Join-Path $app 'node_modules\.install.sha256'
+    $pkgHash = Get-FileSha (Join-Path $app 'package.json')
+    if (Test-Path $lock) { $pkgHash += Get-FileSha $lock }
+    $havePkg = if (Test-Path $pkgStamp) { (Get-Content $pkgStamp -Raw).Trim() } else { '' }
+    if ($pkgHash -ne $havePkg) {
+        Info "Running npm install (first run takes a few minutes)"
+        Push-Location $app
+        try { npm install --no-fund --no-audit } finally { Pop-Location }
+        if ($LASTEXITCODE -ne 0) { Fail "npm install failed in $name (see messages above)." }
+        Set-Content -Path $pkgStamp -Value $pkgHash -Encoding ascii
+    } else {
+        Info "Packages already installed"
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -156,7 +162,7 @@ if ($SetupData) {
 # 5. Start servers
 # ---------------------------------------------------------------------------
 Step "Starting servers"
-foreach ($p in @($BackendPort, $FrontendPort)) {
+foreach ($p in @($BackendPort, $DoctorPort, $PatientPort)) {
     $owner = Test-PortInUse $p
     if ($owner) { Fail "Port $p is already in use by $owner. Run .\stop.ps1 (or close the old server window) and try again." }
 }
@@ -164,10 +170,14 @@ foreach ($p in @($BackendPort, $FrontendPort)) {
 # --timeout-graceful-shutdown lets auto-reload restart even while the notepad's WebSocket is open.
 $backendCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge backend :$BackendPort'; Set-Location '$Backend'; " +
               "& '$VenvPy' -m uvicorn app.main:app --reload --port $BackendPort --timeout-graceful-shutdown 3"
-$frontendCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge frontend :$FrontendPort'; Set-Location '$Frontend'; " +
-               "npx vite --port $FrontendPort --strictPort"   # not 'npm run dev --': PowerShell drops the '--' 
+# not 'npm run dev --': PowerShell drops the '--'
+$doctorCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge Doctor portal :$DoctorPort'; Set-Location '$DoctorApp'; " +
+             "npx vite --port $DoctorPort --strictPort"
+$patientCmd = "`$Host.UI.RawUI.WindowTitle = 'CareBridge Patient app (web) :$PatientPort'; Set-Location '$PatientApp'; " +
+              "`$env:BROWSER = 'none'; npx expo start --web --port $PatientPort"
 Start-Process powershell -ArgumentList @('-NoExit', '-NoProfile', '-Command', $backendCmd) | Out-Null
-Start-Process powershell -ArgumentList @('-NoExit', '-NoProfile', '-Command', $frontendCmd) | Out-Null
+Start-Process powershell -ArgumentList @('-NoExit', '-NoProfile', '-Command', $doctorCmd) | Out-Null
+Start-Process powershell -ArgumentList @('-NoExit', '-NoProfile', '-Command', $patientCmd) | Out-Null
 
 Info "Waiting for the backend to come up ..."
 $ready = $false
@@ -182,12 +192,13 @@ if (-not $ready) {
     Write-Host "    Backend didn't answer within 60 s; check the 'CareBridge backend' window for errors." -ForegroundColor Yellow
 }
 
-$url = "http://localhost:$FrontendPort"
+$doctorUrl = "http://localhost:$DoctorPort"
+$patientUrl = "http://localhost:$PatientPort"
 Write-Host ""
 Write-Host "CareBridge is running:" -ForegroundColor Green
-Write-Host "    App:      $url"
-Write-Host "    API docs: http://localhost:$BackendPort/docs"
-Write-Host "    Demo doctor login: identifier 'demo', password 'password123'"
-Write-Host "    Stop:     .\stop.ps1  (or close the two server windows)"
+Write-Host "    Doctor portal:     $doctorUrl   (login NMC-KA-581920 / password123)"
+Write-Host "    Patient app (web): $patientUrl   (tap the 'Demo 1-Click' login; first load bundles for ~30 s)"
+Write-Host "    API docs:          http://localhost:$BackendPort/docs"
+Write-Host "    Stop:              .\stop.ps1  (or close the three server windows)"
 Write-Host ""
-if (-not $NoBrowser) { Start-Process $url }
+if (-not $NoBrowser) { Start-Process $doctorUrl; Start-Process $patientUrl }

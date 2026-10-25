@@ -8,7 +8,9 @@ WebSocket (one room per encounter; doctor and patient each connect):
     relay  -> {"type": "SIGNAL", "data": {...}}                         WebRTC offer / answer / ICE
     either -> CALL_START {video} | CALL_ACCEPT | CALL_DECLINE | CALL_END    (the caller makes the WebRTC offer)
     doctor -> AI_TOGGLE {enabled} | NOTE_SNAPSHOT {text} | ANALYZE
-    patient-> CONSENT_RESPONSE {session_id, accepted} | CONSENT_WITHDRAW
+    patient-> CONSENT_RESPONSE {session_id, accepted, can_record} | CONSENT_WITHDRAW
+              (can_record false = a phone without audio recording: the doctor's app then records the
+               patient's voice from the call, still only with this consent)
     server -> INCOMING_CALL {from, caller_name, video} | CALL_ACCEPTED | CALL_DECLINED | CALL_ENDED |
               CALL_UNAVAILABLE {reason} | PEER_JOINED | PEER_LEFT |
               CONSENT_REQUEST | RECORDING {active} | AI_STATUS {state} | AI_MINUTES {...}
@@ -64,7 +66,11 @@ _lobbies: Dict[str, Set[WebSocket]] = {}          # practitioner id -> open doct
 
 
 async def _notify_lobby(practitioner_id: Optional[str], payload: Dict[str, Any]) -> int:
-    sockets = list(_lobbies.get(practitioner_id or "", ()))
+    """To the assigned doctor's open portals; with no doctor assigned yet (a new triage case), to every doctor."""
+    if practitioner_id:
+        sockets = list(_lobbies.get(practitioner_id, ()))
+    else:
+        sockets = [ws for group in _lobbies.values() for ws in group]
     for ws in sockets:
         await _send(ws, payload)
     return len(sockets)
@@ -263,9 +269,11 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
                     continue
                 if msg.get("accepted"):
                     s.consent_at = time.time()
+                    s.patient_recorded_by_doctor = msg.get("can_record") is False
                     await _audit(actor, "RECORDING_CONSENT_GIVEN", encounter_id)
-                    for ws in (room.doctor, room.patient):
-                        await _send(ws, {"type": "RECORDING", "active": True, "session_id": s.id})
+                    await _send(room.patient, {"type": "RECORDING", "active": True, "session_id": s.id})
+                    await _send(room.doctor, {"type": "RECORDING", "active": True, "session_id": s.id,
+                                              "record_remote": s.patient_recorded_by_doctor})
                     await _send(room.doctor, {"type": "AI_STATUS", "state": "recording", "session_id": s.id})
                 else:
                     _stop_recording(room)
@@ -322,7 +330,7 @@ async def doctor_lobby_ws(websocket: WebSocket):
     try:
         # Calls already ringing for this doctor (e.g. the portal was reloaded while a patient was calling).
         for encounter_id, room in _rooms.items():
-            if room.practitioner_id == practitioner_id and room.ringing and room.ringing["from"] == "patient" \
+            if room.practitioner_id in (practitioner_id, None) and room.ringing and room.ringing["from"] == "patient" \
                     and room.doctor is None:
                 await _send(websocket, {"type": "INCOMING_CALL", "from": "patient", "encounter_id": encounter_id,
                                         "patient_id": room.patient_id,
@@ -332,7 +340,7 @@ async def doctor_lobby_ws(websocket: WebSocket):
             # Declining from another page: tell the patient straight away instead of letting it ring out.
             if isinstance(msg, dict) and msg.get("type") == "CALL_DECLINE":
                 room = _rooms.get(str(msg.get("encounter_id", "")))
-                if room and room.practitioner_id == practitioner_id and room.ringing and room.ringing["from"] == "patient":
+                if room and room.practitioner_id in (practitioner_id, None) and room.ringing and room.ringing["from"] == "patient":
                     room.ringing = None
                     await _send(room.patient, {"type": "CALL_DECLINED"})
                     await _notify_lobby(practitioner_id, {"type": "CALL_CANCELLED", "encounter_id": msg["encounter_id"]})
@@ -348,9 +356,11 @@ async def upload_audio(
     file: UploadFile = File(...),
     offset_ms: int = Form(0),
     duration_ms: int = Form(15000),
+    speaker: str = Form(""),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
-    """One chunk from the caller's own microphone. Transcribed in memory, then discarded."""
+    """One chunk from the caller's own microphone (or, when the patient's phone can't record, the
+    patient's voice recorded by the doctor's app). Transcribed in memory, then discarded."""
     session = cm.get_session(session_id)
     if not session or not session.consent_at:
         raise HTTPException(status_code=409, detail="Recording is not active for this call (no consent or stopped).")
@@ -362,6 +372,14 @@ async def upload_audio(
             enc = await db.get(Encounter, session.encounter_id)
         if not enc or enc.patient_id != current_user["user_id"]:
             raise HTTPException(status_code=403, detail="Not your consultation.")
+    if speaker == "patient" and role != "patient":
+        # Only the doctor of this call, and only when the patient consented from a device that can't record.
+        async with AsyncSessionLocal() as db:
+            enc = await db.get(Encounter, session.encounter_id)
+        if role != "doctor" or not session.patient_recorded_by_doctor or not enc \
+                or enc.practitioner_id not in (current_user["user_id"], None):
+            raise HTTPException(status_code=403, detail="Not allowed to send the patient's audio.")
+        role = "patient"
     audio = await file.read(cm.MAX_AUDIO_BYTES + 1)
     if len(audio) > cm.MAX_AUDIO_BYTES:
         raise HTTPException(status_code=413, detail="Audio chunk too large.")
@@ -388,7 +406,7 @@ async def active_encounter(current_patient: Dict[str, Any] = Depends(require_pat
     enc = (await db.execute(
         select(Encounter).where(Encounter.patient_id == current_patient["user_id"],
                                 Encounter.status.in_(["in_progress", "queued"]))
-        .order_by(Encounter.start_time.desc())
+        .order_by(Encounter.start_time)   # the same consultation the doctor's queue shows (oldest open)
     )).scalars().first()
     if not enc:
         return {"encounter_id": None}

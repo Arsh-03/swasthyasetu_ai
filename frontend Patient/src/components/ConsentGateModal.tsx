@@ -10,14 +10,13 @@ import {
   Badge,
   CriticalButton,
   SheetHeader,
-  TextField,
   Well,
 } from './ui';
 
 interface ConsentGateModalProps {
   visible: boolean;
   request: ConsentRequestData | null;
-  onApprove: (otp: string) => Promise<void>;
+  onApprove: () => Promise<void>;
   onDecline: () => void;
 }
 
@@ -27,11 +26,11 @@ const formatCountdown = (seconds: number) => {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-/** Patient side of the Doctor's ConsentRequestModal: review the request, enter OTP, authorize or decline. */
+/** Patient side of the Doctor's ConsentRequestModal: review the request, then allow or decline with one tap
+ *  (the patient is already signed in, so no OTP is asked). */
 export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, request, onApprove, onDecline }) => {
   const { t } = useLanguage();
   const minutes = request?.duration_minutes || 60;
-  const [otp, setOtp] = useState('123456');
   const [timeLeft, setTimeLeft] = useState(minutes * 60);
   const [submitting, setSubmitting] = useState(false);
 
@@ -47,7 +46,7 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
   const handleConfirm = async () => {
     setSubmitting(true);
     try {
-      await onApprove(otp);
+      await onApprove();
     } finally {
       setSubmitting(false);
     }
@@ -106,19 +105,9 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
           ))}
         </Well>
 
-        <TextField
-          label={t('consentOtpLabel')}
-          value={otp}
-          onChangeText={setOtp}
-          keyboardType="number-pad"
-          maxLength={6}
-          placeholder="123456"
-          textContentType="oneTimeCode"
-          autoComplete="sms-otp"
-          hint={t('consentOtpHint')}
-          icon="key"
-          otp
-        />
+        <AppText variant="footnote" color="successDeep">
+          {t('consentOneTap', { minutes })}
+        </AppText>
 
         <View style={styles.actions}>
           <CriticalButton

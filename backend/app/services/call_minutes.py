@@ -49,6 +49,9 @@ class CallSession:
     note_text: str = ""
     last_activity: float = field(default_factory=time.time)
     pending_uploads: int = 0                  # chunks being transcribed right now
+    # The patient's phone can't record, so the doctor's app records the patient's voice from the call
+    # (set only when the patient consents from such a device).
+    patient_recorded_by_doctor: bool = False
     ending: bool = False                      # the call ended; waiting for the last chunks
 
 

@@ -2,6 +2,22 @@
 
 During a video consultation, the doctor can turn on **"Quick AI minutes & auto-update notes"**. With the patient's consent, the conversation is transcribed. The minutes are extracted, compared with the doctor's note, and anything missing is added to the note, highlighted in violet for review.
 
+## Where the code lives
+
+| App | Call & AI minutes |
+|---|---|
+| Doctor portal (`frontend Doctor`) | `services/call/*` (call engine, lobby), `components/call/*` (ringing card, floating call window), `components/ConsultationWorkspace.tsx` (video, AI-minutes switch), `components/ClinicalNotepad.tsx` (notepad with the AI findings) |
+| Patient app (`frontend Patient`) | `services/call/*` (same call engine), `components/PatientTelehealthCall.tsx`, `IncomingCallModal.tsx`, `RecordingConsentSheet.tsx` |
+
+The call engine (`useConsultationCall`, `callClient`, `audioRecorder`, consent texts…) is written **once**, in `shared/call/`. Both apps get a generated copy in `src/services/call/`: edit `shared/call/`, then run `node scripts/sync-call-engine.mjs` (`--check` fails if a copy is out of date). Each app's `services/backend.ts` supplies its backend address and login token.
+
+**Patient app on phones.**
+- **Web build** (`npx expo start --web`): calls use the browser's WebRTC.
+- **Phones:** calls use [`react-native-webrtc`](https://github.com/react-native-webrtc/react-native-webrtc) (configured by `@config-plugins/react-native-webrtc` in `app.json`). This needs a **development build**: `npx expo run:android` / `npx expo run:ios`, or `eas build --profile development`.
+- **Expo Go** doesn't include the native module. The app detects this (`src/services/webrtcPlatform.native.tsx`) and shows a note instead of a call.
+- **Recording on phones:** phones can't record audio chunks, so when the patient consents from a phone, the **doctor's app records the patient's voice from the call** instead. The server accepts that audio only from the call's doctor, and only in that case. The consent text says this.
+- **Not yet verified on a device:** the phone path compiles (`npx expo export --platform android` passes) but hasn't been tested on a phone. `expo-doctor` warns that `react-native-webrtc` is untested on React Native's New Architecture.
+
 ## Calling
 
 - **Either side can call.** The patient calls from *Live consultation*; the doctor calls from the header or *Live Notepad*. Each can choose **video** or **audio only**.
@@ -18,7 +34,7 @@ During a video consultation, the doctor can turn on **"Quick AI minutes & auto-u
 
 1. Doctor and patient connect (see *Calling*). The call is WebRTC 1:1, signalled over `WS /ws/v1/encounters/{id}/call`.
 2. Doctor switches the AI toggle on. The server creates a call session and sends `CONSENT_REQUEST` to the patient.
-3. Patient sees the consent screen in English, हिन्दी or ಕನ್ನಡ (`frontend/src/components/call/consentText.ts`). It explains:
+3. Patient sees the consent screen in English, हिन्दी or ಕನ್ನಡ (`frontend Patient/src/services/call/consentText.ts`). It explains:
    - what is recorded
    - how it is recorded
    - why
@@ -66,7 +82,7 @@ The model still cannot link such text to a person, because no identifiers travel
 
 ## Network note
 
-Calls use no STUN/TURN servers (`ICE_SERVERS = []` in `callClient.ts`), so they connect on the same LAN or machine. For calls across the internet, add a self-hosted TURN server (e.g. coturn) to keep media off third-party relays.
+Calls use no STUN/TURN servers (`ICE_SERVERS = []` in `services/call/callClient.ts` of both apps), so they connect on the same LAN or machine. For calls across the internet, add a self-hosted TURN server (e.g. coturn) to keep media off third-party relays.
 
 ## Review needed
 

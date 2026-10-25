@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # Set up and start CareBridge (SwasthyaSetu AI) on macOS / Linux.
 #
-#   ./start.sh               set up if needed (backend/.venv, npm packages, .env), then start both servers
+#   ./start.sh               set up if needed (backend/.venv, npm packages, .env), then start all servers
 #   ./start.sh --setup-data  also download + import ICD-11, RxNorm and DDInter (~95 MB, once)
 #   ./start.sh --reinstall   rebuild the Python virtual environment
 #
-# Both servers run in this terminal; press Ctrl+C to stop them.
+# Backend (8000), Doctor portal (5173) and Patient app web build (8081) run in this terminal; Ctrl+C stops them.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND="$ROOT/backend"
-FRONTEND="$ROOT/frontend"
+DOCTOR_APP="$ROOT/frontend Doctor"
+PATIENT_APP="$ROOT/frontend Patient"
 VENV="$BACKEND/.venv"
 VENV_PY="$VENV/bin/python"
 BACKEND_PORT=8000
-FRONTEND_PORT=5173
+DOCTOR_PORT=5173
+PATIENT_PORT=8081
 SETUP_DATA=0
 REINSTALL=0
 for arg in "$@"; do
@@ -53,17 +55,19 @@ else
   info "Backend requirements already installed"
 fi
 
-# 2. Frontend packages
-step "Frontend packages (frontend/node_modules)"
+# 2. Packages for both apps
 command -v npm >/dev/null || fail "Node.js (with npm) is required (https://nodejs.org/)."
-PKG_HASH="$(sha "$FRONTEND/package.json")$( [[ -f "$FRONTEND/package-lock.json" ]] && sha "$FRONTEND/package-lock.json" || true)"
-if [[ "$(cat "$FRONTEND/node_modules/.install.sha256" 2>/dev/null || true)" != "$PKG_HASH" ]]; then
-  info "Running npm install (first run takes a minute)"
-  (cd "$FRONTEND" && npm install --no-fund --no-audit)
-  printf '%s' "$PKG_HASH" > "$FRONTEND/node_modules/.install.sha256"
-else
-  info "Frontend packages already installed"
-fi
+for APP in "$DOCTOR_APP" "$PATIENT_APP"; do
+  step "Packages ($(basename "$APP")/node_modules)"
+  PKG_HASH="$(sha "$APP/package.json")$( [[ -f "$APP/package-lock.json" ]] && sha "$APP/package-lock.json" || true)"
+  if [[ "$(cat "$APP/node_modules/.install.sha256" 2>/dev/null || true)" != "$PKG_HASH" ]]; then
+    info "Running npm install (first run takes a few minutes)"
+    (cd "$APP" && npm install --no-fund --no-audit)
+    printf '%s' "$PKG_HASH" > "$APP/node_modules/.install.sha256"
+  else
+    info "Packages already installed"
+  fi
+done
 
 # 3. Configuration
 step "Configuration (.env)"
@@ -87,17 +91,20 @@ fi
 
 # 5. Start servers
 step "Starting servers"
-for port in $BACKEND_PORT $FRONTEND_PORT; do
+for port in $BACKEND_PORT $DOCTOR_PORT $PATIENT_PORT; do
   if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then fail "Port $port is already in use; stop the old server first."; fi
 done
 cleanup() { trap - INT TERM EXIT; kill 0 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 (cd "$BACKEND" && "$VENV_PY" -m uvicorn app.main:app --reload --port $BACKEND_PORT --timeout-graceful-shutdown 3) &
-(cd "$FRONTEND" && npx vite --port $FRONTEND_PORT --strictPort) &
+(cd "$DOCTOR_APP" && npx vite --port $DOCTOR_PORT --strictPort) &
+(cd "$PATIENT_APP" && BROWSER=none npx expo start --web --port $PATIENT_PORT) &
 for _ in $(seq 1 60); do
   if curl -fs "http://127.0.0.1:$BACKEND_PORT/health" >/dev/null 2>&1; then break; fi
   sleep 1
 done
-printf '\n\033[32mCareBridge is running:\033[0m http://localhost:%s  (API docs: http://localhost:%s/docs)\n' "$FRONTEND_PORT" "$BACKEND_PORT"
-printf 'Demo doctor login: identifier "demo", password "password123". Press Ctrl+C to stop.\n\n'
+printf '\n\033[32mCareBridge is running:\033[0m\n'
+printf '  Doctor portal:     http://localhost:%s  (login NMC-KA-581920 / password123)\n' "$DOCTOR_PORT"
+printf '  Patient app (web): http://localhost:%s  (tap "Demo 1-Click"; first load bundles for ~30 s)\n' "$PATIENT_PORT"
+printf '  API docs:          http://localhost:%s/docs\n  Press Ctrl+C to stop.\n\n' "$BACKEND_PORT"
 wait

@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Stop the CareBridge backend (port 8000) and frontend (port 5173) started by start.ps1.
+  Stop the CareBridge backend (8000), Doctor portal (5173) and Patient web app (8081) started by start.ps1.
   Only stops python/node processes listening on those ports.
 #>
 $stopped = 0
-foreach ($port in @(8000, 5173)) {
+foreach ($port in @(8000, 5173, 8081)) {
     $owners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty OwningProcess -Unique
     foreach ($id in $owners) {

@@ -28,6 +28,14 @@ import { SymptomIntakeModal } from './src/components/SymptomIntakeModal';
 import { EmergencySOSModal } from './src/components/EmergencySOSModal';
 import { PatientLoginView } from './src/components/PatientLoginView';
 import { IncomingCallModal } from './src/components/IncomingCallModal';
+import { RecordingConsentSheet } from './src/components/RecordingConsentSheet';
+import { RemoteAudio } from './src/components/RemoteAudio';
+import { useConsultationCall } from './src/services/call/useConsultationCall';
+import { enableWebRTC } from './src/services/webrtcPlatform';
+
+/** Real calls: the browser's WebRTC on the web; react-native-webrtc in a development build on phones.
+ *  (Expo Go doesn't include react-native-webrtc, so there the app explains where calls work.) */
+const CALLS_SUPPORTED = enableWebRTC();
 
 type TabType = 'home' | 'careplan' | 'records' | 'whosaw';
 type ScreenType = 'home' | 'call' | 'careplan' | 'whosaw' | 'records';
@@ -69,13 +77,6 @@ function PatientApp() {
   const [isIntakeVisible, setIsIntakeVisible] = useState(false);
   const [isEmergencyVisible, setIsEmergencyVisible] = useState(false);
   const [incomingConsent, setIncomingConsent] = useState<ConsentRequestData | null>(null);
-  const [incomingCall, setIncomingCall] = useState<{
-    caller: string;
-    patient_id: string;
-    call_id: string;
-  } | null>(null);
-  // Socket lives in a ref: it's only used to send, never rendered
-  const wsRef = useRef<WebSocket | null>(null);
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = (text: string, tone: ToastTone = 'info') => {
@@ -87,8 +88,49 @@ function PatientApp() {
   const [appointmentInfo, setAppointmentInfo] = useState<PatientAppointmentInfo | undefined>(undefined);
   // Display-only: lets the Today card tell loading / none / failed apart
   const [appointmentStatus, setAppointmentStatus] = useState<AppointmentStatus>('loading');
-  // Doctor on the current/last video call (from the call invitation)
-  const [callDoctorName, setCallDoctorName] = useState<string | null>(null);
+  // ---- Consultation call (real WebRTC call with the doctor) ----
+  const [callRoom, setCallRoom] = useState<{ encounter_id: string; doctor_name?: string } | null>(null);
+  const [pendingCallStart, setPendingCallStart] = useState(false);
+  const call = useConsultationCall({
+    role: 'patient',
+    encounterId: user && CALLS_SUPPORTED ? callRoom?.encounter_id ?? null : null,
+    peerName: callRoom?.doctor_name || appointmentInfo?.doctorName || t('yourDoctor'),
+  });
+  const inCall = call.callState === 'calling' || call.callState === 'in_call';
+  const callDoctorName = callRoom?.doctor_name || appointmentInfo?.doctorName || t('yourDoctor');
+
+  const refreshCallRoom = async () => {
+    try {
+      const room = await patientApi.getActiveEncounter();
+      setCallRoom(room.encounter_id ? { encounter_id: room.encounter_id, doctor_name: room.doctor_name } : null);
+      return room.encounter_id ? room : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Start the patient's call once their consultation's call room is connected.
+  useEffect(() => {
+    if (pendingCallStart && callRoom && call.roomEncounterId === callRoom.encounter_id && call.callState === 'idle') {
+      void call.startCall(true);
+      setPendingCallStart(false);
+    }
+  }, [pendingCallStart, callRoom, call]);
+
+  // When a call ends, say why; after a consultation, go to the care plan (as before).
+  useEffect(() => {
+    const name = callDoctorName;
+    const reason = call.endReason;
+    if (!reason || inCall) return;
+    if (reason === 'ended') {
+      setCurrentScreen('careplan');
+      showToast(t('toastCallEnded'), 'success');
+    } else if (reason === 'declined') showToast(t('toastDoctorDeclined', { name }), 'warning');
+    else if (reason === 'unavailable') showToast(t('toastDoctorOffline', { name }), 'warning');
+    else if (reason === 'no_answer') showToast(t('toastNoAnswer', { name }), 'warning');
+    else if (reason === 'missed') showToast(t('toastMissedCall', { name }), 'call');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [call.endReason, inCall]);
   // Dev on web: open with /#styleguide (used for headless visual checks)
   const [showStyleGuide, setShowStyleGuide] = useState(
     () => __DEV__ && Platform.OS === 'web' && typeof window !== 'undefined' && window.location.hash === '#styleguide'
@@ -126,6 +168,8 @@ function PatientApp() {
         if (pending.length > 0) setIncomingConsent({ ...pending[0], status: 'PENDING' });
       })
       .catch(() => {});
+    void refreshCallRoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // WebSocket connection for real-time consent push alerts and telehealth events
@@ -160,22 +204,6 @@ function PatientApp() {
             showToast(tr('toastConsentRequest', { name: data.practitioner_name || tr('yourDoctor') }), 'warning');
           }
 
-          // When Doctor initiates call, show incoming call screen
-          if (data.type === 'call_invitation' || data.event === 'incoming_call') {
-            setIncomingCall({
-              caller: data.doctor_name || '',
-              patient_id: data.patient_id || user.user_id,
-              call_id: data.call_id || 'call_' + Date.now(),
-            });
-            showToast(tr('toastIncomingCall', { name: data.doctor_name || tr('yourDoctor') }), 'call');
-          }
-
-          // When Doctor ends the call, auto-transition patient to Care Plan
-          if (data.event === 'call_ended' || data.type === 'call_ended') {
-            setCurrentScreen('careplan');
-            showToast(tr('toastCallEnded'), 'success');
-          }
-
           // When Doctor reschedules next appointment, update in real-time
           if (
             (data.type === 'appointment_event' &&
@@ -199,66 +227,22 @@ function PatientApp() {
           // ignore non-json
         }
       };
-      wsRef.current = socket;
     } catch {
       // WS fallback
     }
 
     return () => {
       if (socket) socket.close();
-      wsRef.current = null;
     };
   }, [user]);
 
   const errorText = (err: unknown) => (err instanceof Error ? err.message : t('networkError'));
 
-  const handleAcceptCall = () => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_accepted',
-            patient_id: user?.user_id,
-            patient_name: user?.full_name,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call acceptance:', e);
-      }
-    }
-    setCallDoctorName(incomingCall?.caller || null);
-    setIncomingCall(null);
-    setCurrentScreen('call');
-    showToast(t('toastCallConnected'), 'call');
-  };
-
-  const handleDeclineCall = () => {
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(
-          JSON.stringify({
-            type: 'call_event',
-            event: 'call_declined',
-            patient_id: user?.user_id,
-            patient_name: user?.full_name,
-          })
-        );
-      } catch (e) {
-        console.warn('Error sending call decline:', e);
-      }
-    }
-    setIncomingCall(null);
-    showToast(t('toastCallDeclined'));
-  };
-
   // The backend saves the grant and notifies the doctor portal over WebSocket
-  const handleApproveConsent = async (otp: string) => {
+  const handleApproveConsent = async () => {
     if (!incomingConsent) return;
     try {
-      await patientApi.approveConsent(incomingConsent.consent_id, otp);
+      await patientApi.approveConsent(incomingConsent.consent_id);
       setIncomingConsent(null);
       showToast(t('toastConsentApproved', { minutes: incomingConsent.duration_minutes }), 'success');
     } catch (err) {
@@ -287,6 +271,21 @@ function PatientApp() {
     />
   );
 
+  const callOverlays = (
+    <>
+      {/* The doctor's voice (one player for the whole app) */}
+      {inCall && <RemoteAudio stream={call.remoteStream} />}
+      {/* "Quick AI minutes": the doctor asks to record the audio; the patient decides */}
+      <RecordingConsentSheet
+        key={call.consentRequest?.session_id ?? 'none'}
+        visible={call.consentRequest !== null}
+        doctorName={call.consentRequest?.doctor_name || callDoctorName}
+        language={lang}
+        onRespond={call.respondConsent}
+      />
+    </>
+  );
+
   if (showStyleGuide && StyleGuideScreen) {
     return <StyleGuideScreen onClose={() => setShowStyleGuide(false)} />;
   }
@@ -311,15 +310,13 @@ function PatientApp() {
     );
   }
 
-  // Live video call (immersive)
-  if (currentScreen === 'call') {
+  // Live call (immersive) while calling or connected
+  if (inCall) {
     return (
       <View style={styles.fullscreen}>
         <StatusBar style="light" />
-        <PatientTelehealthCall
-          doctorName={callDoctorName || appointmentInfo?.doctorName || t('yourDoctor')}
-          onEndCall={() => setCurrentScreen('careplan')}
-        />
+        <PatientTelehealthCall call={call} doctorName={callDoctorName} onEndCall={() => undefined} />
+        {callOverlays}
         {consentGate}
         <Toast message={toastMessage} />
       </View>
@@ -428,10 +425,12 @@ function PatientApp() {
             return;
           }
           setIsIntakeVisible(false);
+          if (!CALLS_SUPPORTED) {
+            showToast(t('callWebOnly'), 'info');
+            return;
+          }
           showToast(t('toastTriageComplete'), 'call');
-          setTimeout(() => {
-            setCurrentScreen('call');
-          }, 400);
+          if (await refreshCallRoom()) setPendingCallStart(true);
         }}
       />
 
@@ -441,13 +440,16 @@ function PatientApp() {
       {/* Emergency medical SOS */}
       <EmergencySOSModal visible={isEmergencyVisible} onClose={() => setIsEmergencyVisible(false)} />
 
-      {/* Incoming video call */}
+      {/* Incoming call from the doctor */}
       <IncomingCallModal
-        visible={incomingCall !== null}
-        callerName={incomingCall?.caller || t('yourDoctor')}
-        onAccept={handleAcceptCall}
-        onDecline={handleDeclineCall}
+        visible={call.callState === 'incoming'}
+        callerName={call.incoming?.callerName || callDoctorName}
+        video={call.incoming?.video ?? true}
+        onAccept={() => void call.acceptCall(true)}
+        onAcceptAudio={() => void call.acceptCall(false)}
+        onDecline={call.declineCall}
       />
+      {callOverlays}
 
       <Toast message={toastMessage} />
     </View>
