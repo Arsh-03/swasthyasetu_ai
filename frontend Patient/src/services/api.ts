@@ -130,6 +130,13 @@ export interface ConsentHistoryItem {
   expires_at: string | null;
 }
 
+export interface UploadDocumentInput {
+  uri: string;
+  name: string;
+  type: string;
+  fileObj?: any;
+}
+
 export interface PatientRegisterRequest {
   full_name: string;
   abha_address: string;
@@ -139,6 +146,7 @@ export interface PatientRegisterRequest {
   age: number;
   gender: string;
   district: string;
+  initial_record?: any;
 }
 
 /** An error response from the backend, keeping the HTTP status so screens can pick a message. */
@@ -263,6 +271,80 @@ class PatientApiService {
 
   async getPatientRecords(patientId: string): Promise<HealthRecord[]> {
     return this.request<HealthRecord[]>(`/records/patient/${patientId}`);
+  }
+
+  /** Uploads a health report (PDF or image) to be processed with Paddle OCR and saved in the patient's records. */
+  async uploadHealthRecord(
+    file: UploadDocumentInput,
+    patientId?: string,
+    customTitle?: string
+  ): Promise<HealthRecord> {
+    const formData = new FormData();
+    if (Platform.OS === 'web' && file.fileObj) {
+      formData.append('file', file.fileObj, file.name);
+    } else if (Platform.OS === 'web' && file.uri.startsWith('blob:')) {
+      const resp = await fetch(file.uri);
+      const blob = await resp.blob();
+      formData.append('file', blob, file.name);
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type || 'application/pdf',
+      } as any);
+    }
+    if (patientId) {
+      formData.append('patient_id', patientId);
+    }
+    if (customTitle) {
+      formData.append('custom_title', customTitle);
+    }
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/records/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error((data && data.detail) || `Document upload failed (${res.status})`);
+    }
+    return data as HealthRecord;
+  }
+
+  /** Runs Paddle OCR on an uploaded report during onboarding to preview findings before saving. */
+  async uploadInitialReport(
+    file: UploadDocumentInput
+  ): Promise<{ success: boolean; filename: string; record: any }> {
+    const formData = new FormData();
+    if (Platform.OS === 'web' && file.fileObj) {
+      formData.append('file', file.fileObj, file.name);
+    } else if (Platform.OS === 'web' && file.uri.startsWith('blob:')) {
+      const resp = await fetch(file.uri);
+      const blob = await resp.blob();
+      formData.append('file', blob, file.name);
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type || 'application/pdf',
+      } as any);
+    }
+
+    const res = await fetch(`${API_BASE_URL}/auth/upload-initial-report`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error((data && data.detail) || `Report analysis failed (${res.status})`);
+    }
+    return data;
   }
 
   async getNextAppointment(): Promise<NextAppointment | null> {

@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException, Header, Query
+from fastapi import APIRouter, Depends, HTTPException, Header, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.database import get_db
@@ -9,6 +9,7 @@ from app.services.serializers import active_consent_for_record
 from app.schemas.schemas import RecordMetadataOut, RecordCreateRequest
 from app.services.token_vault import token_vault
 from app.services.auth_dependencies import get_current_user
+from app.services.ocr_service import process_document
 
 router = APIRouter(prefix="/records", tags=["records"])
 
@@ -136,6 +137,103 @@ async def add_medical_record(
         type_label=new_record.type_label,
         created_at=new_record.created_at,
     )
+
+
+@router.post("/upload", response_model=RecordMetadataOut)
+async def upload_medical_record(
+    file: UploadFile = File(...),
+    patient_id: Optional[str] = Form(None),
+    custom_title: Optional[str] = Form(None),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accepts a medical report (PDF or Image), processes it using Paddle OCR,
+    extracts clinical findings and diagnostic impressions, generates a summary,
+    and stores the encrypted record directly in the patient's ABDM health locker.
+    """
+    target_patient_id = patient_id or current_user["user_id"]
+    if current_user["role"] != "doctor" and current_user["user_id"] != target_patient_id:
+        raise HTTPException(status_code=403, detail="Cannot upload records for another patient.")
+
+    try:
+        content = await file.read()
+        mime = file.content_type or "application/pdf"
+        ocr_result = process_document(content, file.filename or "report.pdf", mime)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Paddle OCR processing failed: {str(e)}")
+
+    rec_id = f"rec_{uuid.uuid4().hex[:10]}"
+    final_title = custom_title.strip() if custom_title and custom_title.strip() else ocr_result["title"]
+
+    new_record = RecordMetadata(
+        record_id=rec_id,
+        patient_id=target_patient_id,
+        record_type=ocr_result["record_type"],
+        title=final_title,
+        date_str=ocr_result["date_str"],
+        file_mime_type=mime,
+        file_size_bytes=len(content),
+        secure_storage_reference=f"vault://abdm/patients/{target_patient_id}/records/{rec_id}.enc",
+        encryption_key_id="kms-carebridge-aes256-gcm",
+        summary_findings=ocr_result["summary_findings"],
+        raw_preview_text=ocr_result["raw_preview_text"],
+        facility=ocr_result["facility"],
+        category=ocr_result["category"],
+        type_label=ocr_result["type_label"],
+        imaging_json=ocr_result.get("imaging"),
+        lab_results_json=ocr_result.get("lab_results"),
+    )
+    db.add(new_record)
+
+    audit = AuditEvent(
+        actor_id=current_user["user_id"],
+        action="MEDICAL_RECORD_UPLOADED_PADDLE_OCR",
+        resource_id=rec_id,
+        outcome="SUCCESS"
+    )
+    db.add(audit)
+    await db.commit()
+
+    return RecordMetadataOut(
+        record_id=new_record.record_id,
+        patient_id=new_record.patient_id,
+        record_type=new_record.record_type,
+        title=new_record.title,
+        date_str=new_record.date_str,
+        file_mime_type=new_record.file_mime_type,
+        file_size_bytes=new_record.file_size_bytes,
+        summary_findings=new_record.summary_findings,
+        consent_status="approved",
+        facility=new_record.facility,
+        category=new_record.category,
+        type_label=new_record.type_label,
+        imaging=new_record.imaging_json,
+        lab_results=new_record.lab_results_json,
+        created_at=new_record.created_at,
+    )
+
+
+@router.post("/ocr-preview")
+async def preview_ocr_record(
+    file: UploadFile = File(...)
+):
+    """
+    Parses an uploaded report (PDF or Image) using Paddle OCR and returns
+    extracted clinical summary and findings without saving to DB.
+    """
+    try:
+        content = await file.read()
+        mime = file.content_type or "application/pdf"
+        ocr_result = process_document(content, file.filename or "report.pdf", mime)
+        return {
+            "success": True,
+            "filename": file.filename,
+            "record": ocr_result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Paddle OCR processing failed: {str(e)}")
+
 
 @router.get("/{record_id}/stream")
 async def stream_decrypted_record(

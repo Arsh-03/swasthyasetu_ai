@@ -23,6 +23,7 @@ class PatientRegisterRequest(BaseModel):
     age: int = 54
     gender: str = "male"
     district: str = "Hassan, Karnataka"
+    initial_record: Optional[Dict[str, Any]] = None
 
 class CreateAbhaRequest(BaseModel):
     full_name: str

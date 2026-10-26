@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors, radii, spacing } from '../theme/tokens';
-import { ApiError, patientApi, type PatientUser } from '../services/api';
+import { ApiError, patientApi, type PatientUser, type UploadDocumentInput } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import type { TranslationKey } from '../utils/translations';
-import { AppText, AudioListenButton, Icon, NeuPanel, PrimaryButton, SecondaryButton, SegmentedControl, TextField, Well } from './ui';
+import { pickHealthReportDocument } from '../utils/documentPicker';
+import { AppText, AudioListenButton, Badge, Icon, NeuPanel, PrimaryButton, SecondaryButton, SegmentedControl, TextField, Well } from './ui';
 
 interface PatientSignUpViewProps {
   onSignUpSuccess: (user: PatientUser) => void;
@@ -38,6 +39,35 @@ export const PatientSignUpView: React.FC<PatientSignUpViewProps> = ({ onSignUpSu
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
 
+  // Optional report upload during signup
+  const [reportFile, setReportFile] = useState<UploadDocumentInput | null>(null);
+  const [analyzingReport, setAnalyzingReport] = useState(false);
+  const [initialRecord, setInitialRecord] = useState<any | null>(null);
+  const [reportOcrError, setReportOcrError] = useState<string | null>(null);
+
+  const handlePickReport = async () => {
+    setReportOcrError(null);
+    const file = await pickHealthReportDocument();
+    if (!file) return;
+    setReportFile(file);
+    setAnalyzingReport(true);
+    try {
+      const data = await patientApi.uploadInitialReport(file);
+      setInitialRecord(data.record);
+    } catch (err: any) {
+      if (__DEV__) console.warn('OCR preview failed:', err);
+      setReportOcrError(err?.message || 'Could not analyze with OCR, but file will be attached.');
+    } finally {
+      setAnalyzingReport(false);
+    }
+  };
+
+  const handleRemoveReport = () => {
+    setReportFile(null);
+    setInitialRecord(null);
+    setReportOcrError(null);
+  };
+
   const handleSubmit = async () => {
     const name = fullName.trim();
     const phone = mobile.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
@@ -59,6 +89,7 @@ export const PatientSignUpView: React.FC<PatientSignUpViewProps> = ({ onSignUpSu
         age: ageNum,
         gender,
         district: district.trim() || '—',
+        initial_record: initialRecord || undefined,
       });
       onSignUpSuccess(res.user);
     } catch (err) {
@@ -171,6 +202,92 @@ export const PatientSignUpView: React.FC<PatientSignUpViewProps> = ({ onSignUpSu
         autoCorrect={false}
       />
 
+      {/* Upload reports now (Optional section, can be skipped) */}
+      <View style={styles.uploadSection}>
+        <View style={styles.uploadHeader}>
+          <View style={styles.ocrTagRow}>
+            <Icon name="sparkle" size={15} color={colors.primary} active />
+            <AppText variant="eyebrow" color="primary">
+              Paddle OCR · ABDM
+            </AppText>
+          </View>
+          <AppText variant="subhead" weight={700}>
+            {t('uploadReportsNow')}
+          </AppText>
+          <AppText variant="footnote" color="inkMuted">
+            {t('uploadReportsNowSubtitle')}
+          </AppText>
+        </View>
+
+        {reportFile ? (
+          <Well style={styles.attachedWell}>
+            <View style={styles.attachedContent}>
+              <View style={styles.fileIconBox}>
+                <Icon
+                  name={reportFile.type.includes('pdf') ? 'document' : 'lab'}
+                  size={24}
+                  color={colors.primary}
+                  active
+                />
+              </View>
+              <View style={styles.flex}>
+                <AppText variant="subhead" weight={600} numberOfLines={1}>
+                  {reportFile.name}
+                </AppText>
+                {analyzingReport ? (
+                  <View style={styles.analyzingRow}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <AppText variant="footnote" color="primary" weight={600}>
+                      {t('uploadingAndReadingOcr')}
+                    </AppText>
+                  </View>
+                ) : initialRecord ? (
+                  <View style={styles.previewSnippet}>
+                    <Badge label={t('analyzedWithPaddle')} tone="primary" icon="sparkle" />
+                    <AppText variant="footnote" weight={600} color="ink">
+                      {initialRecord.title}
+                    </AppText>
+                    {initialRecord.summary_findings && (
+                      <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
+                        {initialRecord.summary_findings}
+                      </AppText>
+                    )}
+                  </View>
+                ) : (
+                  <AppText variant="footnote" color="inkMuted">
+                    {t('reportAttached')}
+                  </AppText>
+                )}
+                {reportOcrError && (
+                  <AppText variant="footnote" color="warningDeep">
+                    {reportOcrError}
+                  </AppText>
+                )}
+              </View>
+              <SecondaryButton
+                label={t('removeAttachment')}
+                size="sm"
+                onPress={handleRemoveReport}
+                disabled={analyzingReport}
+              />
+            </View>
+          </Well>
+        ) : (
+          <View style={styles.uploadPromptRow}>
+            <SecondaryButton
+              label={t('selectReportFile')}
+              icon="upload"
+              tone="primary"
+              size="md"
+              onPress={handlePickReport}
+            />
+            <AppText variant="footnote" color="inkMuted">
+              {t('skipForNow')}
+            </AppText>
+          </View>
+        )}
+      </View>
+
       <View style={styles.actions}>
         <PrimaryButton
           label={loading ? t('creatingAccount') : t('createAccount')}
@@ -207,6 +324,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  uploadSection: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  uploadHeader: {
+    gap: spacing.xs,
+  },
+  ocrTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  uploadPromptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  attachedWell: {
+    padding: spacing.md,
+  },
+  attachedContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  fileIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#EBF3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  analyzingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: 4,
+  },
+  previewSnippet: {
+    gap: 4,
+    marginTop: 4,
+    alignItems: 'flex-start',
   },
   actions: {
     gap: spacing.md,

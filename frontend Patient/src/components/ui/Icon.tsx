@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Icon as PhosphorIcon } from 'phosphor-react-native';
-// Per-icon imports (package "exports": ./src/icons/*) so only these glyphs are bundled.
+import { BellIcon } from 'phosphor-react-native/src/icons/Bell';
 import { BoneIcon } from 'phosphor-react-native/src/icons/Bone';
 import { BrainIcon } from 'phosphor-react-native/src/icons/Brain';
 import { BuildingsIcon } from 'phosphor-react-native/src/icons/Buildings';
@@ -64,6 +64,7 @@ import { WarningIcon } from 'phosphor-react-native/src/icons/Warning';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WindIcon } from 'phosphor-react-native/src/icons/Wind';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
+import { UploadSimpleIcon } from 'phosphor-react-native/src/icons/UploadSimple';
 import { colors } from '../../theme/tokens';
 import { checkIconContrast } from '../../utils/devChecks';
 
@@ -81,6 +82,7 @@ const REGISTRY = {
   translate: TranslateIcon,
   signIn: SignInIcon,
   signOut: SignOutIcon,
+  upload: UploadSimpleIcon,
 
   // Trust & consent
   shield: ShieldIcon,
@@ -101,7 +103,8 @@ const REGISTRY = {
   emergency: SirenIcon,
   help: LifebuoyIcon,
 
-  // Time
+  // Time & reminders
+  bell: BellIcon,
   calendar: CalendarBlankIcon,
   rescheduled: ClockCounterClockwiseIcon,
   clock: ClockIcon,

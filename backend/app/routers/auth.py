@@ -2,7 +2,7 @@ import uuid
 import hashlib
 from datetime import datetime, timezone
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm.attributes import flag_modified
@@ -14,6 +14,7 @@ from app.schemas.schemas import (
 )
 from app.services.auth_dependencies import create_access_token, get_current_user, require_doctor
 from app.services.connection_manager import ws_manager
+from app.services.ocr_service import process_document
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -240,6 +241,37 @@ async def register_patient(req: PatientRegisterRequest, db: AsyncSession = Depen
     )
     db.add(new_profile)
 
+    # If initial report provided during onboarding, save it to the new account
+    if req.initial_record and req.initial_record.get("title"):
+        rec_info = req.initial_record
+        rec_id = f"rec_{uuid.uuid4().hex[:10]}"
+        new_record = RecordMetadata(
+            record_id=rec_id,
+            patient_id=new_user_id,
+            record_type=rec_info.get("record_type", "diagnostic"),
+            title=rec_info.get("title", "Initial Health Record"),
+            date_str=rec_info.get("date_str") or datetime.now().strftime("%d %b %Y"),
+            file_mime_type=rec_info.get("file_mime_type", "application/pdf"),
+            file_size_bytes=rec_info.get("file_size_bytes", 1500000),
+            secure_storage_reference=f"vault://abdm/patients/{new_user_id}/scans/{rec_id}.enc",
+            encryption_key_id="kms-carebridge-aes256-gcm",
+            summary_findings=rec_info.get("summary_findings", "Baseline diagnostic record linked via Paddle OCR."),
+            raw_preview_text=rec_info.get("raw_preview_text") or rec_info.get("summary_findings") or "",
+            facility=rec_info.get("facility", "District Health Facility (ABDM Linked)"),
+            category=rec_info.get("category", "diagnostic"),
+            type_label=rec_info.get("type_label", "Clinical Diagnostic Report"),
+            imaging_json=rec_info.get("imaging"),
+            lab_results_json=rec_info.get("lab_results"),
+        )
+        db.add(new_record)
+        audit_rec = AuditEvent(
+            actor_id=new_user_id,
+            action="MEDICAL_RECORD_UPLOADED_VAULT",
+            resource_id=rec_id,
+            outcome="SUCCESS"
+        )
+        db.add(audit_rec)
+
     audit = AuditEvent(
         actor_id=new_user_id,
         action="PATIENT_ACCOUNT_CREATED",
@@ -271,6 +303,25 @@ async def register_patient(req: PatientRegisterRequest, db: AsyncSession = Depen
             "demographics": new_profile.demographics_json
         }
     )
+
+
+@router.post("/upload-initial-report")
+async def upload_initial_report_ocr(file: UploadFile = File(...)):
+    """
+    Parses a medical report (PDF or image) with Paddle OCR during onboarding,
+    extracts clinical findings, generates a summary, and returns the prepared record metadata.
+    """
+    try:
+        content = await file.read()
+        mime = file.content_type or "application/pdf"
+        result = process_document(content, file.filename or "report.pdf", mime)
+        return {
+            "success": True,
+            "filename": file.filename,
+            "record": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Paddle OCR processing failed: {str(e)}")
 
 
 @router.post("/create-abha", response_model=AuthResponse)

@@ -22,3 +22,5 @@ export { ChromeInsetsProvider, ScreenScroll } from './ScreenScroll';
 export { Groove, InsetLayer, NeuButton, NeuInset, NeuList, NeuPanel, NeuPressable, NeuTile, NeuToggle, NeuView, RaisedLayer } from './Neu';
 export { Stepper, type Step } from './Stepper';
 export { ExpandableText } from './ExpandableText';
+export { BirthdayPopperEffect, PopBurstEffect } from './PopBurstEffect';
+export { FullScreenBirthdayPopper } from './FullScreenBirthdayPopper';
