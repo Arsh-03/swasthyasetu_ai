@@ -28,7 +28,9 @@ DEFAULTS = {
     "openai": {"base": "https://api.openai.com/v1", "model": "gpt-4o-mini", "prefer": ("mini",)},
     "openai_compatible": {"base": "", "model": "", "prefer": ()},
 }
-HEALTH_TTL_S = 300
+HEALTH_TTL_S = 300            # re-check a working server every 5 minutes
+OFFLINE_RECHECK_S = 30        # ...but an offline one every 30 s, so it recovers soon after Colab is up
+PULL_TIMEOUT_S = 1800         # downloading a 7B model on Colab takes a few minutes
 # Low-priority requests (autocomplete) keep this share of the minute's budget free for the important ones.
 RESERVE_FOR_IMPORTANT = 0.5
 
@@ -56,6 +58,10 @@ class AIClient:
             self.key = settings.AI_API_KEY
         self._health: Dict[str, Any] = {"ok": False, "at": 0.0, "detail": ""}
         self._sent: Deque[float] = deque()
+        self._cooldown_until = 0.0            # provider said "too many requests": wait until then
+        self._pull_task: Optional["asyncio.Task[None]"] = None
+        self._warm_task: Optional["asyncio.Task[None]"] = None
+        self._warm = False                    # model loaded into the GPU (the first load takes ~40 s)
         self._model_checked = False
         self._transport: Optional[httpx.AsyncBaseTransport] = None   # tests plug in a fake server here
 
@@ -76,9 +82,11 @@ class AIClient:
         return "self_hosted"
 
     def info(self) -> Dict[str, Any]:
+        cooling = max(0, int(self._cooldown_until - time.time()))
         return {"provider": self.provider or "none", "model": self.model, "enabled": self.enabled,
                 "online": self._health["ok"], "destination": self.destination(), "detail": self._health["detail"],
-                "budget_per_min": self._rpm()}
+                "budget_per_min": self._rpm(), "rate_limited_for_s": cooling,
+                "downloading_model": bool(self._pull_task and not self._pull_task.done())}
 
     def _headers(self) -> Dict[str, str]:
         if self.provider == "ollama":
@@ -92,6 +100,8 @@ class AIClient:
         return {"gemini": 10, "openai": 60, "openai_compatible": 30}.get(self.provider, 0)   # 0 = unlimited
 
     def _take(self, important: bool) -> bool:
+        if time.time() < self._cooldown_until:
+            return False
         limit = self._rpm()
         if not limit:
             return True
@@ -108,15 +118,23 @@ class AIClient:
     async def online(self, force: bool = False) -> bool:
         if not self.enabled:
             return False
-        if not force and time.time() - self._health["at"] < HEALTH_TTL_S:
+        ttl = HEALTH_TTL_S if self._health["ok"] else OFFLINE_RECHECK_S
+        if not force and time.time() - self._health["at"] < ttl:
             return self._health["ok"]
         ok, detail = False, ""
         try:
             async with httpx.AsyncClient(timeout=8.0, headers=self._headers(), transport=self._transport) as client:
                 if self.provider == "ollama":
                     res = await client.get(f"{self.base}/api/tags")
-                    ok = res.status_code == 200 and "ngrok-error-code" not in res.headers
-                    detail = "" if ok else f"Ollama server answered {res.status_code}"
+                    reachable = res.status_code == 200 and "ngrok-error-code" not in res.headers
+                    names = [m.get("name", "") for m in res.json().get("models", [])] if reachable else []
+                    ok = any(n in (self.model, f"{self.model}:latest") for n in names)
+                    if not reachable:
+                        detail = f"Ollama server answered {res.status_code} (is Colab running? is the ngrok URL current?)"
+                    elif not ok:
+                        detail = (f"Downloading {self.model} on your AI server (a few minutes)…" if self._pull_task and not self._pull_task.done()
+                                  else f"Your AI server has no '{self.model}' model; starting the download")
+                        self._start_pull()
                 else:
                     res = await client.get(f"{self.base}/models")
                     ok = res.status_code == 200
@@ -125,8 +143,48 @@ class AIClient:
                         self._pick_model([m.get("id", "") for m in res.json().get("data", [])])
         except (httpx.HTTPError, ValueError) as exc:
             detail = f"{type(exc).__name__}: AI server unreachable"
+        if ok and self.provider == "ollama" and not self._warm:
+            self._start_warm()
+            detail = detail or "Loading the model into the GPU (about 40 s the first time)…"
         self._health.update(ok=ok, at=time.time(), detail=detail)
         return ok
+
+    def _start_warm(self) -> None:
+        """Load the model into GPU memory in the background, so the first doctor doesn't wait for it."""
+        if self._warm_task and not self._warm_task.done():
+            return
+
+        async def warm() -> None:
+            try:
+                async with httpx.AsyncClient(timeout=300.0, headers=self._headers(), transport=self._transport) as client:
+                    res = await client.post(f"{self.base}/api/generate",
+                                            json={"model": self.model, "keep_alive": settings.INTELLISENSE_LOCAL_KEEP_ALIVE})
+                    self._warm = res.status_code == 200
+                    if self._warm and self._health["detail"].startswith("Loading"):
+                        self._health["detail"] = ""
+            except httpx.HTTPError:
+                pass
+        try:
+            self._warm_task = asyncio.get_running_loop().create_task(warm())
+        except RuntimeError:
+            pass
+
+    def _start_pull(self) -> None:
+        """Ask Ollama to download the configured model (once at a time). Colab sessions start empty."""
+        if self._pull_task and not self._pull_task.done():
+            return
+
+        async def pull() -> None:
+            try:
+                async with httpx.AsyncClient(timeout=PULL_TIMEOUT_S, headers=self._headers(), transport=self._transport) as client:
+                    await client.post(f"{self.base}/api/pull", json={"model": self.model, "stream": False})
+            except httpx.HTTPError:
+                pass
+            self._health["at"] = 0.0          # check again straight away
+        try:
+            self._pull_task = asyncio.get_running_loop().create_task(pull())
+        except RuntimeError:
+            pass
 
     def _pick_model(self, ids: List[str]) -> None:
         """Keep the configured model if the provider has it; otherwise pick a fast one it does have."""
@@ -140,6 +198,15 @@ class AIClient:
             if match:
                 self.model = match[0]
                 return
+
+    def _rate_limited(self, res: httpx.Response) -> None:
+        """The provider's per-minute limit was hit: pause all AI requests for as long as it asks (default 20 s)."""
+        try:
+            wait = float(res.headers.get("retry-after", "20"))
+        except ValueError:
+            wait = 20.0
+        self._cooldown_until = time.time() + min(max(wait, 5.0), 120.0)
+        self._health["detail"] = f"{self.provider} rate limit reached; pausing AI for {int(wait)} s (rules engine meanwhile)"
 
     def mark_offline(self, detail: str = "") -> None:
         self._health.update(ok=False, at=time.time(), detail=detail or self._health["detail"])
@@ -177,6 +244,14 @@ class AIClient:
         if not self._take(important):
             raise AIUnavailable("AI request budget for this minute is used up")
         payload = self._payload(messages, False, json_mode, max_tokens, temperature, stop)
+        try:
+            return await self._post_chat(payload, timeout)
+        except httpx.HTTPError as exc:
+            if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+                self.mark_offline(f"{type(exc).__name__}: AI server unreachable")
+            raise AIUnavailable(f"{type(exc).__name__} talking to {self.provider}") from exc
+
+    async def _post_chat(self, payload: Dict[str, Any], timeout: float) -> str:
         async with httpx.AsyncClient(timeout=timeout, headers=self._headers(), transport=self._transport) as client:
             res = await client.post(self._url(), json=payload)
             if res.status_code == 400 and self.provider != "ollama":
@@ -184,6 +259,8 @@ class AIClient:
                 for k in ("reasoning_effort", "response_format", "stop"):
                     payload.pop(k, None)
                 res = await client.post(self._url(), json=payload)
+            if res.status_code == 429:
+                self._rate_limited(res)
             if res.status_code >= 400:
                 if res.status_code in (401, 403, 404) or res.status_code >= 500:
                     self.mark_offline(f"{self.provider} answered {res.status_code}")
@@ -206,8 +283,17 @@ class AIClient:
         if not self._take(important):
             raise AIUnavailable("AI request budget for this minute is used up")
         payload = self._payload(messages, True, False, max_tokens, temperature, stop)
+        try:
+            async for piece in self._stream(payload, timeout):
+                yield piece
+        except httpx.HTTPError as exc:
+            raise AIUnavailable(f"{type(exc).__name__} talking to {self.provider}") from exc
+
+    async def _stream(self, payload: Dict[str, Any], timeout: float) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=timeout, headers=self._headers(), transport=self._transport) as client:
             async with client.stream("POST", self._url(), json=payload) as res:
+                if res.status_code == 429:
+                    self._rate_limited(res)
                 if res.status_code >= 400:
                     body = (await res.aread()).decode(errors="ignore")[:200]
                     if res.status_code in (401, 403, 404) or res.status_code >= 500:

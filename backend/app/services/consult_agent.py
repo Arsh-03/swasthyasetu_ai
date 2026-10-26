@@ -86,6 +86,15 @@ def agent_of(session: cm.CallSession) -> AgentState:
     return st
 
 
+def _show(shield: pg.Shield, text: str) -> str:
+    """Real names back for the doctor; labels the AI used on its own ("[PATIENT]" with no name) read naturally."""
+    out = shield.restore(text or "") or ""
+    out = re.sub(r"\[PATIENT\]('s)?", lambda m: "the patient" + (m.group(1) or ""), out)
+    out = re.sub(r"\[DOCTOR\]('s)?", lambda m: "the doctor" + (m.group(1) or ""), out)
+    out = re.sub(r"(^|[.!?]\s+)the (patient|doctor)", lambda m: m.group(1) + "The " + m.group(2), out)
+    return out
+
+
 def _fid(key: str, text: str) -> str:
     return hashlib.sha1(f"{key}|{text.lower()}".encode()).hexdigest()[:12]
 
@@ -118,7 +127,7 @@ def _add_fact(st: AgentState, key: str, text: str, source: str, shield: pg.Shiel
     text = re.sub(r"(?i)^(?:allerg(?:y|ies)|current medications?|medications?|family history|complaints?)\s*:\s*", "", text)
     if len(text) < 3:
         return None
-    shown = shield.restore(text) or text
+    shown = _show(shield, text) or text
     fid = _fid(key, shown)
     if fid in st.seen:
         return None
@@ -130,7 +139,7 @@ def _add_fact(st: AgentState, key: str, text: str, source: str, shield: pg.Shiel
 
 
 def _add_suggestion(st: AgentState, kind: str, text: str, shield: pg.Shield) -> Optional[Dict[str, Any]]:
-    text = (shield.restore(str(text or "")) or "").strip()
+    text = _show(shield, str(text or "")).strip()
     kind = str(kind or "ASK").upper()
     if len(text) < 5 or kind not in ("ASK", "CHECK", "SAFETY", "NOTE"):
         return None
@@ -212,7 +221,12 @@ async def run_turn(session: cm.CallSession, notify: Optional[Notify] = None, for
                 st.memory = " ".join(memory.split()[:MEMORY_WORDS + 40])
         # Rules always run too: they catch what the model skipped and keep working with no AI at all.
         for it in cm.extract_items(new_lines):
-            fact = _add_fact(st, KIND_TO_KEY.get(it.kind, "history"), it.text, "rules", shield)
+            key = KIND_TO_KEY.get(it.kind, "history")
+            # Skip what the AI already wrote under this heading (no "Fever x 4 days" + "Fever for 4 days").
+            same = " ".join(f["text"] for f in st.facts if f["key"] == key).lower()
+            if same and _covered(re.sub(r"(?i)^(?:allerg(?:y|ies)|current medications?|medications?)\s*:\s*", "", it.text), same):
+                continue
+            fact = _add_fact(st, key, it.text, "rules", shield)
             if fact:
                 new_facts.append(fact)
         if not data:
@@ -288,7 +302,7 @@ async def finish(session: cm.CallSession) -> Dict[str, Any]:
             shield.release("consult_summary", messages)
             data = await ai.chat_json(messages, max_tokens=900, timeout=60.0, important=True)
             if data.get("summary"):
-                final = {k: (shield.restore(v) if isinstance(v, str) else [shield.restore(str(x)) for x in v])
+                final = {k: (_show(shield, v) if isinstance(v, str) else [_show(shield, str(x)) for x in v])
                          for k, v in data.items() if k in ("summary", "key_points", "considerations", "follow_up", "gaps")}
                 engine = "ai"
         except (pg.OutboundBlocked, AIUnavailable, ValueError, asyncio.TimeoutError, OSError):
@@ -310,7 +324,7 @@ async def finish(session: cm.CallSession) -> Dict[str, Any]:
                  "follow_up": by_key["follow_up"], "gaps": gaps}
     final.setdefault("gaps", gaps)
     final["engine"] = engine
-    final["memory"] = shield.restore(st.memory)
+    final["memory"] = _show(shield, st.memory)
     st.final = final
     return final
 
@@ -323,7 +337,7 @@ def view(session: cm.CallSession) -> Dict[str, Any]:
         "session_id": session.id, "encounter_id": session.encounter_id,
         "transcript": [{"speaker": l.segment.speaker, "text": l.segment.text, "at_ms": l.segment.start_ms} for l in session.lines],
         "pending_lines": len(session.lines) - st.processed, "busy": st.running,
-        "memory": shield.restore(st.memory), "facts": st.facts, "missed": missed(session),
+        "memory": _show(shield, st.memory), "facts": st.facts, "missed": missed(session),
         "suggestions": st.suggestions[-8:], "alerts": st.alerts, "turns": st.turns[-20:], "final": st.final,
         "identifiers_removed": session.deid.summary(), "ai": ai.info(),
         "batch": {"min_lines": BATCH_MIN_LINES, "max_wait_s": BATCH_MAX_WAIT_S},

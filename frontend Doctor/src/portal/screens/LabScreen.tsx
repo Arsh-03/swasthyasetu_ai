@@ -27,7 +27,7 @@ interface LabState {
   pending_lines: number; busy: boolean; memory: string; facts: LabFact[]; missed: LabFact[];
   suggestions: { id: string; kind: string; text: string }[]; alerts: LabAlert[]; turns: LabTurn[];
   identifiers_removed: Record<string, number>;
-  ai: { provider: string; model: string; online: boolean; destination: string; detail: string };
+  ai: { provider: string; model: string; online: boolean; destination: string; detail: string; rate_limited_for_s?: number; downloading_model?: boolean };
   batch: { min_lines: number; max_wait_s: number };
   final?: LabFinal | null; structured?: Structured;
 }
@@ -81,7 +81,13 @@ export function LabScreen() {
   sessionRef.current = state?.session_id ?? null;
 
   useEffect(() => {
-    api<LabStatus>('/status').then(setStatus).catch(e => setError((e as Error).message));
+    const load = (first: boolean) => api<LabStatus>('/status').then(st => {
+      setStatus(st);
+      if (first && st.speech_server) setEngine('whisper');      // your own Whisper server is the better default
+    }).catch(e => { if (first) setError((e as Error).message); });
+    void load(true);
+    const id = window.setInterval(() => void load(false), 15000);  // e.g. Colab finished loading the model
+    return () => window.clearInterval(id);
   }, []);
 
   // Poll while a session is open (batches run on the server; this also picks up Whisper transcripts).
@@ -118,9 +124,9 @@ export function LabScreen() {
 
   useEffect(() => () => stopListening(), [stopListening]);
 
-  const startListening = async (sid: string) => {
+  const startListening = async (sid: string, mode: 'browser' | 'whisper' = engine) => {
     setError(null);
-    if (engine === 'whisper') {
+    if (mode === 'whisper') {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
         const rec = new ChunkRecorder(stream, sid, msg => setError(msg), 'patient');
@@ -147,7 +153,20 @@ export function LabScreen() {
       }
       setInterim(live);
     };
-    rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') setError(`Speech recognition: ${e.error}`); };
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech' || e.error === 'aborted') return;
+      if (e.error === 'network' && status?.speech_server) {
+        // Chrome's recognizer needs Google's servers; use your Whisper server instead.
+        wantListen.current = false;
+        rec.stop();
+        recRef.current = null;
+        setEngine('whisper');
+        void startListening(sid, 'whisper').then(() =>
+          setError('Chrome speech could not reach Google, so the lab switched to your Whisper server.'));
+        return;
+      }
+      setError(`Speech recognition: ${e.error}${e.error === 'network' ? ' (Chrome needs Google’s speech servers; start your Whisper server to use it instead)' : ''}`);
+    };
     // Chrome stops after a pause: start again while you're still "listening".
     rec.onend = () => { if (wantListen.current) { try { rec.start(); } catch { /* already running */ } } };
     wantListen.current = true;
@@ -207,7 +226,8 @@ export function LabScreen() {
 
       <Card className="flex flex-wrap items-center gap-3 p-4">
         <Pill tone={ai?.online ? 'success' : 'warning'} dot
-          label={ai ? (ai.online ? `AI: ${ai.provider} · ${ai.model}` : `AI offline (${ai.provider || 'none'}) · rules engine`) : 'Checking AI…'} />
+          label={ai ? (ai.online && !ai.rate_limited_for_s ? `AI: ${ai.provider} · ${ai.model}${ai.detail ? ` · ${ai.detail}` : ''}`
+            : `AI ${ai.rate_limited_for_s ? 'paused' : 'offline'} (${ai.provider || 'none'}) · rules engine${ai.detail ? ` · ${ai.detail}` : ''}`) : 'Checking AI…'} />
         <Pill tone={status?.speech_server ? 'success' : 'neutral'} dot label={status?.speech_server ? 'Whisper server online' : 'Whisper server offline'} />
         {ai?.destination === 'third_party' && <Pill tone="teal" icon="shieldCheck" label="Third-party AI: masked text only (SETU-Shield)" />}
         <span className="flex-1" />

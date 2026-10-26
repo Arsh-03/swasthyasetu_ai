@@ -64,6 +64,44 @@ def test_budget_keeps_room_for_important_requests():
     asyncio.run(run())
 
 
+def test_rate_limit_and_timeouts_fall_back():
+    async def run():
+        c = make()
+        def limited(request):
+            if request.url.path.endswith("/models"):
+                return httpx.Response(200, json={"data": []})
+            return httpx.Response(429, headers={"Retry-After": "30"}, json={"error": "quota"})
+        c._transport = httpx.MockTransport(limited)
+        try:
+            await c.chat([{"role": "user", "content": "x"}])
+            raise AssertionError("429 not reported")
+        except AIUnavailable:
+            pass
+        assert c.info()["rate_limited_for_s"] >= 25, c.info()           # pauses as long as the provider asked
+        try:
+            await c.chat([{"role": "user", "content": "x"}])
+            raise AssertionError("request sent during the cooldown")
+        except AIUnavailable as exc:
+            assert "budget" in str(exc)
+        c._cooldown_until = 0
+        def slow(request):
+            raise httpx.ReadTimeout("slow", request=request)
+        c._transport = httpx.MockTransport(slow)
+        for call in (c.chat([{"role": "user", "content": "x"}]),):
+            try:
+                await call
+                raise AssertionError("timeout not converted")
+            except AIUnavailable:
+                pass
+        try:
+            async for _ in c.stream_chat([{"role": "user", "content": "x"}]):
+                pass
+            raise AssertionError("stream timeout not converted")
+        except AIUnavailable:
+            pass
+    asyncio.run(run())
+
+
 def test_parse_json():
     assert parse_json('Sure! {"a": 1} hope that helps') == {"a": 1}
     assert parse_json("not json") == {}
