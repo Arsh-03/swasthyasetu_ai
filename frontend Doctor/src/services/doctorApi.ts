@@ -111,6 +111,18 @@ export interface PatientDetail {
   open_consultation: PatientSummary | null;
   cancelled: Appointment[];
   readings: VitalReading[];
+  /** The patient's other doctors (a patient can see several, one per health issue). No clinical details. */
+  care_team?: CareTeamDoctor[];
+}
+
+export interface CareTeamDoctor {
+  practitioner_id: string;
+  name: string;
+  department: string;
+  department_name: string;
+  facility: string;
+  reason: string;
+  next_appointment_at: string | null;
 }
 
 export interface VisitDetail {

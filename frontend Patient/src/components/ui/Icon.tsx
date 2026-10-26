@@ -67,6 +67,21 @@ import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle
 import { WindIcon } from 'phosphor-react-native/src/icons/Wind';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
 import { UploadSimpleIcon } from 'phosphor-react-native/src/icons/UploadSimple';
+import { HeartIcon } from 'phosphor-react-native/src/icons/Heart';
+import { EyeIcon } from 'phosphor-react-native/src/icons/Eye';
+import { EarIcon } from 'phosphor-react-native/src/icons/Ear';
+import { ToothIcon } from 'phosphor-react-native/src/icons/Tooth';
+import { BabyIcon } from 'phosphor-react-native/src/icons/Baby';
+import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
+import { GenderFemaleIcon } from 'phosphor-react-native/src/icons/GenderFemale';
+import { HandIcon } from 'phosphor-react-native/src/icons/Hand';
+import { HospitalIcon } from 'phosphor-react-native/src/icons/Hospital';
+import { CalendarPlusIcon } from 'phosphor-react-native/src/icons/CalendarPlus';
+import { CalendarCheckIcon } from 'phosphor-react-native/src/icons/CalendarCheck';
+import { CalendarXIcon } from 'phosphor-react-native/src/icons/CalendarX';
+import { MapPinIcon } from 'phosphor-react-native/src/icons/MapPin';
+import { UserMinusIcon } from 'phosphor-react-native/src/icons/UserMinus';
+import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { colors } from '../../theme/tokens';
 import { checkIconContrast } from '../../utils/devChecks';
 
@@ -155,6 +170,23 @@ const REGISTRY = {
   joint: BoneIcon,
   headache: BrainIcon,
   nausea: SmileySadIcon,
+
+  // OPD departments & booking (My Doctors)
+  heart: HeartIcon,
+  eye: EyeIcon,
+  ear: EarIcon,
+  tooth: ToothIcon,
+  baby: BabyIcon,
+  drop: DropIcon,
+  female: GenderFemaleIcon,
+  hand: HandIcon,
+  hospital: HospitalIcon,
+  calendarPlus: CalendarPlusIcon,
+  calendarCheck: CalendarCheckIcon,
+  calendarX: CalendarXIcon,
+  mapPin: MapPinIcon,
+  personRemove: UserMinusIcon,
+  plus: PlusIcon,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof REGISTRY;

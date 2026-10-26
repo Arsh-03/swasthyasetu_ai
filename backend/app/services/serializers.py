@@ -75,4 +75,11 @@ def appointment_to_dict(apt: Appointment) -> Dict[str, Any]:
         "status": apt.status,
         "instructionsForPatient": apt.instructions_json or [],
         "isRescheduled": bool(apt.is_rescheduled),
+        # Several doctors per patient: which doctor, which department, and the real start time
+        "practitionerId": apt.practitioner_id,
+        "department": apt.department or "",
+        "scheduledAt": as_aware(apt.scheduled_at),
+        "durationMinutes": apt.duration_minutes or 20,
+        "visitStatus": apt.visit_status or "scheduled",
+        "encounterId": apt.encounter_id,
     }

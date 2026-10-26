@@ -61,10 +61,15 @@ class Practitioner(Base):
     facility = Column(String(200), nullable=True)
     credential_status = Column(String(20), default="verified")
     created_at = Column(DateTime(timezone=True), default=utc_now)
+    # OPD department id from app/care_catalog.py ('cardiology', 'dermatology', ...)
+    department = Column(String(40), nullable=True, index=True)
+    experience_years = Column(Integer, nullable=True)
+    languages_json = Column(JSONType, nullable=True)  # ["en", "kn", "hi"]
 
     user = relationship("User", back_populates="practitioner_profile")
     encounters = relationship("Encounter", back_populates="practitioner")
     consents = relationship("Consent", back_populates="practitioner")
+    settings = relationship("PractitionerSettings", back_populates="practitioner", uselist=False)
 
 
 class Representative(Base):
@@ -212,6 +217,25 @@ class Appointment(Base):
     # The consultation (call room, notes) this appointment opens; set when the doctor opens it.
     encounter_id = Column(String(36), nullable=True)
     visit_status = Column(String(20), default="scheduled")  # 'scheduled', 'completed', 'cancelled', 'no_show'
+    department = Column(String(40), nullable=True)  # the doctor's OPD department at booking time
+    booked_by = Column(String(20), nullable=True)  # 'patient' | 'doctor'
+
+
+class CareTeamMember(Base):
+    """A doctor the patient sees for one of their health issues (their "My Doctors" list).
+    Added when the patient books with a new doctor; a patient can have several doctors at once."""
+    __tablename__ = "care_team_members"
+    __table_args__ = (UniqueConstraint("patient_id", "practitioner_id"),)
+
+    member_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), nullable=False, index=True)
+    department = Column(String(40), nullable=True)
+    issue_id = Column(String(40), nullable=True)  # health issue id from app/care_catalog.py
+    reason = Column(String(200), nullable=True)  # what this doctor looks after, e.g. "Kidney stone"
+    status = Column(String(20), default="active")  # 'active', 'removed'
+    added_by = Column(String(20), default="patient")  # 'patient', 'doctor', 'system'
+    created_at = Column(DateTime(timezone=True), default=utc_now)
 
 
 class DoseLog(Base):
@@ -262,6 +286,8 @@ class PractitionerSettings(Base):
     # {"weekly": {"mon": [{"start": "09:00", "end": "13:00"}], ...}, "leaves": [{"id", "start", "end", "reason"}]}
     availability_json = Column(JSONType, default=dict)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    practitioner = relationship("Practitioner", back_populates="settings")
 
 
 class ChatMessage(Base):

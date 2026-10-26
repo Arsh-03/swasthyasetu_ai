@@ -10,14 +10,15 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select, update
+from sqlalchemy import desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import (
     Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, Notification,
-    PatientProfile, Practitioner, PractitionerSettings, User, VitalReading,
+    CareTeamMember, PatientProfile, Practitioner, PractitionerSettings, User, VitalReading,
 )
+from app.care_catalog import department_for_specialty, department_name
 from app.services.auth_dependencies import require_doctor
 from app.services.connection_manager import ws_manager
 from app.services.notifications import notification_to_dict
@@ -292,6 +293,7 @@ async def _tell_patient(apt: Appointment, event: str) -> None:
         "appointment_id": apt.appointment_id, "doctor_name": apt.doctor_name, "date": apt.date_label,
         "time": apt.time_label, "relativeTime": apt.relative_label, "mode": apt.mode, "facility": apt.facility,
         "agenda": apt.agenda, "status": apt.status, "instructions": apt.instructions_json,
+        "practitioner_id": apt.practitioner_id, "visit_status": apt.visit_status,
     })
 
 
@@ -309,6 +311,25 @@ async def book_appointment(req: AppointmentIn, current_doctor: Dict[str, Any] = 
     problem = _availability_problem(settings_row.availability_json or {}, start, req.duration_minutes, req.utc_offset_minutes)
     if problem and not req.force:
         raise HTTPException(status_code=409, detail=problem)
+    end = start + timedelta(minutes=req.duration_minutes or 20)
+
+    def overlaps(a: Appointment) -> bool:
+        a0 = as_aware(a.scheduled_at)
+        return a0 < end and a0 + timedelta(minutes=a.duration_minutes or 20) > start
+
+    window = select(Appointment).where(
+        or_(Appointment.visit_status == "scheduled", Appointment.visit_status.is_(None)),
+        Appointment.status != "Cancelled by Patient",
+        Appointment.status != "Cancelled by Doctor",
+        Appointment.scheduled_at.is_not(None),
+        Appointment.scheduled_at > start - timedelta(hours=4),
+        Appointment.scheduled_at < end,
+    )
+    if not req.force:
+        if any(overlaps(a) for a in (await db.execute(window.where(Appointment.practitioner_id == me))).scalars()):
+            raise HTTPException(status_code=409, detail="You already have another appointment scheduled at this time.")
+        if any(overlaps(a) for a in (await db.execute(window.where(Appointment.patient_id == profile.patient_id))).scalars()):
+            raise HTTPException(status_code=409, detail="The patient already has another appointment scheduled at this time.")
     doctor = await db.get(Practitioner, me)
     date_label, time_label = labels_for(start, req.utc_offset_minutes)
     apt = Appointment(
@@ -317,7 +338,8 @@ async def book_appointment(req: AppointmentIn, current_doctor: Dict[str, Any] = 
         facility=doctor.facility if doctor else None, date_label=date_label, time_label=time_label,
         relative_label=f"Booked for {date_label}", mode=req.mode, agenda=req.agenda or "",
         status="Pending Confirmation", scheduled_at=start, duration_minutes=req.duration_minutes,
-        visit_status="scheduled", instructions_json=[],
+        visit_status="scheduled", instructions_json=[], booked_by="doctor",
+        department=(doctor.department or department_for_specialty(doctor.specialty)) if doctor else None,
     )
     db.add(apt)
     db.add(AuditEvent(actor_id=me, action="APPOINTMENT_BOOKED", resource_id=apt.appointment_id,
@@ -341,6 +363,26 @@ async def change_appointment(appointment_id: str, req: AppointmentIn,
                                         req.duration_minutes, req.utc_offset_minutes)
         if problem and not req.force:
             raise HTTPException(status_code=409, detail=problem)
+        end = start + timedelta(minutes=req.duration_minutes or apt.duration_minutes or 20)
+
+        def overlaps(a: Appointment) -> bool:
+            a0 = as_aware(a.scheduled_at)
+            return a0 < end and a0 + timedelta(minutes=a.duration_minutes or 20) > start
+
+        window = select(Appointment).where(
+            Appointment.appointment_id != appointment_id,
+            or_(Appointment.visit_status == "scheduled", Appointment.visit_status.is_(None)),
+            Appointment.status != "Cancelled by Patient",
+            Appointment.status != "Cancelled by Doctor",
+            Appointment.scheduled_at.is_not(None),
+            Appointment.scheduled_at > start - timedelta(hours=4),
+            Appointment.scheduled_at < end,
+        )
+        if not req.force:
+            if any(overlaps(a) for a in (await db.execute(window.where(Appointment.practitioner_id == me))).scalars()):
+                raise HTTPException(status_code=409, detail="You already have another appointment scheduled at this time.")
+            if any(overlaps(a) for a in (await db.execute(window.where(Appointment.patient_id == apt.patient_id))).scalars()):
+                raise HTTPException(status_code=409, detail="The patient already has another appointment scheduled at this time.")
         apt.scheduled_at = start
         apt.duration_minutes = req.duration_minutes
         apt.date_label, apt.time_label = labels_for(start, req.utc_offset_minutes)
@@ -367,14 +409,16 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
                            db: AsyncSession = Depends(get_db)):
     """The consultation (call room) for this appointment, opening one if needed.
 
-    The patient app joins the patient's oldest open consultation, so an existing open one is reused."""
+    The patient's open consultation with this doctor (or an untaken triage one) is reused, so the patient
+    app finds the same call room. Consultations with the patient's other doctors are left alone."""
     me = current_doctor["user_id"]
     apt = await _own_appointment(db, appointment_id, me)
     enc = await db.get(Encounter, apt.encounter_id) if apt.encounter_id else None
     created = False
     if not enc or enc.status not in OPEN:
         enc = (await db.execute(
-            select(Encounter).where(Encounter.patient_id == apt.patient_id, Encounter.status.in_(OPEN))
+            select(Encounter).where(Encounter.patient_id == apt.patient_id, Encounter.status.in_(OPEN),
+                                    or_(Encounter.practitioner_id == me, Encounter.practitioner_id.is_(None)))
             .order_by(Encounter.start_time)
         )).scalars().first()
     if not enc:
@@ -398,7 +442,8 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
     await db.commit()
     if created:
         # The patient app looks up its call room again and can now receive the call.
-        await ws_manager.send_to([apt.patient_id], {"type": "call_room_ready", "encounter_id": enc.encounter_id})
+        await ws_manager.send_to([apt.patient_id], {"type": "call_room_ready", "encounter_id": enc.encounter_id,
+                                                    "doctor_name": apt.doctor_name, "practitioner_id": me})
     profile = await db.get(PatientProfile, apt.patient_id)
     user = await db.get(User, apt.patient_id)
     summary = queue_style_summary(enc, profile, user)
@@ -461,6 +506,30 @@ def _visit_row(enc: Encounter, note: Optional[ClinicalNote], apt: Optional[Appoi
     }
 
 
+async def _care_team_brief(db: AsyncSession, patient_id: str, me: str, apts, encs) -> List[Dict[str, Any]]:
+    """The patient's other doctors: names, departments and what they look after (no clinical details;
+    their records still need the patient's consent)."""
+    members = {m.practitioner_id: m for m in (await db.execute(
+        select(CareTeamMember).where(CareTeamMember.patient_id == patient_id))).scalars()}
+    ids = {a.practitioner_id for a in apts} | {e.practitioner_id for e in encs} | set(members)
+    ids = {i for i in ids if i and i != me and not (i in members and members[i].status == "removed")}
+    if not ids:
+        return []
+    docs = (await db.execute(select(Practitioner).where(Practitioner.practitioner_id.in_(list(ids))))).scalars().all()
+    now = now_utc()
+    out = []
+    for d in docs:
+        dept = d.department or department_for_specialty(d.specialty)
+        nxt = min((as_aware(a.scheduled_at) for a in apts if a.practitioner_id == d.practitioner_id
+                   and a.visit_status == "scheduled" and a.scheduled_at and as_aware(a.scheduled_at) > now), default=None)
+        member = members.get(d.practitioner_id)
+        out.append({"practitioner_id": d.practitioner_id, "name": d.display_name, "department": dept,
+                    "department_name": department_name(dept), "facility": d.facility or "",
+                    "reason": (member.reason if member else "") or "", "next_appointment_at": nxt})
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
 @router.get("/patients/{patient_id}")
 async def patient_detail(patient_id: str, current_doctor: Dict[str, Any] = Depends(require_doctor),
                          db: AsyncSession = Depends(get_db)):
@@ -484,6 +553,7 @@ async def patient_detail(patient_id: str, current_doctor: Dict[str, Any] = Depen
     chart = dict(profile.chart_json or {})
     chart.pop("nextAppointment", None)
     return {
+        "care_team": await _care_team_brief(db, patient_id, current_doctor["user_id"], apts, encs),
         "patient": patient_brief(profile, user),
         "chart": chart or None,
         "upcoming": [appointment_out(a, profile) for a in upcoming],

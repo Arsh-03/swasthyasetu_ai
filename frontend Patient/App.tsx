@@ -33,6 +33,10 @@ import { PatientLoginView } from './src/components/PatientLoginView';
 import { IncomingCallModal } from './src/components/IncomingCallModal';
 import { RecordingConsentSheet } from './src/components/RecordingConsentSheet';
 import { RemoteAudio } from './src/components/RemoteAudio';
+import { MyDoctorsView, type MyDoctorsTab } from './src/components/doctors/MyDoctorsView';
+import { DoctorDetailView } from './src/components/doctors/DoctorDetailView';
+import { AddDoctorFlow } from './src/components/doctors/AddDoctorFlow';
+import { doctorShortName } from './src/utils/departments';
 import { useConsultationCall } from './src/services/call/useConsultationCall';
 import { enableWebRTC } from './src/services/webrtcPlatform';
 
@@ -40,8 +44,9 @@ import { enableWebRTC } from './src/services/webrtcPlatform';
  *  (Expo Go doesn't include react-native-webrtc, so there the app explains where calls work.) */
 const CALLS_SUPPORTED = enableWebRTC();
 
-type TabType = 'home' | 'careplan' | 'chat' | 'records' | 'whosaw';
-type ScreenType = 'home' | 'call' | 'careplan' | 'chat' | 'heartrate' | 'whosaw' | 'records';
+type TabType = 'home' | 'careplan' | 'chat' | 'records' | 'doctors';
+// doctors = My Doctors tab · doctor = one doctor's page · addDoctor = add a doctor / book a visit
+type ScreenType = 'home' | 'call' | 'careplan' | 'chat' | 'heartrate' | 'whosaw' | 'records' | 'doctors' | 'doctor' | 'addDoctor';
 
 // Dev-only design reference. A conditional require (folded away when __DEV__ is false)
 // keeps it out of production bundles, which a static import would not.
@@ -88,6 +93,18 @@ function PatientApp() {
   }, []);
   // Where the Privacy screen's back button should return to
   const [privacyBackTarget, setPrivacyBackTarget] = useState<'home' | 'records'>('home');
+  // ---- My Doctors: several doctors, one per health issue ----
+  const [doctorsTab, setDoctorsTab] = useState<MyDoctorsTab>('doctors');
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+  const [bookDoctorId, setBookDoctorId] = useState<string | null>(null);
+  // Chat opened from a doctor's card goes straight to that conversation and back to where it came from
+  const [chatDoctorId, setChatDoctorId] = useState<string | null>(null);
+  const [chatBack, setChatBack] = useState<ScreenType>('home');
+  // Bumped whenever appointments change, so the My Doctors screens reload
+  const [careKey, setCareKey] = useState(0);
+  // Which doctor a "video visit now" request goes to (null = the general triage queue)
+  const [intakeDoctor, setIntakeDoctor] = useState<{ id: string | null; name: string } | null>(null);
+  const [otherUpcoming, setOtherUpcoming] = useState<NextAppointment[]>([]);
   const [isIntakeVisible, setIsIntakeVisible] = useState(false);
   const [isEmergencyVisible, setIsEmergencyVisible] = useState(false);
   const [incomingConsent, setIncomingConsent] = useState<ConsentRequestData | null>(null);
@@ -113,9 +130,9 @@ function PatientApp() {
   const inCall = call.callState === 'calling' || call.callState === 'in_call';
   const callDoctorName = callRoom?.doctor_name || appointmentInfo?.doctorName || t('yourDoctor');
 
-  const refreshCallRoom = async () => {
+  const refreshCallRoom = async (doctorId?: string | null) => {
     try {
-      const room = await patientApi.getActiveEncounter();
+      const room = await patientApi.getActiveEncounter(doctorId);
       setCallRoom(room.encounter_id ? { encounter_id: room.encounter_id, doctor_name: room.doctor_name } : null);
       return room.encounter_id ? room : null;
     } catch {
@@ -161,21 +178,47 @@ function PatientApp() {
     specialty: apt.specialty,
     agenda: apt.agenda,
     isRescheduled: apt.isRescheduled,
+    practitionerId: apt.practitionerId,
+    department: apt.department,
+    mode: apt.mode,
   });
 
-  // Load the next appointment and any consent requests that arrived while offline
-  useEffect(() => {
-    if (!user) return;
+  // Soonest appointment with any doctor for the Today card; the rest go under "Other upcoming"
+  const loadAppointments = useCallback(() => {
     patientApi
       .getNextAppointment()
       .then((apt) => {
         setAppointmentInfo(apt ? toAppointmentInfo(apt) : undefined);
         setAppointmentStatus('ready');
+        return patientApi
+          .getMyAppointments()
+          .then((all) => setOtherUpcoming(all.upcoming.filter((a) => a.appointmentId !== apt?.appointmentId)));
       })
       .catch(() => {
         setAppointmentInfo(undefined);
         setAppointmentStatus('error');
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const appointmentsChanged = useCallback(() => {
+    loadAppointments();
+    setCareKey((k) => k + 1);
+  }, [loadAppointments]);
+
+  const openIntake = (doctor: { id: string | null; name: string } | null) => {
+    setIntakeDoctor(doctor);
+    setIsIntakeVisible(true);
+  };
+  const openChat = (doctorId: string | null, back: ScreenType) => {
+    setChatDoctorId(doctorId);
+    setChatBack(back);
+    setCurrentScreen('chat');
+  };
+
+  // Load the next appointment and any consent requests that arrived while offline
+  useEffect(() => {
+    if (!user) return;
+    loadAppointments();
     patientApi
       .getPendingConsents()
       .then((pending) => {
@@ -236,26 +279,20 @@ function PatientApp() {
           }
 
           // The doctor opened a meeting room for a new consultation: join its call room.
-          if (data.type === 'call_room_ready') void refreshCallRoom();
+          if (data.type === 'call_room_ready') {
+            if (data.encounter_id) setCallRoom({ encounter_id: String(data.encounter_id), doctor_name: data.doctor_name });
+            else void refreshCallRoom();
+          }
 
-          // When Doctor reschedules next appointment, update in real-time
-          if (
-            (data.type === 'appointment_event' &&
-              (data.event === 'appointment_rescheduled' || data.type === 'appointment_rescheduled')) ||
-            data.event === 'appointment_rescheduled'
-          ) {
-            setAppointmentInfo((prev) => ({
-              ...prev,
-              date: data.date,
-              time: data.time,
-              relativeTime: data.relativeTime || 'Rescheduled',
-              doctorName: data.doctor_name || prev?.doctorName,
-              facility: data.facility || prev?.facility,
-              specialty: data.facility ? data.specialty : prev?.specialty,
-              agenda: data.agenda || prev?.agenda,
-              isRescheduled: true,
-            }));
-            showToast(tr('toastRescheduled', { date: formatDateLabel(data.date, langRef.current), time: data.time }), 'calendar');
+          // Any appointment change with any of the patient's doctors (booked, moved, cancelled): reload them all
+          if (data.type === 'appointment_event' || data.event === 'appointment_rescheduled') {
+            appointmentsChanged();
+            const name = data.doctor_name ? doctorShortName(String(data.doctor_name)) : tr('yourDoctor');
+            if (data.event === 'appointment_rescheduled' && data.visit_status === 'cancelled') {
+              showToast(tr('toastDoctorCancelled', { name }), 'warning');
+            } else if (data.event === 'appointment_rescheduled' && data.date) {
+              showToast(tr('toastRescheduledBy', { name, date: formatDateLabel(data.date, langRef.current), time: data.time }), 'calendar');
+            }
           }
         } catch {
           // ignore non-json
@@ -358,22 +395,22 @@ function PatientApp() {
   }
 
   const activeTab: TabType =
-    currentScreen === 'home' || currentScreen === 'heartrate'
-      ? 'home'
-      : currentScreen === 'careplan'
+    currentScreen === 'careplan'
       ? 'careplan'
-      : currentScreen === 'records'
+      : currentScreen === 'records' || (currentScreen === 'whosaw' && privacyBackTarget === 'records')
       ? 'records'
       : currentScreen === 'chat'
       ? 'chat'
-      : 'whosaw';
+      : currentScreen === 'doctors' || currentScreen === 'doctor' || currentScreen === 'addDoctor'
+      ? 'doctors'
+      : 'home';
 
   const tabs: GlassTab<TabType>[] = [
     { key: 'home', label: t('tabToday'), icon: 'home' },
     { key: 'careplan', label: t('tabMedications'), icon: 'medication' },
     { key: 'chat', label: t('tabChat'), icon: 'chat', badge: chatUnread },
     { key: 'records', label: t('tabRecords'), icon: 'records' },
-    { key: 'whosaw', label: t('tabPrivacy'), icon: 'shieldCheck' },
+    { key: 'doctors', label: t('tabDoctors'), icon: 'doctor' },
   ];
 
   const chromeInsets = {
@@ -393,7 +430,7 @@ function PatientApp() {
               <PatientHeader
                 user={user}
                 onBrandLongPress={openStyleGuide}
-                onOpenProfile={() => setIsIntakeVisible(true)}
+                onOpenProfile={() => openIntake(null)}
                 onLogout={() => {
                   patientApi.clearToken();
                   setUser(null);
@@ -404,7 +441,11 @@ function PatientApp() {
                 tabs={tabs}
                 activeKey={activeTab}
                 onChange={(key) => {
-                  if (key === 'whosaw') setPrivacyBackTarget('home');
+                  if (key === 'chat') {
+                    setChatDoctorId(null);
+                    setChatBack('home');
+                  }
+                  if (key === 'doctors') setDoctorsTab('doctors');
                   setCurrentScreen(key);
                 }}
               />
@@ -418,14 +459,87 @@ function PatientApp() {
               user={user}
               appointment={appointmentInfo}
               appointmentStatus={appointmentStatus}
-              onJoinCall={() => setIsIntakeVisible(true)}
-              onOpenDoctors={() => setIsIntakeVisible(true)}
+              onJoinCall={() =>
+                openIntake(
+                  appointmentInfo?.practitionerId
+                    ? { id: appointmentInfo.practitionerId, name: appointmentInfo.doctorName || t('yourDoctor') }
+                    : null
+                )
+              }
+              onOpenDoctors={() => {
+                setDoctorsTab('doctors');
+                setCurrentScreen('doctors');
+              }}
               onOpenRecords={() => setCurrentScreen('records')}
               onOpenMedicines={() => setCurrentScreen('careplan')}
-              onOpenFollowUp={() => setCurrentScreen('careplan')}
+              onOpenPrivacy={() => {
+                setPrivacyBackTarget('home');
+                setCurrentScreen('whosaw');
+              }}
               onOpenHeartRate={() => setCurrentScreen('heartrate')}
-              onOpenChat={() => setCurrentScreen('chat')}
+              onOpenChat={() => openChat(null, 'home')}
               onTriggerEmergency={() => setIsEmergencyVisible(true)}
+              otherUpcoming={otherUpcoming}
+              onOpenSchedule={() => {
+                setDoctorsTab('schedule');
+                setCurrentScreen('doctors');
+              }}
+            />
+          )}
+
+          {currentScreen === 'doctors' && (
+            <MyDoctorsView
+              key={doctorsTab}
+              initialTab={doctorsTab}
+              refreshKey={careKey}
+              onOpenDoctor={(id) => {
+                setSelectedDoctorId(id);
+                setCurrentScreen('doctor');
+              }}
+              onAddDoctor={() => {
+                setBookDoctorId(null);
+                setCurrentScreen('addDoctor');
+              }}
+              onBook={(id) => {
+                setBookDoctorId(id);
+                setCurrentScreen('addDoctor');
+              }}
+              onChat={(id) => openChat(id, 'doctors')}
+              onChanged={appointmentsChanged}
+              onNotice={showToast}
+            />
+          )}
+
+          {currentScreen === 'doctor' && selectedDoctorId && (
+            <DoctorDetailView
+              practitionerId={selectedDoctorId}
+              refreshKey={careKey}
+              onBack={() => setCurrentScreen('doctors')}
+              onBook={() => {
+                setBookDoctorId(selectedDoctorId);
+                setCurrentScreen('addDoctor');
+              }}
+              onChat={() => openChat(selectedDoctorId, 'doctor')}
+              onRequestVisit={(name) => openIntake({ id: selectedDoctorId, name })}
+              onChanged={appointmentsChanged}
+              onRemoved={() => {
+                appointmentsChanged();
+                setCurrentScreen('doctors');
+              }}
+              onNotice={showToast}
+            />
+          )}
+
+          {currentScreen === 'addDoctor' && (
+            <AddDoctorFlow
+              key={bookDoctorId ?? 'new'}
+              initialDoctorId={bookDoctorId}
+              onExit={() => setCurrentScreen(bookDoctorId && selectedDoctorId === bookDoctorId ? 'doctor' : 'doctors')}
+              onBooked={appointmentsChanged}
+              onOpenDoctor={(id) => {
+                setSelectedDoctorId(id);
+                setCurrentScreen('doctor');
+              }}
             />
           )}
 
@@ -437,10 +551,16 @@ function PatientApp() {
 
           {currentScreen === 'chat' && (
             <ChatView
-              onBack={() => setCurrentScreen('home')}
+              key={chatDoctorId ?? 'all'}
+              initialDoctorId={chatDoctorId}
+              backLabel={chatBack === 'doctors' || chatBack === 'doctor' ? t('myDoctors') : t('home')}
+              onBack={() => setCurrentScreen(chatBack)}
               chatEvent={chatEvent}
               onEmergency={() => setIsEmergencyVisible(true)}
-              onRequestVisit={() => setIsIntakeVisible(true)}
+              onRequestVisit={() => {
+                setDoctorsTab('doctors');
+                setCurrentScreen('doctors');
+              }}
               onUnreadChanged={refreshChatUnread}
             />
           )}
@@ -469,10 +589,12 @@ function PatientApp() {
       {/* Pre-consultation symptom intake */}
       <SymptomIntakeModal
         visible={isIntakeVisible}
+        doctorName={intakeDoctor ? doctorShortName(intakeDoctor.name) : null}
         onClose={() => setIsIntakeVisible(false)}
         onSubmit={async (symptoms, isRep, notes) => {
+          const doctorId = intakeDoctor?.id ?? null;
           try {
-            await patientApi.submitIntake(symptoms, notes || '', isRep);
+            await patientApi.submitIntake(symptoms, notes || '', isRep, doctorId);
           } catch (err) {
             showToast(t('toastCouldNotSendSymptoms', { error: errorText(err) }), 'error');
             return;
@@ -483,7 +605,7 @@ function PatientApp() {
             return;
           }
           showToast(t('toastTriageComplete'), 'call');
-          if (await refreshCallRoom()) setPendingCallStart(true);
+          if (await refreshCallRoom(doctorId)) setPendingCallStart(true);
         }}
       />
 

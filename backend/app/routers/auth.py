@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm.attributes import flag_modified
+from app.care_catalog import DEPARTMENT_BY_ID, department_for_specialty
 from app.database import get_db
 from app.models.models import User, PatientProfile, Practitioner, Representative, AuditEvent, RecordMetadata
 from app.schemas.schemas import (
@@ -529,7 +530,8 @@ async def register_doctor(req: DoctorRegisterRequest, db: AsyncSession = Depends
         display_name=f"{req.full_name} ({req.qualification})",
         registration_number=req.registration_number,
         specialty=req.specialty,
-        credential_status="verified"
+        credential_status="verified",
+        department=req.department if req.department in DEPARTMENT_BY_ID else department_for_specialty(req.specialty),
     )
     db.add(new_practitioner)
 

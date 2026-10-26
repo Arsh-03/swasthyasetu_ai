@@ -89,6 +89,102 @@ export interface NextAppointment {
   status: string;
   instructionsForPatient: LocalizedText[];
   isRescheduled: boolean;
+  /** A patient can have several doctors: which one, their OPD department and the real start time. */
+  practitionerId?: string | null;
+  department?: string;
+  scheduledAt?: string | null;
+  durationMinutes?: number;
+  visitStatus?: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+  encounterId?: string | null;
+}
+
+// ---- My Doctors (backend/app/routers/care.py) ----
+
+export interface HealthIssue {
+  id: string;
+  department: string;
+  label: Record<string, string>;
+}
+
+export interface DepartmentSummary {
+  id: string;
+  name: Record<string, string>;
+  about: Record<string, string>;
+  doctor_count: number;
+}
+
+export interface FreeSlot {
+  /** ISO start time (UTC) */
+  start: string;
+  /** "9:00 AM" in the clinic's time */
+  time: string;
+}
+
+export interface DoctorCard {
+  practitioner_id: string;
+  name: string;
+  specialty: string;
+  department: string;
+  facility: string;
+  experience_years: number | null;
+  languages: string[];
+  registration_number: string;
+}
+
+export interface DirectoryDoctor extends DoctorCard {
+  next_free: (FreeSlot & { date: string }) | null;
+  in_my_doctors: boolean;
+}
+
+export interface MyDoctor extends DoctorCard {
+  reason: string;
+  issue_id: string | null;
+  added_at: string | null;
+  next_appointment: NextAppointment | null;
+  upcoming_count: number;
+  last_visit_at: string | null;
+  visit_count: number;
+  medicines_count: number;
+  unread_messages: number;
+}
+
+export interface DoctorVisit {
+  encounter_id: string;
+  date: string;
+  mode: string;
+  complaint: string;
+  diagnosis: string;
+  medicine: string;
+  advice: string;
+  follow_up: string;
+}
+
+export interface DoctorMedicine {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  timing: string;
+  duration: string;
+  purpose: string;
+  prescribedDate: string;
+}
+
+export interface MyDoctorDetail {
+  doctor: DoctorCard & { reason: string; issue_id: string | null };
+  upcoming: NextAppointment[];
+  visits: DoctorVisit[];
+  cancelled: NextAppointment[];
+  medicines: DoctorMedicine[];
+  next_free: (FreeSlot & { date: string }) | null;
+}
+
+export interface BookAppointmentInput {
+  practitioner_id: string;
+  scheduled_at: string;
+  mode: 'video' | 'in_person';
+  issue_id?: string | null;
+  reason?: string;
 }
 
 export type DoseSlot = 'morning' | 'afternoon' | 'night' | 'prn';
@@ -106,6 +202,8 @@ export interface CarePlanMedication {
   purpose: LocalizedText;
   schedule: { morning?: boolean; afternoon?: boolean; night?: boolean };
   prescribedBy?: string;
+  /** The doctor who prescribed it, matched to the patient's doctors (department empty if not found). */
+  prescriber?: { practitioner_id: string | null; name: string; department: string };
 }
 
 export interface CarePlan {
@@ -360,8 +458,9 @@ class PatientApiService {
   }
 
   /** The patient's open consultation (where the doctor's call room is). */
-  async getActiveEncounter(): Promise<{ encounter_id: string | null; doctor_name?: string }> {
-    return this.request('/calls/active-encounter');
+  /** The open consultation to join; with `doctorId`, the one with that doctor. */
+  async getActiveEncounter(doctorId?: string | null): Promise<{ encounter_id: string | null; doctor_name?: string; practitioner_id?: string | null }> {
+    return this.request(`/calls/active-encounter${doctorId ? `?doctor_id=${encodeURIComponent(doctorId)}` : ''}`);
   }
 
   async declineConsent(consentId: string) {
@@ -483,11 +582,49 @@ class PatientApiService {
     });
   }
 
-  async submitIntake(symptoms: string[], notes: string, isRepresentative = false) {
+  /** `practitionerId`: which of the patient's doctors the visit is for (none = general triage queue). */
+  async submitIntake(symptoms: string[], notes: string, isRepresentative = false, practitionerId?: string | null) {
     return this.request('/encounters/intake', {
       method: 'POST',
-      body: JSON.stringify({ symptoms, notes, is_representative: isRepresentative }),
+      body: JSON.stringify({ symptoms, notes, is_representative: isRepresentative, practitioner_id: practitionerId || null }),
     });
+  }
+
+  // ---- My Doctors: several doctors, one per health issue (backend/app/routers/care.py) ----
+  async getCareCatalog(): Promise<{ departments: DepartmentSummary[]; issues: HealthIssue[] }> {
+    return this.request('/care/departments');
+  }
+
+  async getDoctors(department: string): Promise<DirectoryDoctor[]> {
+    return this.request(`/care/doctors?department=${encodeURIComponent(department)}`);
+  }
+
+  async getDoctorSlots(practitionerId: string, days = 7): Promise<{ doctor: DoctorCard; days: { date: string; slots: FreeSlot[] }[] }> {
+    return this.request(`/care/doctors/${encodeURIComponent(practitionerId)}/slots?days=${days}`);
+  }
+
+  async bookAppointment(input: BookAppointmentInput): Promise<{ appointment: NextAppointment; new_doctor: boolean }> {
+    return this.request('/care/appointments', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async getMyAppointments(): Promise<{ upcoming: NextAppointment[]; past: NextAppointment[] }> {
+    return this.request('/care/appointments');
+  }
+
+  async cancelAppointment(appointmentId: string): Promise<NextAppointment> {
+    return this.request(`/care/appointments/${encodeURIComponent(appointmentId)}/cancel`, { method: 'POST' });
+  }
+
+  async getMyDoctors(): Promise<MyDoctor[]> {
+    return this.request('/care/my-doctors');
+  }
+
+  async getMyDoctor(practitionerId: string): Promise<MyDoctorDetail> {
+    return this.request(`/care/my-doctors/${encodeURIComponent(practitionerId)}`);
+  }
+
+  async removeDoctor(practitionerId: string): Promise<{ ok: boolean }> {
+    return this.request(`/care/my-doctors/${encodeURIComponent(practitionerId)}/remove`, { method: 'POST' });
   }
 
   async getEncounter(encounterId = 'enc_9481') {

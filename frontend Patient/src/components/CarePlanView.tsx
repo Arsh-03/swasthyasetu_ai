@@ -10,6 +10,8 @@ import { playBirthdayPopperSound, playMedicationAlertSound } from '../utils/soun
 import { triggerBirthdayPopper } from '../utils/confetti';
 import { EmptyMedications } from './illustrations';
 import { SavedSummaries } from './VisitSummary';
+import { DepartmentBadge } from './doctors/DoctorParts';
+import { doctorShortName } from '../utils/departments';
 import {
   AppText,
   AudioListenButton,
@@ -247,7 +249,12 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
     }
   };
 
-  const subtitle = [plan?.doctor_name, localized(plan?.facility, lang)].filter(Boolean).join(' • ');
+  // Medicines can come from several doctors (one per health issue)
+  const prescribers = new Set((plan?.medications || []).map((m) => m.prescriber?.name || m.prescribedBy).filter(Boolean));
+  const subtitle =
+    prescribers.size > 1
+      ? t('medsFromDoctors', { n: prescribers.size })
+      : [plan?.doctor_name, localized(plan?.facility, lang)].filter(Boolean).join(' • ');
 
   return (
     <View style={styles.container}>
@@ -407,7 +414,15 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
                       {nameLocal}
                     </AppText>
                   ) : null}
-                  <Badge label={t(look.time)} tone={look.tone} icon="clock" style={styles.slotBadge} />
+                  <View style={styles.medBadges}>
+                    <Badge label={t(look.time)} tone={look.tone} icon="clock" />
+                    {row.med.prescriber?.department ? <DepartmentBadge department={row.med.prescriber.department} /> : null}
+                  </View>
+                  {row.med.prescriber?.name || row.med.prescribedBy ? (
+                    <AppText variant="caption" color="inkMuted" numberOfLines={1}>
+                      {t('prescribedBy', { name: doctorShortName(row.med.prescriber?.name || row.med.prescribedBy || '') })}
+                    </AppText>
+                  ) : null}
                 </ListRow>
               </React.Fragment>
             );
@@ -543,9 +558,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  slotBadge: {
+  medBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
     marginTop: spacing.xs,
-    alignSelf: 'flex-start',
   },
   doseBtnContainer: {
     alignItems: 'center',

@@ -1,7 +1,7 @@
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -18,14 +18,15 @@ async def get_patient_queue(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Tele-triage queue: every patient with an open (queued / in-progress) encounter,
-    most urgent first, then longest waiting.
+    Tele-triage queue: patients with an open (queued / in-progress) encounter with this doctor, or one
+    no doctor has taken yet (triage); most urgent first, then longest waiting.
     """
     stmt = (
         select(Encounter, PatientProfile, User)
         .join(PatientProfile, Encounter.patient_id == PatientProfile.patient_id)
         .join(User, User.user_id == PatientProfile.patient_id)
-        .where(Encounter.status.in_(["queued", "in_progress"]))
+        .where(Encounter.status.in_(["queued", "in_progress"]),
+               or_(Encounter.practitioner_id == current_doctor["user_id"], Encounter.practitioner_id.is_(None)))
         .order_by(Encounter.start_time)
     )
     rows = (await db.execute(stmt)).all()
@@ -76,14 +77,11 @@ async def get_patient_chart(
     if not profile:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    apt = (
-        await db.execute(
-            select(Appointment)
-            .where(Appointment.patient_id == patient_id)
-            .order_by(desc(Appointment.updated_at))
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    # A doctor sees their own next appointment with this patient (the patient may have several doctors)
+    apt_q = select(Appointment).where(Appointment.patient_id == patient_id)
+    if current_user["role"] == "doctor":
+        apt_q = apt_q.where(Appointment.practitioner_id == current_user["user_id"])
+    apt = (await db.execute(apt_q.order_by(desc(Appointment.updated_at)).limit(1))).scalar_one_or_none()
 
     chart = dict(profile.chart_json or {})
     if chart:

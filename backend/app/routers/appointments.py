@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import desc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -20,12 +21,15 @@ async def get_my_next_appointment(
     current_patient: Dict[str, Any] = Depends(require_patient),
     db: AsyncSession = Depends(get_db),
 ):
-    """The logged-in patient's upcoming appointment (null if none is booked)."""
+    """The logged-in patient's soonest upcoming appointment with any of their doctors (null if none).
+    All of them: GET /care/appointments."""
     apt = (
         await db.execute(
             select(Appointment)
-            .where(Appointment.patient_id == current_patient["user_id"])
-            .order_by(desc(Appointment.updated_at))
+            .where(Appointment.patient_id == current_patient["user_id"],
+                   Appointment.visit_status == "scheduled",
+                   Appointment.scheduled_at >= datetime.now(timezone.utc) - timedelta(minutes=30))
+            .order_by(Appointment.scheduled_at)
             .limit(1)
         )
     ).scalar_one_or_none()
