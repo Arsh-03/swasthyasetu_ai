@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { colors, radii, spacing, tints, touch } from '../theme/tokens';
 import { patientApi, type ChatMessage, type ChatThread, type ChatThreadSummary } from '../services/api';
@@ -45,23 +45,27 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
       .catch(() => setError(t('chatLoadError')));
   }, [chatEvent, t]);
 
-  const load = useCallback(async (id: string) => {
-    try {
-      const th = await patientApi.getChatThread(id);
-      setThread(th);
-      setError(null);
-      if (th.messages.some((m) => m.sender === 'doctor' && !m.read)) {
-        await patientApi.markChatRead(id).catch(() => undefined);
-        onUnreadChanged();
-      }
-    } catch {
-      setError(t('chatLoadError'));
-    }
-  }, [onUnreadChanged, t]);
-
   useEffect(() => {
-    if (doctorId) void load(doctorId);
-  }, [doctorId, chatEvent, load]);
+    if (!doctorId) return;
+    let cancelled = false;
+    patientApi
+      .getChatThread(doctorId)
+      .then((th) => {
+        if (cancelled) return;
+        setThread(th);
+        setError(null);
+        if (th.messages.some((m) => m.sender === 'doctor' && !m.read)) {
+          patientApi.markChatRead(doctorId).catch(() => undefined);
+          onUnreadChanged();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(t('chatLoadError'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, chatEvent, onUnreadChanged, t]);
 
   const send = async () => {
     const body = draft.trim();
