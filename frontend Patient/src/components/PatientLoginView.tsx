@@ -6,6 +6,7 @@ import { patientApi, type PatientUser } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGE_NAMES, t as translate, type SupportedLanguage } from '../utils/translations';
 import { LoginHero } from './illustrations';
+import { PatientSignUpView } from './PatientSignUpView';
 import {
   AppText,
   AudioListenButton,
@@ -80,6 +81,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
   const [showOtpField, setShowOtpField] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorKind, setErrorKind] = useState<SignInErrorKind | null>(null);
+  const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
 
   const handleContinue = async () => {
     if (!showOtpField) {
@@ -90,9 +92,8 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
     setLoading(true);
     setErrorKind(null);
     try {
-      // In demo environment, authenticates via patientApi.loginPatient
-      const cleanId = identifier.includes('@') ? DEMO_MOBILE : identifier;
-      const res = await patientApi.loginPatient(cleanId, 'password123');
+      // Backend matches ABHA address or mobile number. OTP is demo-only, so the demo password is sent.
+      const res = await patientApi.loginPatient(identifier.trim(), 'password123');
       if (res.user) {
         onLoginSuccess(res.user);
       }
@@ -164,90 +165,111 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
         </View>
       </View>
 
-      {/* Sign-in panel */}
-      <NeuPanel radius={radii.xl} style={styles.panel}>
-        <View style={styles.titleRow}>
-          <View style={styles.flex}>
-            <AppText variant="largeTitle">{t('signIn')}</AppText>
-            <AppText variant="footnote" color="inkMuted">
-              {t('signInSubtitle')}
-            </AppText>
-          </View>
-          <AudioListenButton text={listenText} />
-        </View>
-
-        <Stepper
-          accessibilityLabel={t('signInSteps')}
-          current={showOtpField ? 1 : 0}
-          steps={[
-            { icon: authMode === 'abha' ? 'idCard' : 'mobile', label: t('stepId') },
-            { icon: 'key', label: t('stepOtp') },
-          ]}
-        />
-
-        {/* Privacy trust safeguards (informational → inset discs) */}
-        <View style={styles.trustRow}>
-          {trust.map((item) => (
-            <View key={item.icon} style={styles.trustItem}>
-              <IconDisc icon={item.icon} size={52} variant="inset" />
-              <AppText variant="caption" weight={600} color="inkMuted" align="center">
-                {item.label}
-              </AppText>
-            </View>
-          ))}
-        </View>
-
-        {errorKind && <SignInError kind={errorKind} />}
-
-        <SegmentedControl
-          options={[
-            { value: 'abha', label: t('segAbha'), icon: 'idCard' },
-            { value: 'mobile', label: t('segMobile'), icon: 'mobile' },
-          ]}
-          value={authMode}
-          onChange={(mode) => {
-            setAuthMode(mode);
-            setIdentifier(mode === 'abha' ? DEMO_ABHA : DEMO_MOBILE);
+      {mode === 'signUp' && (
+        <PatientSignUpView
+          onSignUpSuccess={onLoginSuccess}
+          onBackToSignIn={() => {
+            setMode('signIn');
+            setErrorKind(null);
           }}
         />
+      )}
 
-        <TextField
-          label={authMode === 'abha' ? t('abhaAddressLabel') : t('mobileNumberLabel')}
-          icon={authMode === 'abha' ? 'idCard' : 'mobile'}
-          value={identifier}
-          onChangeText={setIdentifier}
-          placeholder={authMode === 'abha' ? t('abhaPlaceholder') : DEMO_MOBILE}
-          keyboardType={authMode === 'abha' ? 'email-address' : 'phone-pad'}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+      {/* Sign-in panel */}
+      {mode === 'signIn' && (
+        <NeuPanel radius={radii.xl} style={styles.panel}>
+          <View style={styles.titleRow}>
+            <View style={styles.flex}>
+              <AppText variant="largeTitle">{t('signIn')}</AppText>
+              <AppText variant="footnote" color="inkMuted">
+                {t('signInSubtitle')}
+              </AppText>
+            </View>
+            <AudioListenButton text={listenText} />
+          </View>
 
-        {showOtpField && (
+          <Stepper
+            accessibilityLabel={t('signInSteps')}
+            current={showOtpField ? 1 : 0}
+            steps={[
+              { icon: authMode === 'abha' ? 'idCard' : 'mobile', label: t('stepId') },
+              { icon: 'key', label: t('stepOtp') },
+            ]}
+          />
+
+          {/* Privacy trust safeguards (informational → inset discs) */}
+          <View style={styles.trustRow}>
+            {trust.map((item) => (
+              <View key={item.icon} style={styles.trustItem}>
+                <IconDisc icon={item.icon} size={52} variant="inset" />
+                <AppText variant="caption" weight={600} color="inkMuted" align="center">
+                  {item.label}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          {errorKind && <SignInError kind={errorKind} />}
+
+          <SegmentedControl
+            options={[
+              { value: 'abha', label: t('segAbha'), icon: 'idCard' },
+              { value: 'mobile', label: t('segMobile'), icon: 'mobile' },
+            ]}
+            value={authMode}
+            onChange={(mode) => {
+              setAuthMode(mode);
+              setIdentifier(mode === 'abha' ? DEMO_ABHA : DEMO_MOBILE);
+            }}
+          />
+
           <TextField
-            label={t('otpLabel')}
-            value={otp}
-            onChangeText={setOtp}
-            keyboardType="number-pad"
-            maxLength={6}
-            placeholder="123456"
-            textContentType="oneTimeCode"
-            autoComplete="sms-otp"
-            hint={t('otpDemoHint')}
-            icon="key"
-            otp
+            label={authMode === 'abha' ? t('abhaAddressLabel') : t('mobileNumberLabel')}
+            icon={authMode === 'abha' ? 'idCard' : 'mobile'}
+            value={identifier}
+            onChangeText={setIdentifier}
+            placeholder={authMode === 'abha' ? t('abhaPlaceholder') : DEMO_MOBILE}
+            keyboardType={authMode === 'abha' ? 'email-address' : 'phone-pad'}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
-        )}
 
-        <View style={styles.actions}>
-          <PrimaryButton
-            label={loading ? t('signingIn') : showOtpField ? t('verifyAndSignIn') : t('continueWithAbha')}
-            icon="signIn"
-            onPress={handleContinue}
-            loading={loading}
-          />
-          <SecondaryButton label={t('demoLogin')} icon="bolt" onPress={handleQuickDemoFill} />
-        </View>
-      </NeuPanel>
+          {showOtpField && (
+            <TextField
+              label={t('otpLabel')}
+              value={otp}
+              onChangeText={setOtp}
+              keyboardType="number-pad"
+              maxLength={6}
+              placeholder="123456"
+              textContentType="oneTimeCode"
+              autoComplete="sms-otp"
+              hint={t('otpDemoHint')}
+              icon="key"
+              otp
+            />
+          )}
+
+          <View style={styles.actions}>
+            <PrimaryButton
+              label={loading ? t('signingIn') : showOtpField ? t('verifyAndSignIn') : t('continueWithAbha')}
+              icon="signIn"
+              onPress={handleContinue}
+              loading={loading}
+            />
+            <SecondaryButton label={t('demoLogin')} icon="bolt" onPress={handleQuickDemoFill} />
+            <SecondaryButton
+              label={t('newHereCreateAccount')}
+              icon="personAdd"
+              onPress={() => {
+                setMode('signUp');
+                setErrorKind(null);
+              }}
+              disabled={loading}
+            />
+          </View>
+        </NeuPanel>
+      )}
     </ScrollView>
   );
 };

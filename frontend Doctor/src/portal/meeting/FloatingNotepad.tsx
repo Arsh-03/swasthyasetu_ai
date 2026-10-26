@@ -83,7 +83,7 @@ export function FloatingNotepad({ open, onClose, title, minimizeLabel, closeLabe
         aria-label={title}
         hidden={!open || minimized}
         style={{ left: box.x, top: box.y, width: box.w, height: box.h }}
-        className="fixed z-[55] bg-card rounded-panel border border-border shadow-2xl flex flex-col overflow-hidden resize min-w-[320px] min-h-[240px]"
+        className="fixed z-[55] bg-card rounded-panel border border-border shadow-sheet flex flex-col overflow-hidden resize min-w-[320px] min-h-[240px]"
       >
         <div
           onPointerDown={onPointerDown}

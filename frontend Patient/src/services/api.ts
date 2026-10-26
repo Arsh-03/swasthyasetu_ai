@@ -16,6 +16,17 @@ const API_PORT = process.env.EXPO_PUBLIC_API_PORT || '8000';
 export const API_BASE_URL = `http://${API_HOST}:${API_PORT}/api/v1`;
 export const WS_BASE_URL = `ws://${API_HOST}:${API_PORT}/ws/telehealth`;
 
+/** The socket URL carries the login token so the backend can route call signaling to this patient. */
+export const telehealthSocketUrl = (token: string | null) =>
+  token ? `${WS_BASE_URL}?token=${encodeURIComponent(token)}` : WS_BASE_URL;
+
+/** Optional TURN relay for calls across different networks (e.g. mobile data ↔ clinic Wi-Fi). */
+export const TURN_CONFIG = {
+  url: process.env.EXPO_PUBLIC_TURN_URL,
+  username: process.env.EXPO_PUBLIC_TURN_USERNAME,
+  credential: process.env.EXPO_PUBLIC_TURN_CREDENTIAL,
+};
+
 export interface PatientUser {
   user_id: string;
   role: string;
@@ -178,6 +189,25 @@ export interface ChatThread {
   messages: ChatMessage[];
 }
 
+export interface PatientRegisterRequest {
+  full_name: string;
+  abha_address: string;
+  mobile_number: string;
+  password: string;
+  preferred_language: 'kn' | 'hi' | 'en';
+  age: number;
+  gender: string;
+  district: string;
+}
+
+/** An error response from the backend, keeping the HTTP status so screens can pick a message. */
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 class PatientApiService {
   private token: string | null = null;
   private currentUser: PatientUser | null = null;
@@ -230,6 +260,22 @@ class PatientApiService {
     this.setToken(data.token);
     this.setCurrentUser(data.user);
     return data;
+  }
+
+  /** Creates a patient account and signs it in. Throws ApiError (with the HTTP status) on refusal. */
+  async registerPatient(req: PatientRegisterRequest) {
+    const res = await fetch(`${API_BASE_URL}/auth/register/patient`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new ApiError((data && data.detail) || 'Patient registration failed', res.status);
+    }
+    this.setToken(data.token);
+    this.setCurrentUser(data.user);
+    return data as { token: string; user: PatientUser };
   }
 
   async getDemoProfiles() {

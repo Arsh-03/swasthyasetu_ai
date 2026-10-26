@@ -3,16 +3,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LANGUAGES, t as translate, type SupportedLanguage, type TranslationKey } from '../utils/translations';
 
 const STORAGE_KEY = 'swasthyasetu.language';
-const DEFAULT_LANGUAGE: SupportedLanguage = 'kn';
+const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
 interface LanguageContextValue {
   lang: SupportedLanguage;
   /** True once the saved choice has been read from storage (or found missing). */
   hydrated: boolean;
   setLang: (lang: SupportedLanguage) => void;
-  /** Same order as before: kn → hi → en → kn. */
+  /** Language cycle order: en → kn → hi → en. */
   cycleLang: () => void;
-  /** Applies the profile's preferred language only if the user never picked one on this device. */
+  /** Applies the profile's preferred language only if the user explicitly chose one. */
   applyProfileLanguage: (lang: SupportedLanguage) => void;
   t: (key: TranslationKey, vars?: Record<string, string | number>) => string;
 }
@@ -24,7 +24,6 @@ const isLanguage = (v: unknown): v is SupportedLanguage =>
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<SupportedLanguage>(DEFAULT_LANGUAGE);
-  const [hasSavedChoice, setHasSavedChoice] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -32,7 +31,6 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .then((saved) => {
         if (isLanguage(saved)) {
           setLangState(saved);
-          setHasSavedChoice(true);
         }
       })
       .catch(() => {
@@ -43,19 +41,18 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const setLang = useCallback((next: SupportedLanguage) => {
     setLangState(next);
-    setHasSavedChoice(true);
     AsyncStorage.setItem(STORAGE_KEY, next).catch(() => {});
   }, []);
 
   const cycleLang = useCallback(() => {
-    setLang(lang === 'kn' ? 'hi' : lang === 'hi' ? 'en' : 'kn');
+    setLang(lang === 'en' ? 'kn' : lang === 'kn' ? 'hi' : 'en');
   }, [lang, setLang]);
 
   const applyProfileLanguage = useCallback(
-    (profileLang: SupportedLanguage) => {
-      if (!hasSavedChoice && isLanguage(profileLang)) setLangState(profileLang);
+    (_profileLang: SupportedLanguage) => {
+      // Default remains English on first load; only use saved language if explicitly chosen by user
     },
-    [hasSavedChoice]
+    []
   );
 
   const value = useMemo<LanguageContextValue>(

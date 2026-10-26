@@ -18,27 +18,29 @@ import {
   ChoiceTiles,
   CriticalButton,
   DestructiveButton,
-  EmbossedIcon,
   ExpandableText,
   Icon,
   ICON_NAMES,
   IconButton,
   IconDisc,
+  IconTile,
   LIST_ROW_TEXT_INSET,
   ListRow,
   MetricCard,
   NavBar,
-  NeuButton,
   NeuInset,
   NeuList,
   NeuPanel,
   NeuTile,
   NeuToggle,
   NeuView,
+  PageHeader,
   PrimaryButton,
   SecondaryButton,
   SectionHeader,
   SegmentedControl,
+  StatusChip,
+  TertiaryButton,
   TextField,
   Well,
 } from '../components/ui';
@@ -159,8 +161,8 @@ export const StyleGuideScreen: React.FC<{ onClose: () => void }> = ({ onClose })
             </View>
           ))}
           <View style={styles.wrapRow}>
-            <EmbossedIcon icon="records" size={40} />
-            <EmbossedIcon icon="emergency" size={40} color={colors.dangerDeep} />
+            <IconTile domain="records" size={40} />
+            <IconTile domain="emergency" size={40} />
             <IconButton icon="close" accessibilityLabel="Close" onPress={() => {}} size={40} />
             <IconButton icon="signOut" tone="danger" accessibilityLabel="Sign out" onPress={() => {}} size={40} />
             <IconButton icon="mic" accessibilityLabel="Mic on" onPress={() => {}} size={44} selected />
@@ -401,39 +403,112 @@ export const StyleGuideScreen: React.FC<{ onClose: () => void }> = ({ onClose })
           ))}
         </Section>
 
-        {/* Depth language */}
-        <Section title="Depth: raised · inset · pressed">
-          <View style={styles.depthRow}>
-            <DepthSample label="Raised strong">
-              <NeuView style={styles.depthBox} />
-            </DepthSample>
-            <DepthSample label="Raised soft">
-              <NeuView strength="soft" style={styles.depthBox} />
-            </DepthSample>
-            <DepthSample label="Inset strong">
-              <NeuInset style={styles.depthBox} />
-            </DepthSample>
-            <DepthSample label="Inset soft">
-              <NeuInset strength="soft" style={styles.depthBox} />
-            </DepthSample>
-          </View>
-          <View style={styles.depthRow}>
-            <DepthSample label="Circle raised">
-              <NeuView radius={32} style={styles.depthCircle} />
-            </DepthSample>
-            <DepthSample label="Circle inset">
-              <NeuInset radius={32} style={styles.depthCircle} />
-            </DepthSample>
-            <DepthSample label="Pill raised">
-              <NeuView radius={20} style={styles.depthPill} />
-            </DepthSample>
-            <DepthSample label="Pill inset">
-              <NeuInset radius={20} style={styles.depthPill} />
-            </DepthSample>
-          </View>
+        {/* Domain Colours */}
+        <Section title="Domain Colours for Clinical Orientation">
           <AppText variant="footnote" color="inkMuted">
-            Pressed: hold any raised control below; it animates to inset (opacity cross-fade, no animated shadows).
+            6 semantic domains. Icon tiles = ~12% tint fill + duotone glyph in deep colour (≥ 3:1). Status chips = tinted pills with deep text (≥ 4.5:1).
           </AppText>
+          <View style={styles.domainGrid}>
+            {(
+              [
+                { domain: 'appointments', label: 'Appointments & Calls', action: 'Join call' },
+                { domain: 'medications', label: 'Medications (Teal)', action: '1 tablet daily' },
+                { domain: 'records', label: 'Records (Sand/Gold)', action: 'Ultrasound report' },
+                { domain: 'privacy', label: 'Privacy & Consent (Navy)', action: 'Consent active' },
+                { domain: 'followup', label: 'Follow-up (Amber)', action: 'Review due 2d' },
+                { domain: 'emergency', label: 'Emergency (Red)', action: 'SOS triggered' },
+              ] as const
+            ).map((d) => (
+              <Card key={d.domain} style={styles.domainCard}>
+                <View style={styles.domainRow}>
+                  <IconTile domain={d.domain} size={40} />
+                  <View style={styles.flex}>
+                    <AppText variant="subhead" weight={600}>
+                      {d.label}
+                    </AppText>
+                    <AppText variant="mono" color="inkMuted">
+                      domain=&quot;{d.domain}&quot;
+                    </AppText>
+                  </View>
+                  <StatusChip domain={d.domain} label={d.action} />
+                </View>
+                <View style={styles.domainSizes}>
+                  <IconTile domain={d.domain} size={32} />
+                  <IconTile domain={d.domain} size={40} />
+                  <IconTile domain={d.domain} size={48} />
+                  <AppText variant="caption" color="inkMuted" style={styles.domainSizeLabel}>
+                    32 · 40 · 48px
+                  </AppText>
+                </View>
+              </Card>
+            ))}
+          </View>
+        </Section>
+
+        {/* Clean Surface System & Elevation */}
+        <Section title="Clean Surface System & Elevation">
+          <AppText variant="footnote" color="inkMuted">
+            Pure white cards with 1px border (#DCE5EA) and single-layer elevation (e1, e2, e3). No neumorphic shadows or specular gradients.
+          </AppText>
+          <View style={styles.elevationRow}>
+            <Card style={styles.elevationCard}>
+              <AppText variant="subhead" weight={600}>e1 · Base Card</AppText>
+              <AppText variant="caption" color="inkMuted">Static cards & containers</AppText>
+            </Card>
+            <Card interactive style={styles.elevationCard}>
+              <AppText variant="subhead" weight={600}>e2 · Interactive</AppText>
+              <AppText variant="caption" color="inkMuted">Lifts on press / focus</AppText>
+            </Card>
+            <Card elevated style={styles.elevationCard}>
+              <AppText variant="subhead" weight={600}>e3 · Modal Sheet</AppText>
+              <AppText variant="caption" color="inkMuted">Dialogs & overlays</AppText>
+            </Card>
+          </View>
+        </Section>
+
+        {/* Hero Block */}
+        <Section title="Hero Block (Solid Primary-to-Ink Gradient)">
+          <AppText variant="footnote" color="inkMuted">
+            Next-appointment and patient banner blocks use a solid primary-to-ink gradient with white text (≥ 4.5:1).
+          </AppText>
+          <View style={styles.heroCard}>
+            <View style={styles.heroRow}>
+              <IconTile domain="appointments" size={48} />
+              <View style={styles.flex}>
+                <AppText variant="caption" color="onNightMuted" weight={600}>
+                  NEXT APPOINTMENT · IN 15 MIN
+                </AppText>
+                <AppText variant="title2" color="onNight">
+                  Dr. Ananya Sharma
+                </AppText>
+                <AppText variant="footnote" color="onNightMuted">
+                  Taluk Hospital, Hosakote
+                </AppText>
+              </View>
+            </View>
+            <CriticalButton tone="primary" icon="video" label="Join Video Consultation" onPress={() => {}} />
+          </View>
+        </Section>
+
+        {/* Header Patterns */}
+        <Section title="Header Patterns">
+          <AppText variant="footnote" color="inkMuted">
+            Compact PageHeader (48-56px bar with back arrow) and SectionHeader (icon + domain + count + action).
+          </AppText>
+          <Card style={{ gap: spacing.md }}>
+            <PageHeader title="Consultation Details" onBack={() => {}} />
+            <SectionHeader
+              title="Active Prescriptions"
+              domain="medications"
+              count={3}
+              action={<SecondaryButton size="sm" label="Add Refill" onPress={() => {}} />}
+            />
+            <SectionHeader
+              title="Medical Reports"
+              domain="records"
+              count={2}
+            />
+          </Card>
         </Section>
 
         <Section title="List-row actions stay compact (320 / 360 / 390px)">
@@ -608,10 +683,12 @@ export const StyleGuideScreen: React.FC<{ onClose: () => void }> = ({ onClose })
             <IconDisc icon="doctor" variant="raised" size={46} shape="square" />
           </View>
           <View style={styles.wrapRow}>
-            <EmbossedIcon icon="shieldCheck" size={56} />
-            <EmbossedIcon icon="records" size={48} />
-            <EmbossedIcon icon="medication" size={48} color={colors.ink} />
-            <EmbossedIcon icon="emergency" size={48} color={colors.dangerDeep} />
+            <IconTile domain="appointments" size={48} />
+            <IconTile domain="medications" size={48} />
+            <IconTile domain="records" size={48} />
+            <IconTile domain="privacy" size={48} />
+            <IconTile domain="followup" size={48} />
+            <IconTile domain="emergency" size={48} />
           </View>
         </Section>
 
@@ -658,20 +735,19 @@ export const StyleGuideScreen: React.FC<{ onClose: () => void }> = ({ onClose })
         </Section>
 
         {/* Buttons & controls */}
-        <Section title="Buttons (raised strong, press to inset)">
+        <Section title="Buttons Hierarchy (Solid, Tonal Secondary, Tertiary)">
           <PrimaryButton label="Primary · Sign in" icon="signIn" onPress={() => {}} />
           <PrimaryButton label="Primary · disabled" icon="signIn" onPress={() => {}} disabled />
           <View style={styles.wrapRow}>
-            <SecondaryButton label="Neutral" onPress={() => {}} />
-            <SecondaryButton label="Primary" tone="primary" icon="lock" onPress={() => {}} />
-            <SecondaryButton label="Success" tone="success" icon="check" onPress={() => {}} />
-            <DestructiveButton label="Revoke" icon="block" onPress={() => {}} size="sm" />
+            <SecondaryButton label="Tonal Secondary" tone="primary" icon="lock" onPress={() => {}} />
+            <SecondaryButton label="Tonal Success" tone="success" icon="check" onPress={() => {}} />
+            <TertiaryButton label="Tertiary Action" icon="rescheduled" onPress={() => {}} />
+            <DestructiveButton label="Revoke Access" icon="block" onPress={() => {}} size="sm" />
           </View>
           <View style={styles.neuRow}>
-            <NeuButton icon="mic" accessibilityLabel="Mic" onPress={() => {}} />
-            <NeuButton icon="micOff" accessibilityLabel="Mic muted" onPress={() => {}} selected />
             <IconButton icon="close" accessibilityLabel="Close" onPress={() => {}} size={40} />
             <IconButton icon="signOut" tone="danger" accessibilityLabel="Sign out" onPress={() => {}} size={40} />
+            <IconButton icon="mic" accessibilityLabel="Mic on" onPress={() => {}} size={44} selected />
           </View>
         </Section>
 
@@ -822,15 +898,6 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
   </View>
 );
 
-const DepthSample: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <View style={styles.depthSample}>
-    {children}
-    <AppText variant="caption" color="inkMuted" align="center">
-      {label}
-    </AppText>
-  </View>
-);
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -887,6 +954,47 @@ const styles = StyleSheet.create({
   tabRow: {
     flexDirection: 'row',
     width: 220,
+  },
+  domainGrid: {
+    gap: spacing.md,
+  },
+  domainCard: {
+    gap: spacing.sm,
+  },
+  domainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  domainSizes: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.cardBorder,
+  },
+  domainSizeLabel: {
+    marginLeft: 'auto',
+  },
+  elevationRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  elevationCard: {
+    flex: 1,
+    padding: spacing.md,
+  },
+  heroCard: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
   },
   depthRow: {
     flexDirection: 'row',

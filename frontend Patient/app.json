@@ -7,7 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.swasthyasetu.patient"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,7 +17,8 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.swasthyasetu.patient"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -26,8 +28,8 @@
       [
         "@config-plugins/react-native-webrtc",
         {
-          "cameraPermission": "SwasthyaSetu uses the camera for video consultations with your doctor.",
-          "microphonePermission": "SwasthyaSetu uses the microphone so you can talk to your doctor during consultations."
+          "cameraPermission": "SwasthyaSetu uses your camera so your doctor can see you during a video consultation.",
+          "microphonePermission": "SwasthyaSetu uses your microphone so your doctor can hear you during a video consultation."
         }
       ]
     ]

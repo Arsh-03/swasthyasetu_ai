@@ -43,6 +43,7 @@ import { Clock } from '@phosphor-icons/react/dist/csr/Clock';
 import { CloudArrowUp } from '@phosphor-icons/react/dist/csr/CloudArrowUp';
 import { CloudSlash } from '@phosphor-icons/react/dist/csr/CloudSlash';
 import { DeviceMobile } from '@phosphor-icons/react/dist/csr/DeviceMobile';
+import { DotsThreeVertical } from '@phosphor-icons/react/dist/csr/DotsThreeVertical';
 import { Ear } from '@phosphor-icons/react/dist/csr/Ear';
 import { Eye } from '@phosphor-icons/react/dist/csr/Eye';
 import { FirstAidKit } from '@phosphor-icons/react/dist/csr/FirstAidKit';
@@ -107,6 +108,7 @@ export const REGISTRY = {
   translate: Translate,
   signIn: SignIn,
   signOut: SignOut,
+  menu: DotsThreeVertical,
   notification: BellRinging,
   swap: ArrowsLeftRight,
   sync: ArrowsClockwise,
@@ -188,7 +190,7 @@ export const REGISTRY = {
   stop: StopCircle,
   online: WifiHigh,
   callIncoming: PhoneIncoming,
-  menu: List,
+  hamburger: List,
   settings: GearSix,
   filter: Funnel,
   barChart: ChartBar,

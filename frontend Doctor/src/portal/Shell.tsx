@@ -108,7 +108,7 @@ export function Shell({ route, children }: { route: Route; children: ReactNode }
       {menuOpen && (
         <div className="lg:hidden fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-scrim" onClick={() => setMenuOpen(false)} aria-hidden />
-          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-card flex flex-col shadow-xl">
+          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-card flex flex-col shadow-lg">
             {brand}
             <div className="flex-1 pt-2">{nav}</div>
             <div className="pb-4">{settingsLink}</div>
@@ -132,7 +132,7 @@ function TopBar({ onMenu, route }: { onMenu: () => void; route: Route }) {
   const timer = useCallTimer(call.callStartedAt);
   return (
     <header className="sticky top-0 z-40 h-16 bg-base/90 backdrop-blur border-b border-hairline flex items-center gap-2 px-4 sm:px-6 lg:px-8">
-      <IconButton icon="menu" label={t('openMenu')} onClick={onMenu} className="lg:hidden" />
+      <IconButton icon="hamburger" label={t('openMenu')} onClick={onMenu} className="lg:hidden" />
       <div className="flex-1" />
       {inCall && consultation && route.page !== 'meeting' && (
         <a
@@ -217,7 +217,7 @@ function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-12 w-[min(380px,calc(100vw-2rem))] bg-card rounded-panel border border-hairline shadow-xl overflow-hidden z-50">
+        <div className="absolute right-0 top-12 w-[min(380px,calc(100vw-2rem))] bg-card rounded-panel border border-hairline shadow-lg overflow-hidden z-50">
           <div className="flex items-center justify-between px-4 h-12 border-b border-hairline">
             <span className="text-sm font-semibold">{t('notifications')}</span>
             {unread > 0 && (
@@ -279,7 +279,7 @@ function ProfileMenu() {
         <Icon name="chevronDown" size={14} tone="muted" />
       </button>
       {open && (
-        <div className="absolute right-0 top-12 w-64 bg-card rounded-panel border border-hairline shadow-xl py-2 z-50">
+        <div className="absolute right-0 top-12 w-64 bg-card rounded-panel border border-hairline shadow-lg py-2 z-50">
           <div className="px-4 py-2 border-b border-hairline mb-1">
             <p className="text-sm font-semibold text-ink truncate">{doctor.display_name}</p>
             <p className="text-2xs text-ink-muted truncate">{doctor.registration_number} · {doctor.specialty}</p>

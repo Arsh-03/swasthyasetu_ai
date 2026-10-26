@@ -138,7 +138,7 @@ export function HomeScreen() {
 
 function Stat({ icon, label, value, hint }: { icon: IconName; label: string; value: string; hint: string }) {
   return (
-    <div className="bg-card rounded-panel border border-hairline shadow-xs p-4 flex flex-col gap-2">
+    <div className="bg-card rounded-panel border border-hairline shadow-card p-4 flex flex-col gap-2">
       <div className="flex items-center gap-2 text-ink-muted">
         <Icon name={icon} size={18} tone="primary" weight="duotone" />
         <span className="text-xs font-semibold">{label}</span>

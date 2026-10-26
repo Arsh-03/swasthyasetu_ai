@@ -1,78 +1,56 @@
 /**
- * "Harbor Calm" palette: the only place raw colour values live.
- * Base hex values are the approved design decision; `*Deep` values are derived
- * (same hue, darker) so text and white-on-fill buttons reach WCAG AA.
+ * "Harbor Calm" palette: the single source of truth for raw colour values.
+ * Clean surface system: crisp white cards, light canvas (#F2F5F8), domain colours,
+ * no neumorphism, high-contrast WCAG AA throughout.
  * Keep this file import-free: scripts/contrast-check.ts loads it directly with Node.
  */
 export const palette = {
-  // Approved base palette
+  // Base canvas & neutral surfaces
   ink: '#1F3A4C',
-  primary: '#3E6985',
-  primarySoft: '#8FA8B5', // fill / border only, never text
-  fog: '#C7D6DB', // fill / border only, never text
-  ice: '#D6EBF3',
-  base: '#EAF0F4',
-  card: '#F7F9FA',
-  sand: '#EDEBE4',
-  gold: '#A58D66', // verified badges only
-  success: '#2F9E6E',
-  warning: '#E0953A',
-  danger: '#D64545',
-
-  // Derived for contrast (see docs/05_ui_ux/design_system_tokens.md)
-  inkMuted: '#576771', // secondary text
-  inkInset: '#525F68', // placeholder / leading icon inside strong insets (4.76:1 at the darkest point)
-  primaryPressed: '#335870', // pressed solid primary
-  successDeep: '#22714F', // success text, solid success fill
-  warningDeep: '#8E5816', // warning text and icons
-  dangerDeep: '#C02A2A', // danger text, solid danger fill (SOS, decline)
-  dangerPressed: '#A32424',
-  goldDeep: '#756245', // verified badge text / icon
-  night: '#13242F', // immersive call screen, dark glass
+  inkMuted: '#576771', // secondary text, ≥ 4.5:1 on base, card and domain tints
+  base: '#F2F5F8',     // light, clean page canvas
+  card: '#FFFFFF',     // pure white card surface
+  cardBorder: '#DCE5EA', // 1px subtle separation border
+  inputBorder: '#728A97', // 1px input border (3.62:1 vs white, 3.31:1 vs base)
   white: '#FFFFFF',
+  night: '#13242F',    // immersive dark surface (calls)
+
+  // Primary brand / action
+  primary: '#3E6985',
+  primaryPressed: '#335870',
+  primaryDeep: '#335870', // solid primary hover/pressed, deep text
+  primarySoft: '#8FA8B5', // fill/border only, disabled fill
+  fog: '#C7D6DB',         // fill/border only
+  ice: '#D6EBF3',         // tonal button fill, selected row background
+
+  // Domain orientation colours (and semantic roles)
+  // 1. Appointments & calls: primary
+  // 2. Medications: teal (#407E8C)
+  teal: '#407E8C',
+  tealDeep: '#215661',    // text & icon on teal tint (7.07:1 on tint)
+  // 3. Privacy & DPDP consent: navy (#083A4F)
+  navy: '#083A4F',
+  navyDeep: '#083A4F',    // text & icon on navy tint (9.73:1 on tint)
+  // 4. Records locker: gold / sand tint
+  sand: '#EDEBE4',
+  gold: '#A58D66',
+  goldDeep: '#756245',    // text & icon on gold tint (5.20:1 on tint)
+  // 5. Follow-up: warning amber
+  warning: '#E0953A',
+  warningDeep: '#8E5816', // text & icon on warning tint (5.33:1 on tint)
+  // 6. Emergency & SOS: danger
+  danger: '#D64545',
+  dangerDeep: '#C02A2A',  // text & icon on danger tint (4.96:1 on tint)
+  dangerPressed: '#A32424',
+
+  // Status success (approvals, verified)
+  success: '#2F9E6E',
+  successDeep: '#22714F', // solid success fill, text on success tint
+  successPressed: '#1B5C40',
 
   // Accessibility rule (kept from V1): high-contrast audio badge
   audioBg: '#ECFDF5',
   audioText: '#047857',
-
-  // Critical (solid) pressed fills
-  successPressed: '#1B5C40',
-
-  // Neumorphism: light source top-left. STRONG = controls, SOFT (~58%) = panels, wells, rows.
-  neuRaisedHi: '#F4F8FA', // raised fill, top-left
-  neuRaisedLo: '#E3EAEF', // raised fill, bottom-right
-  neuRaisedSoftHi: '#F2F6F8',
-  neuRaisedSoftLo: '#E6EDF1',
-  neuInsetHi: '#DFE7EC', // inset fill, top-left (darker)
-  neuInsetLo: '#F2F6F8', // inset fill, bottom-right (lighter)
-  neuInsetSoftHi: '#E3EAEF',
-  neuInsetSoftLo: '#EFF4F6',
-  neuDark: 'rgba(86, 116, 136, 0.42)', // raised outer shadow, strong
-  neuDarkSoft: 'rgba(86, 116, 136, 0.24)', // raised outer shadow, soft
-  neuInsetDark: 'rgba(86, 116, 136, 0.35)', // inset inner shadow, strong
-  neuInsetDarkSoft: 'rgba(86, 116, 136, 0.2)',
-  neuInsetClear: 'rgba(86, 116, 136, 0)',
-  neuInsetResidual: 'rgba(86, 116, 136, 0.09)', // ~25% of the inner shadow where glyphs sit (≥ 12px in)
-  neuLight: '#FFFFFF',
-  neuLightSoft: 'rgba(255, 255, 255, 0.6)',
-  neuLightInset: 'rgba(255, 255, 255, 0.9)',
-  neuLightInsetSoft: 'rgba(255, 255, 255, 0.55)',
-  neuLightClear: 'rgba(255, 255, 255, 0)',
-  neuGrooveDark: 'rgba(86, 116, 136, 0.25)',
-  neuGrooveLight: 'rgba(255, 255, 255, 0.9)',
-
-  // Highlight sheen on solid critical buttons (kept low so white labels stay ≥ 4.5:1)
-  criticalSheen: 'rgba(255, 255, 255, 0.08)',
-  criticalSheenClear: 'rgba(255, 255, 255, 0)',
-  criticalInsetDark: 'rgba(19, 36, 47, 0.32)', // pressed inner shadow on solid fills
-  criticalInsetClear: 'rgba(19, 36, 47, 0)',
-  criticalEdgeLight: 'rgba(255, 255, 255, 0.45)',
-
-  // Glass specular edge and inner top highlight
-  specularHi: 'rgba(255, 255, 255, 0.9)',
-  specularLo: 'rgba(255, 255, 255, 0.2)',
-  glassHighlight: 'rgba(255, 255, 255, 0.35)',
-  glassHighlightClear: 'rgba(255, 255, 255, 0)',
 } as const;
 
 export type PaletteKey = keyof typeof palette;

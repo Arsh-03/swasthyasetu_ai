@@ -68,7 +68,7 @@ export function IconButton({ icon, label, className, active, ...rest }:
 export function Card({ children, className, as: Tag = 'section', ...rest }:
   { children: ReactNode; className?: string; as?: 'section' | 'div' | 'article' } & Record<string, unknown>) {
   return (
-    <Tag className={cx('bg-card rounded-panel border border-hairline shadow-xs', className)} {...rest}>
+    <Tag className={cx('bg-card rounded-panel border border-hairline shadow-card', className)} {...rest}>
       {children}
     </Tag>
   );
@@ -216,7 +216,7 @@ export function Segmented<T extends string>({ options, value, onChange, label }:
           onClick={() => onChange(o.id)}
           className={cx(
             'inline-flex items-center gap-1.5 h-8 px-3 rounded-chip text-xs font-semibold cursor-pointer transition-colors',
-            value === o.id ? 'bg-card text-ink shadow-xs' : 'text-ink-muted hover:text-ink',
+            value === o.id ? 'bg-card text-ink shadow-card' : 'text-ink-muted hover:text-ink',
           )}
         >
           {o.icon && <Icon name={o.icon} size={16} />}
@@ -278,7 +278,7 @@ export function Dialog({ open, onClose, title, description, children, footer, wi
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={cx('relative w-full bg-card rounded-t-hero sm:rounded-hero shadow-2xl max-h-[92vh] flex flex-col outline-none', width)}
+        className={cx('relative w-full bg-card rounded-t-hero sm:rounded-hero shadow-sheet max-h-[92vh] flex flex-col outline-none', width)}
       >
         <div className={cx('flex items-start gap-3 px-6 pt-5 pb-3', tone === 'danger' && 'text-danger-deep')}>
           {tone === 'danger' && <Icon name="emergency" size={24} weight="duotone" />}

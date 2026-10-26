@@ -317,7 +317,7 @@ export function App() {
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[80] flex flex-col items-center gap-2 pointer-events-none w-[min(480px,calc(100vw-2rem))]" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} role={x.tone === 'danger' ? 'alert' : 'status'}
-            className={cx('pointer-events-auto w-full flex items-center gap-2.5 rounded-control px-4 py-3 text-sm font-semibold shadow-xl',
+            className={cx('pointer-events-auto w-full flex items-center gap-2.5 rounded-control px-4 py-3 text-sm font-semibold shadow-lg',
               x.tone === 'danger' ? 'bg-danger-deep text-white' : x.tone === 'success' ? 'bg-success-deep text-white' : x.tone === 'warning' ? 'bg-warning-deep text-white' : 'bg-night text-white')}>
             <Icon name={x.tone === 'danger' ? 'emergency' : x.tone === 'success' ? 'checkCircle' : 'notification'} size={18} />
             <span className="flex-1">{x.message}</span>

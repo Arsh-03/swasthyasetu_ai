@@ -45,7 +45,7 @@ export function LiveAssist() {
     call.dismissSuggestion(s.id);
   };
   return (
-    <section aria-label={t('assistTitle')} className="sticky -top-3 z-10 -mx-3 -mt-3 mb-3 border-b border-primary/30 bg-card p-2.5 shadow-xs max-h-[45%] overflow-y-auto">
+    <section aria-label={t('assistTitle')} className="sticky -top-3 z-10 -mx-3 -mt-3 mb-3 border-b border-primary/30 bg-card p-2.5 shadow-card max-h-[45%] overflow-y-auto">
       <div className="flex items-center justify-between gap-2 mb-2">
         <span className="flex items-center gap-1.5 text-xs font-semibold text-primary"><Icon name="aiAssist" size={16} weight="duotone" /> {t('assistTitle')}</span>
         <EngineBadges />
@@ -89,7 +89,7 @@ export function AlertStack() {
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] w-[min(420px,calc(100vw-2rem))] flex flex-col gap-2" aria-live="assertive">
       {alerts.map((a: AssistAlert) => (
-        <div key={a.id} role="alert" className="rounded-control bg-card border-2 border-danger shadow-xl p-3">
+        <div key={a.id} role="alert" className="rounded-control bg-card border-2 border-danger shadow-lg p-3">
           <p className="flex items-center gap-1.5 text-sm font-bold text-danger-deep">
             <Icon name={a.kind === 'allergy' ? 'drugAlert' : 'emergency'} size={18} /> {a.title}
           </p>

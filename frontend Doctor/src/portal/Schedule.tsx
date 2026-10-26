@@ -92,7 +92,7 @@ export function Schedule() {
   const today = fmt.today();
 
   return (
-    <section className="bg-card rounded-panel border border-hairline shadow-xs min-w-0">
+    <section className="bg-card rounded-panel border border-hairline shadow-card min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4 pb-3">
         <div className="flex items-center gap-2.5">
           <Icon name="calendar" size={20} tone="primary" weight="duotone" />
@@ -102,7 +102,7 @@ export function Schedule() {
           label={t('scheduleView')}
           value={view}
           onChange={setView}
-          options={[{ id: 'list', label: t('viewList'), icon: 'menu' }, { id: 'calendar', label: t('viewCalendar'), icon: 'calendar' }]}
+          options={[{ id: 'list', label: t('viewList'), icon: 'hamburger' }, { id: 'calendar', label: t('viewCalendar'), icon: 'calendar' }]}
         />
       </div>
       {view === 'list' ? <ScheduleList today={today} /> : <ScheduleCalendar today={today} />}

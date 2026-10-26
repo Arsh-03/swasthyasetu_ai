@@ -2,9 +2,9 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, spacing, touch } from '../../theme/tokens';
 import { AppText } from './AppText';
+import { Icon, type IconName } from './Icon';
 import { IconDisc } from './IconDisc';
 import { Groove } from './Neu';
-import { Icon, type IconName } from './Icon';
 
 interface NavBarProps {
   backLabel: string;
@@ -22,7 +22,7 @@ export const NavBar: React.FC<NavBarProps> = ({ backLabel, onBack, right }) => (
       accessibilityLabel={backLabel}
       style={({ pressed }) => [styles.back, pressed && styles.pressed]}
     >
-      <Icon name="chevronLeft" size={28} color={colors.primary} />
+      <Icon name="chevronLeft" size={24} color={colors.primary} />
       <AppText variant="body" color="primary" compact numberOfLines={1}>
         {backLabel}
       </AppText>
@@ -31,22 +31,57 @@ export const NavBar: React.FC<NavBarProps> = ({ backLabel, onBack, right }) => (
   </View>
 );
 
+interface PageHeaderProps {
+  title: string;
+  onBack?: () => void;
+  backLabel?: string;
+  right?: React.ReactNode;
+}
+
+/**
+ * Compact page header: 48-56px header bar with title and back arrow (replaces giant titles).
+ */
+export const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, backLabel, right }) => (
+  <View style={styles.pageHeader}>
+    {onBack ? (
+      <Pressable
+        onPress={onBack}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={backLabel ?? 'Back'}
+        style={styles.back}
+      >
+        <Icon name="chevronLeft" size={24} color={colors.ink} />
+        {backLabel ? (
+          <AppText variant="subhead" weight={500} color="primary" compact>
+            {backLabel}
+          </AppText>
+        ) : null}
+      </Pressable>
+    ) : (
+      <View style={{ width: 28 }} />
+    )}
+    <AppText variant="headline" weight={700} color="ink" numberOfLines={1} align="center" style={styles.pageHeaderTitle}>
+      {title}
+    </AppText>
+    <View style={styles.pageHeaderRight}>{right ?? <View style={{ width: 28 }} />}</View>
+  </View>
+);
+
 interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
-  /** Informational icon, shown on an inset disc. */
   icon?: IconName;
-  /** Badge(s) next to the title (e.g. "FHIR R4 Encrypted"). */
   accessory?: React.ReactNode;
 }
 
-/** Large serif title block with a groove below. */
+/** Clean title block with hairline divider. */
 export const ScreenHeader: React.FC<ScreenHeaderProps> = ({ title, subtitle, icon, accessory }) => (
   <View style={styles.header}>
     <View style={styles.titleRow}>
-      {icon && <IconDisc icon={icon} size={46} shape="square" />}
+      {icon && <IconDisc icon={icon} size={40} shape="square" />}
       <View style={styles.titleCol}>
-        <AppText variant="largeTitle" accessibilityRole="header">
+        <AppText variant="title" weight={700} color="ink" accessibilityRole="header">
           {title}
         </AppText>
         {subtitle ? (
@@ -68,24 +103,40 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     minHeight: touch.compact,
   },
+  pageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.cardBorder,
+    backgroundColor: colors.card,
+  },
+  pageHeaderTitle: {
+    flex: 1,
+  },
+  pageHeaderRight: {
+    minWidth: 28,
+    alignItems: 'flex-end',
+  },
   back: {
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: touch.compact,
-    paddingRight: spacing.sm,
-    marginLeft: -spacing.sm,
+    gap: 4,
   },
   pressed: {
     opacity: 0.5,
   },
   header: {
-    gap: spacing.md,
-    paddingBottom: spacing.lg,
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   titleCol: {
     flex: 1,

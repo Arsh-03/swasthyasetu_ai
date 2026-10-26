@@ -7,7 +7,7 @@ import { FontsProvider } from './src/theme/FontsProvider';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import {
   patientApi,
-  WS_BASE_URL,
+  telehealthSocketUrl,
   PatientUser,
   ConsentRequestData,
   NextAppointment,
@@ -193,7 +193,7 @@ function PatientApp() {
     if (!user) return;
     let socket: WebSocket | null = null;
     try {
-      socket = new WebSocket(WS_BASE_URL);
+      socket = new WebSocket(telehealthSocketUrl(patientApi.getToken()));
       socket.onopen = () => {
         // The server only delivers events to signed-in users, so identify first.
         socket?.send(JSON.stringify({ type: 'AUTH', token: patientApi.getToken() }));

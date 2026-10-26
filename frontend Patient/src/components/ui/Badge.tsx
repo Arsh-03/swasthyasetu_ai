@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, neu, radii, spacing, tones, touch, type Tone } from '../../theme/tokens';
+import { colors, domains, radii, spacing, tones, touch, type Domain, type Tone } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { NeuPressable } from './Neu';
@@ -8,36 +8,63 @@ import { NeuPressable } from './Neu';
 interface BadgeProps {
   label: string;
   tone?: Tone;
+  domain?: Domain;
   icon?: IconName;
   /** Small status dot instead of an icon. */
   dot?: boolean;
   size?: 'sm' | 'md';
-  /**
-   * Opaque base under the tint. Required when the badge sits directly on the ambient
-   * background: the translucent tint over a blob drops text below 4.5:1.
-   */
   solid?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
 /**
- * Status pill (informational → soft inset): tone tint fill, debossed two-tone edge,
- * deep text (≥ 4.5:1) and a duotone icon. Gold is reserved for "verified".
+ * Status pill: tone or domain tint fill with deep text (≥ 4.5:1) and a duotone icon.
  */
-export const Badge: React.FC<BadgeProps> = ({ label, tone = 'primary', icon, dot = false, size = 'sm', solid = false, style }) => {
+export const Badge: React.FC<BadgeProps> = ({
+  label,
+  tone = 'primary',
+  domain,
+  icon,
+  dot = false,
+  size = 'sm',
+  solid = false,
+  style,
+}) => {
+  const d = domain ? domains[domain] : null;
   const c = tones[tone];
+  const bg = d ? d.tint : c.bg;
+  const textColor = d ? d.deep : colors[c.text];
+  const iconColor = d ? d.deep : c.icon;
+  const borderColor = d ? d.ring : c.ring;
+
   const isSm = size === 'sm';
   const pill = (
-    <View style={[styles.badge, isSm ? styles.badgeSm : styles.badgeMd, { backgroundColor: c.bg }, !solid && style]}>
-      {dot && <View style={[styles.dot, { backgroundColor: c.icon }]} />}
-      {icon && <Icon name={icon} size={isSm ? 14 : 16} color={c.icon} active />}
-      <AppText variant={isSm ? 'caption' : 'footnote'} weight={600} color={c.text} compact numberOfLines={1}>
+    <View
+      style={[
+        styles.badge,
+        isSm ? styles.badgeSm : styles.badgeMd,
+        { backgroundColor: bg, borderColor },
+        !solid && style,
+      ]}
+    >
+      {dot && <View style={[styles.dot, { backgroundColor: iconColor }]} />}
+      {icon && <Icon name={icon} size={isSm ? 13 : 15} color={iconColor} active />}
+      <AppText
+        variant={isSm ? 'caption' : 'footnote'}
+        weight={600}
+        color={textColor as any}
+        compact
+        numberOfLines={1}
+      >
         {label}
       </AppText>
     </View>
   );
   return solid ? <View style={[styles.solidBase, style]}>{pill}</View> : pill;
 };
+
+/** Neutral alias for Status pill */
+export const StatusChip = Badge;
 
 interface ChipProps {
   label: string;
@@ -47,7 +74,7 @@ interface ChipProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Selectable chip: raised control; selected = latched inset + primary label + check (never colour alone). */
+/** Selectable chip: white card pill; selected = tonal ice fill + primary label + check. */
 export const Chip: React.FC<ChipProps> = ({ label, selected, onPress, icon, style }) => (
   <NeuPressable
     onPress={onPress}
@@ -59,11 +86,11 @@ export const Chip: React.FC<ChipProps> = ({ label, selected, onPress, icon, styl
     accessibilityState={{ checked: selected }}
     accessibilityLabel={label}
     containerStyle={style}
-    style={styles.chip}
+    style={[styles.chip, selected && styles.chipSelected]}
   >
     {(down) => (
       <>
-        {icon && <Icon name={icon} size={20} color={down ? colors.primary : colors.inkMuted} active={down} />}
+        {icon && <Icon name={icon} size={18} color={selected ? colors.primary : colors.inkMuted} active={selected} />}
         <AppText variant="subhead" weight={selected ? 700 : 500} color={selected ? 'primary' : 'ink'} compact>
           {label}
         </AppText>
@@ -81,28 +108,24 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     gap: spacing.xs,
     borderWidth: 1,
-    borderTopColor: neu.inset.soft.edgeDark,
-    borderLeftColor: neu.inset.soft.edgeDark,
-    borderBottomColor: neu.inset.soft.edgeLight,
-    borderRightColor: neu.inset.soft.edgeLight,
   },
   badgeSm: {
     paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    paddingVertical: 3,
   },
   badgeMd: {
     paddingHorizontal: spacing.md,
-    paddingVertical: 3,
+    paddingVertical: 5,
   },
   solidBase: {
     alignSelf: 'flex-start',
     borderRadius: radii.pill,
-    backgroundColor: colors.base,
+    backgroundColor: colors.card,
   },
   dot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   chip: {
     flexDirection: 'row',
@@ -111,5 +134,12 @@ const styles = StyleSheet.create({
     minHeight: touch.compact,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
+    backgroundColor: colors.card,
+    borderColor: colors.cardBorder,
+    borderWidth: 1,
+  },
+  chipSelected: {
+    backgroundColor: colors.ice,
+    borderColor: colors.primary,
   },
 });

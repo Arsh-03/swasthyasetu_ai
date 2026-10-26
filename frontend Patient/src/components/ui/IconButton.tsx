@@ -1,11 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { colors, neu, tints, touch } from '../../theme/tokens';
+import { colors, elevation, tints, touch } from '../../theme/tokens';
 import { usePressScale } from '../../hooks/usePressScale';
 import { haptic } from '../../utils/haptics';
 import { Icon, type IconName } from './Icon';
-import { NeuPressable } from './Neu';
 
 export type IconButtonTone = 'neutral' | 'danger' | 'night' | 'nightOff';
 
@@ -14,17 +13,11 @@ interface IconButtonProps {
   /** Required: icon-only buttons must be named for screen readers. */
   accessibilityLabel: string;
   onPress: () => void;
-  /**
-   * neutral / danger = RAISED neumorphic disc (header buttons, close, mic).
-   * night / nightOff = translucent disc for the dark call screen (neumorphic light
-   * shadows do not read on `night`).
-   */
   tone?: IconButtonTone;
   /** Visual diameter; the hit area is padded out to at least 48. */
   size?: number;
   iconSize?: number;
   haptics?: boolean;
-  /** Latched state (mic on, recording): stays inset with a duotone primary glyph. */
   selected?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -39,40 +32,65 @@ export const IconButton: React.FC<IconButtonProps> = ({
   accessibilityLabel,
   onPress,
   tone = 'neutral',
-  size = 36,
+  size = 38,
   iconSize,
   haptics = false,
-  selected,
+  selected = false,
   style,
 }) => {
-  const press = usePressScale(0.94);
+  const press = usePressScale(0.95);
   const slop = Math.max(0, (touch.min - size) / 2);
-  const glyph = iconSize ?? Math.round(size * 0.5);
+  const glyph = iconSize ?? Math.round(size * 0.52);
 
   if (tone === 'neutral' || tone === 'danger') {
+    const isDanger = tone === 'danger';
     return (
-      <NeuPressable
-        onPress={onPress}
-        selected={selected}
-        radius={size / 2}
-        compact={size < 48}
-        haptics={haptics ? 'tap' : 'none'}
-        hitSlop={slop}
-        accessibilityLabel={accessibilityLabel}
-        accessibilityState={selected === undefined ? undefined : { selected }}
-        containerStyle={style}
-        style={[styles.base, { width: size, height: size }]}
-      >
-        {(down) => (
-          <Icon
-            name={icon}
-            size={glyph}
-            color={down ? (tone === 'danger' ? colors.dangerDeep : colors.primary) : tone === 'danger' ? colors.inkMuted : colors.ink}
-            active={down}
-            surface={down ? neu.inset.strong.fill[0] : neu.raised.strong.fill[1]}
-          />
-        )}
-      </NeuPressable>
+      <Animated.View style={[press.style, style]}>
+        <Pressable
+          onPress={() => {
+            if (haptics) haptic.tap();
+            onPress();
+          }}
+          onPressIn={press.onPressIn}
+          onPressOut={press.onPressOut}
+          hitSlop={slop}
+          accessibilityRole="button"
+          accessibilityLabel={accessibilityLabel}
+          accessibilityState={{ selected }}
+          style={({ pressed }) => [
+            styles.base,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              backgroundColor: pressed
+                ? isDanger
+                  ? tints.danger
+                  : tints.primary
+                : selected
+                ? colors.ice
+                : colors.card,
+              borderColor: selected ? colors.primary : colors.cardBorder,
+            },
+            elevation.e1,
+          ]}
+        >
+          {({ pressed }) => (
+            <Icon
+              name={icon}
+              size={glyph}
+              color={
+                isDanger
+                  ? colors.dangerDeep
+                  : selected || pressed
+                  ? colors.primary
+                  : colors.ink
+              }
+              active={selected || pressed}
+            />
+          )}
+        </Pressable>
+      </Animated.View>
     );
   }
 
@@ -89,11 +107,17 @@ export const IconButton: React.FC<IconButtonProps> = ({
         hitSlop={slop}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
-        accessibilityState={selected === undefined ? undefined : { selected }}
+        accessibilityState={{ selected }}
         style={({ pressed }) => [
           styles.base,
           styles.night,
-          { width: size, height: size, borderRadius: size / 2, borderColor: look.border, backgroundColor: pressed ? look.pressedBg : look.bg },
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderColor: look.border,
+            backgroundColor: pressed ? look.pressedBg : look.bg,
+          },
         ]}
       >
         <Icon name={icon} size={glyph} color={colors.onNight} active={selected} />
@@ -106,6 +130,7 @@ const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   night: {
     borderWidth: StyleSheet.hairlineWidth,

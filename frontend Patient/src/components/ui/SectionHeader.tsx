@@ -1,28 +1,52 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { spacing } from '../../theme/tokens';
+import { colors, domains, spacing, type Domain } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Badge } from './Badge';
+import { Icon, type IconName } from './Icon';
 
 interface SectionHeaderProps {
   title: string;
-  /** Shown as a blue count pill, like the Doctor's "4 Waiting" tag. */
+  /** Section icon */
+  icon?: IconName;
+  /** Domain color orientation */
+  domain?: Domain;
+  /** Count pill, e.g. "4 Active" */
   count?: number;
   right?: React.ReactNode;
+  action?: React.ReactNode;
 }
 
-/** Uppercase eyebrow section label with an optional count pill. */
-export const SectionHeader: React.FC<SectionHeaderProps> = ({ title, count, right }) => (
-  <View style={styles.row} accessibilityRole="header">
-    <View style={styles.left}>
-      <AppText variant="eyebrow" color="inkMuted" style={styles.title}>
-        {title}
-      </AppText>
-      {count !== undefined && <Badge label={String(count)} tone="primary" />}
+/**
+ * Compact section header: icon + title + count + optional action.
+ * Standard across all screens.
+ */
+export const SectionHeader: React.FC<SectionHeaderProps> = ({
+  title,
+  icon,
+  domain,
+  count,
+  right,
+  action,
+}) => {
+  const iconColor = domain ? domains[domain].deep : colors.primary;
+  const trailingAction = action ?? right;
+
+  return (
+    <View style={styles.row} accessibilityRole="header">
+      <View style={styles.left}>
+        {icon && <Icon name={icon} size={18} color={iconColor} active />}
+        <AppText variant="headline" weight={700} color="ink" style={styles.title}>
+          {title}
+        </AppText>
+        {count !== undefined && (
+          <Badge label={String(count)} domain={domain} tone={domain ? undefined : 'primary'} size="sm" />
+        )}
+      </View>
+      {trailingAction}
     </View>
-    {right}
-  </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   row: {
@@ -30,7 +54,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md,
-    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
   },
   left: {
     flexDirection: 'row',

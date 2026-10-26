@@ -5,18 +5,15 @@ export interface Column<Row> {
   key: string;
   header: string;
   cell: (row: Row) => ReactNode;
-  /** Tailwind width / alignment classes for the column, e.g. 'w-40 text-right'. */
   className?: string;
 }
 
 interface DataTableProps<Row> {
   caption: string;
-  /** Visually hide the caption (it is still read by screen readers). */
   hideCaption?: boolean;
   columns: Column<Row>[];
   rows: Row[];
   rowKey: (row: Row) => string;
-  /** Makes rows keyboard-operable (Tab to a row, Enter / Space to open). */
   onRowClick?: (row: Row) => void;
   selectedKey?: string;
   empty?: ReactNode;
@@ -24,30 +21,43 @@ interface DataTableProps<Row> {
 }
 
 /**
- * Clinician density rule: one SOFT raised panel, rows separated by debossed grooves,
- * NO per-row shadows. Hover = faint ink tint; selected row = primary tint + 3px primary accent bar.
+ * Dense clinician table: white card container (#FFFFFF) with 1px border (#DCE5EA) and e1 shadow.
+ * Hairline dividers, desktop rows min 44px, tabular numbers, selected row = ice tint + 3px primary accent bar.
  */
-export function DataTable<Row>({ caption, hideCaption, columns, rows, rowKey, onRowClick, selectedKey, empty, className }: DataTableProps<Row>) {
+export function DataTable<Row>({
+  caption,
+  hideCaption,
+  columns,
+  rows,
+  rowKey,
+  onRowClick,
+  selectedKey,
+  empty,
+  className,
+}: DataTableProps<Row>) {
   const onKey = (e: KeyboardEvent, row: Row) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       onRowClick?.(row);
     }
   };
+
   return (
-    <div className={cx('neu-panel overflow-x-auto rounded-panel', className)}>
+    <div className={cx('surface-card overflow-x-auto rounded-panel border border-card-border shadow-e1', className)}>
       <table className="w-full border-collapse text-left text-sm">
-        <caption className={cx('px-4 pt-3 pb-1 text-left text-footnote font-semibold text-ink-muted', hideCaption && 'sr-only')}>{caption}</caption>
+        <caption className={cx('px-4 pt-3 pb-1 text-left text-footnote font-semibold text-ink-muted', hideCaption && 'sr-only')}>
+          {caption}
+        </caption>
         <thead>
-          <tr>
+          <tr className="border-b border-card-border bg-[#F8FAFC]">
             {columns.map((c) => (
-              <th key={c.key} scope="col" className={cx('px-4 py-2.5 text-2xs font-semibold text-ink-muted', c.className)}>
+              <th key={c.key} scope="col" className={cx('px-4 py-2.5 text-2xs font-semibold text-ink-muted uppercase tracking-wider', c.className)}>
                 {c.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="groove-rows">
+        <tbody className="divide-y divide-card-border">
           {rows.length === 0 && empty ? (
             <tr>
               <td colSpan={columns.length} className="px-4 py-8 text-center text-ink-muted">
@@ -66,13 +76,14 @@ export function DataTable<Row>({ caption, hideCaption, columns, rows, rowKey, on
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   onKeyDown={onRowClick ? (e) => onKey(e, row) : undefined}
                   className={cx(
-                    onRowClick && 'cursor-pointer hover:bg-ink-tint',
-                    selected && 'bg-primary-tint [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-primary),inset_0_1px_0_var(--neu-groove-light)]',
+                    'min-h-[44px] transition-colors',
+                    onRowClick && 'cursor-pointer hover:bg-black/[0.02]',
+                    selected && 'bg-ice/70 [&>td:first-child]:shadow-[inset_3px_0_0_var(--color-primary)] font-medium',
                     'focus-visible:-outline-offset-2',
                   )}
                 >
                   {columns.map((c) => (
-                    <td key={c.key} className={cx('px-4 py-2.5 align-middle text-ink', c.className)}>
+                    <td key={c.key} className={cx('px-4 py-2.5 align-middle text-ink font-tabular', c.className)}>
                       {c.cell(row)}
                     </td>
                   ))}
@@ -85,3 +96,5 @@ export function DataTable<Row>({ caption, hideCaption, columns, rows, rowKey, on
     </div>
   );
 }
+
+export const ListRow = DataTable;
