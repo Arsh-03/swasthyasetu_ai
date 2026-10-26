@@ -63,10 +63,10 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
 
     // Sub-navigation Tabs
     tabOverview: 'Overview & Vitals',
-    tabLastEncounter: 'Last Encounter Notes',
-    tabPrescriptions: 'Prescriptions & Rx',
-    tabNextAppointment: 'Next Appointment',
-    tabFullHistory: 'Full Medical History',
+    tabLastEncounter: 'Encounter Notes',
+    tabPrescriptions: 'Prescriptions',
+    tabNextAppointment: 'Appointments',
+    tabFullHistory: 'Medical History',
 
     // Vitals Section
     latestRecordedVitals: 'Latest Recorded Vitals',
@@ -208,11 +208,11 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     nkaReported: 'ಸುರಕ್ಷಿತ (NKA)',
 
     // Sub-navigation Tabs
-    tabOverview: 'ಅವಲೋಕನ ಮತ್ತು ಪ್ರಮುಖ ಲಕ್ಷಣಗಳು',
-    tabLastEncounter: 'ಹಿಂದಿನ ಭೇಟಿಯ ಟಿಪ್ಪಣಿಗಳು (SOAP)',
-    tabPrescriptions: 'ಔಷಧಿಗಳು ಮತ್ತು Rx',
-    tabNextAppointment: 'ಮುಂದಿನ ಅಪಾಯಿಂಟ್ಮೆಂಟ್',
-    tabFullHistory: 'ಸಂಪೂರ್ಣ ವೈದ್ಯಕೀಯ ಇತಿಹಾಸ',
+    tabOverview: 'ಅವಲೋಕನ ಮತ್ತು ವೈಟಲ್ಸ್',
+    tabLastEncounter: 'ಭೇಟಿ ಟಿಪ್ಪಣಿಗಳು',
+    tabPrescriptions: 'ಔಷಧಿ ಚೀಟಿಗಳು',
+    tabNextAppointment: 'ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್‌ಗಳು',
+    tabFullHistory: 'ವೈದ್ಯಕೀಯ ಇತಿಹಾಸ',
 
     // Vitals Section
     latestRecordedVitals: 'ದಾಖಲಾದ ಇತ್ತೀಚಿನ ಪ್ರಮುಖ ಲಕ್ಷಣಗಳು (Vitals)',
@@ -355,10 +355,10 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
 
     // Sub-navigation Tabs
     tabOverview: 'अवलोकन और वाइटल्स',
-    tabLastEncounter: 'पिछली भेंट के नोट्स (SOAP)',
-    tabPrescriptions: 'दवाइयाँ और पर्ची (Rx)',
-    tabNextAppointment: 'अगला अपॉइंटमेंट',
-    tabFullHistory: 'पूरा मेडिकल इतिहास',
+    tabLastEncounter: 'परामर्श नोट्स',
+    tabPrescriptions: 'दवाइयाँ और पर्ची',
+    tabNextAppointment: 'अपॉइंटमेंट्स',
+    tabFullHistory: 'चिकित्सा इतिहास',
 
     // Vitals Section
     latestRecordedVitals: 'दर्ज किए गए हालिया वाइटल्स (Vitals)',
@@ -443,3 +443,106 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
 export function t(lang: SupportedLanguage, key: string): string {
   return TRANSLATIONS[lang]?.[key] || TRANSLATIONS['en']?.[key] || key;
 }
+
+export const DOCTOR_LANGUAGE_STORAGE_KEY = 'swasthyasetu.doctor.language';
+export const DEFAULT_DOCTOR_LANGUAGE: SupportedLanguage = 'en';
+
+/**
+ * Returns saved language from localStorage if explicitly chosen by user, else 'en'.
+ */
+export function getInitialDoctorLanguage(): SupportedLanguage {
+  if (typeof window === 'undefined') return DEFAULT_DOCTOR_LANGUAGE;
+  try {
+    const saved = localStorage.getItem(DOCTOR_LANGUAGE_STORAGE_KEY);
+    if (saved === 'en' || saved === 'kn' || saved === 'hi') {
+      return saved;
+    }
+  } catch {
+    // localStorage disabled or not accessible
+  }
+  return DEFAULT_DOCTOR_LANGUAGE;
+}
+
+/**
+ * Persists user's explicit language selection to localStorage.
+ */
+export function saveDoctorLanguage(lang: SupportedLanguage): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DOCTOR_LANGUAGE_STORAGE_KEY, lang);
+  } catch {
+    // localStorage disabled or not accessible
+  }
+}
+
+/**
+ * Strips parenthesised non-Latin/Indic translations in English mode.
+ * e.g. "Fever (ಜ್ವರ / बुखार)." becomes "Fever.", and "Ramesh Gowda (ರಮೇಶ್ ಗೌಡ)" becomes "Ramesh Gowda".
+ */
+export const NON_LATIN_PAREN_REGEX = /\s*\((?=[^()]*[\u0C80-\u0CFF\u0900-\u097F])[^()]*\)/g;
+
+export function stripNonLatinParentheses(text: string | undefined | null): string {
+  if (!text) return '';
+  return text.replace(NON_LATIN_PAREN_REGEX, '').trim();
+}
+
+/**
+ * Display-layer helper for text at render points.
+ * In English mode only, strips parenthesised non-Latin translations.
+ * Kannada and Hindi modes are unchanged and extract their respective script.
+ */
+export function displayLocalized(text: string | undefined | null, lang: SupportedLanguage): string {
+  if (!text) return '';
+  if (lang === 'en') {
+    return stripNonLatinParentheses(text);
+  }
+  return localized(text, lang);
+}
+
+/**
+ * Formats a name showing only the active language, removing dual script duplication e.g. "Ramesh Gowda (ರಮೇಶ್ ಗೌಡ)".
+ */
+export function formatLocalizedName(fullName: string | undefined | null, lang: SupportedLanguage): string {
+  return displayLocalized(fullName, lang);
+}
+
+/**
+ * Formats complaint text showing only the active language, stripping dual language notes if bracketed.
+ */
+export function formatLocalizedComplaint(complaint: string | undefined | null, lang: SupportedLanguage): string {
+  return displayLocalized(complaint, lang);
+}
+
+/**
+ * Display-layer helper: in English mode, shows only the English part of bilingual strings
+ * like "Fever (ಜ್ವರ / बुखार)". In Indic modes, extracts the appropriate Indic script option.
+ */
+export function localized(value: string | undefined | null, lang: SupportedLanguage): string {
+  if (!value) return '';
+  if (lang === 'en') {
+    return stripNonLatinParentheses(value);
+  }
+
+  const match = value.match(/^([^()]+)\s*\(([^()]+)\)/);
+  if (!match) return value.trim();
+
+  const englishPart = match[1].trim();
+  const bracketPart = match[2].trim();
+
+  const isKannada = (s: string) => /[\u0C80-\u0CFF]/.test(s);
+  const isHindi = (s: string) => /[\u0900-\u097F]/.test(s);
+
+  const options = bracketPart.split('/').map((s) => s.trim());
+  if (lang === 'kn') {
+    const kn = options.find(isKannada);
+    if (kn) return kn;
+    if (isKannada(englishPart)) return englishPart;
+  } else if (lang === 'hi') {
+    const hi = options.find(isHindi);
+    if (hi) return hi;
+    if (isHindi(englishPart)) return englishPart;
+  }
+
+  return englishPart;
+}
+

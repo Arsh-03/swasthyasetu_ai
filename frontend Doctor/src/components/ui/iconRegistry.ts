@@ -2,6 +2,28 @@ import type { ComponentType } from 'react';
 import type { IconProps as PhosphorProps } from '@phosphor-icons/react';
 // Per-icon ESM imports (package export "./dist/csr/*"): only these glyphs are bundled, and Vite dev
 // never pre-bundles the 1,500-icon barrel. Add new icons here; never import Phosphor in a screen.
+import { List } from '@phosphor-icons/react/dist/csr/List';
+import { GearSix } from '@phosphor-icons/react/dist/csr/GearSix';
+import { Funnel } from '@phosphor-icons/react/dist/csr/Funnel';
+import { ChartBar } from '@phosphor-icons/react/dist/csr/ChartBar';
+import { House } from '@phosphor-icons/react/dist/csr/House';
+import { UsersThree } from '@phosphor-icons/react/dist/csr/UsersThree';
+import { Note } from '@phosphor-icons/react/dist/csr/Note';
+import { DotsSixVertical } from '@phosphor-icons/react/dist/csr/DotsSixVertical';
+import { Trash } from '@phosphor-icons/react/dist/csr/Trash';
+import { ArrowSquareOut } from '@phosphor-icons/react/dist/csr/ArrowSquareOut';
+import { FloppyDisk } from '@phosphor-icons/react/dist/csr/FloppyDisk';
+import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
+import { Plus } from '@phosphor-icons/react/dist/csr/Plus';
+import { ChatsCircle } from '@phosphor-icons/react/dist/csr/ChatsCircle';
+import { ListChecks } from '@phosphor-icons/react/dist/csr/ListChecks';
+import { Keyboard } from '@phosphor-icons/react/dist/csr/Keyboard';
+import { FileCode } from '@phosphor-icons/react/dist/csr/FileCode';
+import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
+import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
+import { StopCircle } from '@phosphor-icons/react/dist/csr/StopCircle';
+import { WifiHigh } from '@phosphor-icons/react/dist/csr/WifiHigh';
+import { PhoneIncoming } from '@phosphor-icons/react/dist/csr/PhoneIncoming';
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowsClockwise } from '@phosphor-icons/react/dist/csr/ArrowsClockwise';
 import { ArrowsLeftRight } from '@phosphor-icons/react/dist/csr/ArrowsLeftRight';
@@ -21,6 +43,7 @@ import { Clock } from '@phosphor-icons/react/dist/csr/Clock';
 import { CloudArrowUp } from '@phosphor-icons/react/dist/csr/CloudArrowUp';
 import { CloudSlash } from '@phosphor-icons/react/dist/csr/CloudSlash';
 import { DeviceMobile } from '@phosphor-icons/react/dist/csr/DeviceMobile';
+import { DotsThreeVertical } from '@phosphor-icons/react/dist/csr/DotsThreeVertical';
 import { Ear } from '@phosphor-icons/react/dist/csr/Ear';
 import { Eye } from '@phosphor-icons/react/dist/csr/Eye';
 import { FirstAidKit } from '@phosphor-icons/react/dist/csr/FirstAidKit';
@@ -85,6 +108,7 @@ export const REGISTRY = {
   translate: Translate,
   signIn: SignIn,
   signOut: SignOut,
+  menu: DotsThreeVertical,
   notification: BellRinging,
   swap: ArrowsLeftRight,
   sync: ArrowsClockwise,
@@ -153,6 +177,30 @@ export const REGISTRY = {
   medication: Pill,
   vitals: Heartbeat,
   symptom: Virus,
+  // Notepad & consultation call
+  save: FloppyDisk,
+  undo: ArrowCounterClockwise,
+  add: Plus,
+  chat: ChatsCircle,
+  checklist: ListChecks,
+  keyboard: Keyboard,
+  code: FileCode,
+  expand: ArrowsOutSimple,
+  collapse: ArrowsInSimple,
+  stop: StopCircle,
+  online: WifiHigh,
+  callIncoming: PhoneIncoming,
+  hamburger: List,
+  settings: GearSix,
+  filter: Funnel,
+  barChart: ChartBar,
+  home: House,
+  patients: UsersThree,
+  notepad: Note,
+  drag: DotsSixVertical,
+  speaker: SpeakerHigh,
+  trash: Trash,
+  external: ArrowSquareOut,
 } satisfies Record<string, ComponentType<PhosphorProps>>;
 
 export type IconName = keyof typeof REGISTRY;

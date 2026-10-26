@@ -177,6 +177,17 @@ class AuditEvent(Base):
     timestamp = Column(DateTime(timezone=True), default=utc_now)
 
 
+class ConsultationNotepad(Base):
+    """Doctor's live IntelliSense notepad draft for an encounter (saved explicitly, never per keystroke)."""
+    __tablename__ = "consultation_notepads"
+
+    encounter_id = Column(String(36), ForeignKey("encounters.encounter_id"), primary_key=True)
+    practitioner_id = Column(String(36), nullable=False)
+    content = Column(Text, default="")
+    coded_terms_json = Column(JSONType, default=list)  # [{start, end, original, name, codes, category, severity, confidence}]
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 class Appointment(Base):
     __tablename__ = "appointments"
 
@@ -195,6 +206,12 @@ class Appointment(Base):
     instructions_json = Column(JSONType, default=list)
     is_rescheduled = Column(Boolean, default=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    # Real start time for calendars and "next appointment" (the *_label columns are display text).
+    scheduled_at = Column(DateTime(timezone=True), nullable=True, index=True)
+    duration_minutes = Column(Integer, default=20)
+    # The consultation (call room, notes) this appointment opens; set when the doctor opens it.
+    encounter_id = Column(String(36), nullable=True)
+    visit_status = Column(String(20), default="scheduled")  # 'scheduled', 'completed', 'cancelled', 'no_show'
 
 
 class DoseLog(Base):
@@ -218,3 +235,78 @@ class RecoveryCheckin(Base):
     patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
     status = Column(String(20), nullable=False)  # 'better', 'same', 'worse'
     created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class Notification(Base):
+    """Bell notifications for a doctor; `link` says which page a click opens."""
+    __tablename__ = "notifications"
+
+    notification_id = Column(String(36), primary_key=True, default=generate_uuid)
+    practitioner_id = Column(String(36), nullable=False, index=True)
+    kind = Column(String(20), nullable=False)  # 'appointment', 'alert', 'consent', 'call', 'system'
+    severity = Column(String(20), default="info")  # 'info', 'warning', 'critical'
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link_json = Column(JSONType, default=dict)  # {"page": "patient", "patient_id": ..., "tab": ...}
+    audit_event_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PractitionerSettings(Base):
+    """Doctor preferences and working hours (profile fields live on Practitioner)."""
+    __tablename__ = "practitioner_settings"
+
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), primary_key=True)
+    prefs_json = Column(JSONType, default=dict)  # {"language", "date_format", "time_format", "timezone"}
+    # {"weekly": {"mon": [{"start": "09:00", "end": "13:00"}], ...}, "leaves": [{"id", "start", "end", "reason"}]}
+    availability_json = Column(JSONType, default=dict)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class ChatMessage(Base):
+    """One chat message between a patient and their doctor. Part of the clinical record (never edited or deleted)."""
+    __tablename__ = "chat_messages"
+
+    message_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), nullable=False, index=True)
+    sender_role = Column(String(20), nullable=False)  # 'patient', 'doctor'
+    body = Column(Text, nullable=False)
+    lang = Column(String(10), default="en")  # language the sender wrote in
+    translation = Column(Text, nullable=True)  # into the reader's language, when the translator changed it
+    translation_lang = Column(String(10), nullable=True)
+    encounter_id = Column(String(36), nullable=True)  # the visit this message belongs to
+    urgent = Column(Boolean, default=False)  # emergency words detected (patient messages)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+    read_at = Column(DateTime(timezone=True), nullable=True)  # read by the recipient
+
+
+class VitalReading(Base):
+    """A reading the patient took at home (e.g. heart rate from the phone camera). Estimates are labelled as such."""
+    __tablename__ = "vital_readings"
+
+    reading_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    kind = Column(String(30), nullable=False)  # 'heart_rate'
+    value = Column(Integer, nullable=False)
+    unit = Column(String(20), default="bpm")
+    method = Column(String(30), default="camera_ppg")  # 'camera_ppg' (fingertip on camera), 'manual'
+    confidence = Column(String(10), nullable=True)  # 'good', 'fair'
+    details_json = Column(JSONType, default=dict)  # {"quality", "irregularity", "seconds", "beats", "torch"}
+    encounter_id = Column(String(36), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class VisitSummary(Base):
+    """A plain-language summary of a consultation, kept only because the patient asked for it.
+    Built from de-identified text: it never names the patient or the doctor."""
+    __tablename__ = "visit_summaries"
+
+    summary_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    encounter_id = Column(String(36), nullable=True)
+    language = Column(String(10), default="en")
+    sections_json = Column(JSONType, default=dict)  # {"told": [...], "advice": [...], "next": [...], "urgent": [...]}
+    engine = Column(String(20), default="rules")    # 'live' (your model) or 'rules'
+    created_at = Column(DateTime(timezone=True), default=utc_now, index=True)

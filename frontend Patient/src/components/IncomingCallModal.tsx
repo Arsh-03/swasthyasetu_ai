@@ -11,9 +11,15 @@ interface IncomingCallModalProps {
   callerName: string;
   onAccept: () => void;
   onDecline: () => void;
+  /** Video call (default) or audio-only call. */
+  video?: boolean;
+  /** Answer a video call with audio only. */
+  onAcceptAudio?: () => void;
 }
 
-export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, callerName, onAccept, onDecline }) => {
+export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
+  visible, callerName, onAccept, onDecline, video = true, onAcceptAudio,
+}) => {
   const { t } = useLanguage();
   const [pulse] = useState(() => new Animated.Value(0));
 
@@ -60,7 +66,7 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, c
 
         <View style={styles.text}>
           <AppText variant="eyebrow" color="successDeep" align="center" compact>
-            {t('incomingVideoCall')}
+            {video ? t('incomingVideoCall') : t('incomingAudioCall')}
           </AppText>
           <AppText variant="title" color="onPrimary" align="center">
             {callerName}
@@ -78,8 +84,11 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({ visible, c
 
         <View style={styles.actions}>
           <CriticalButton tone="danger" label={t('decline')} icon="callEnd" onPress={onDecline} fullWidth={false} style={styles.action} />
-          <CriticalButton tone="primary" label={t('accept')} icon="video" onPress={onAccept} fullWidth={false} style={styles.action} />
+          <CriticalButton tone="primary" label={t('accept')} icon={video ? 'video' : 'call'} onPress={onAccept} fullWidth={false} style={styles.action} />
         </View>
+        {video && onAcceptAudio && (
+          <CriticalButton tone="success" label={t('answerAudioOnly')} icon="call" onPress={onAcceptAudio} style={styles.audioOnly} />
+        )}
       </View>
     </GlassSheet>
   );
@@ -132,5 +141,8 @@ const styles = StyleSheet.create({
   },
   action: {
     flex: 1,
+  },
+  audioOnly: {
+    alignSelf: 'stretch',
   },
 });

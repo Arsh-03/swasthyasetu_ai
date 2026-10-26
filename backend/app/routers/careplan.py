@@ -13,6 +13,7 @@ from app.models.models import (
 from app.schemas.schemas import DoseLogIn, RecoveryCheckinIn
 from app.services.auth_dependencies import require_patient
 from app.services.connection_manager import ws_manager
+from app.services.notifications import notify
 
 router = APIRouter(prefix="/careplan", tags=["careplan"])
 
@@ -180,7 +181,13 @@ async def submit_recovery_checkin(
     ))
     await db.commit()
 
-    await ws_manager.broadcast({
+    if req.status == "worse":
+        name = current_patient.get("name") or "A patient"
+        await notify(kind="alert", severity="critical", patient_id=patient_id,
+                     title=f"{name} reported feeling worse",
+                     body="Recovery check-in from the patient app. Review the care plan or call the patient.",
+                     link={"page": "patient", "patient_id": patient_id})
+    await ws_manager.send_to_role("doctor", {          # clinicians only (single-clinic demo: all doctors)
         "type": "recovery_checkin",
         "patient_id": patient_id,
         "patient_name": current_patient.get("name"),

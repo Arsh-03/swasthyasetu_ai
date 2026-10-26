@@ -1,7 +1,9 @@
 import type { PatientFullRecord, UpcomingAppointment } from '../data/patientRecords';
 
-export const API_BASE_URL = 'http://localhost:8000/api/v1';
-export const WS_BASE_URL = 'ws://localhost:8000/ws/telehealth';
+// Backend address; override with VITE_API_ORIGIN (e.g. for a second test backend). Default: localhost:8000.
+const API_ORIGIN: string = import.meta.env.VITE_API_ORIGIN || 'http://localhost:8000';
+export const API_BASE_URL = `${API_ORIGIN}/api/v1`;
+export const WS_BASE_URL = `${API_ORIGIN.replace(/^http/, 'ws')}/ws/telehealth`;
 
 export interface DoctorProfile {
   practitioner_id: string;
@@ -34,6 +36,8 @@ export interface PatientSummary {
   wait_time?: string;
   urgency?: 'high' | 'follow_up' | 'routine';
   avatar_url?: string;
+  /** Latest heart rate the patient measured at home (phone camera estimate). */
+  latest_heart_rate?: import('./doctorApi').VitalReading | null;
 }
 
 export interface RecordSummary {

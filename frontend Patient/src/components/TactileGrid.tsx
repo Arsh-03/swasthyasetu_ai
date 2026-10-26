@@ -9,6 +9,8 @@ interface TactileGridProps {
   onOpenRecords: () => void;
   onOpenMedicines: () => void;
   onOpenFollowUp: () => void;
+  onOpenHeartRate: () => void;
+  onOpenChat: () => void;
   onTriggerEmergency: () => void;
 }
 
@@ -18,6 +20,8 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
   onOpenRecords,
   onOpenMedicines,
   onOpenFollowUp,
+  onOpenHeartRate,
+  onOpenChat,
   onTriggerEmergency,
 }) => {
   const { t } = useLanguage();
@@ -71,6 +75,31 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="calendar"
           tone="warning"
           onPress={onOpenFollowUp}
+          style={styles.tile}
+        />
+      </View>
+
+      <View style={styles.gridRow}>
+        <MetricCard
+          layout="stacked"
+          compact
+          equalHeight
+          label={t('heartRateCaption')}
+          value={t('heartRate')}
+          icon="heartbeat"
+          tone="danger"
+          onPress={onOpenHeartRate}
+          style={styles.tile}
+        />
+        <MetricCard
+          layout="stacked"
+          compact
+          equalHeight
+          label={t('messageDoctorCaption')}
+          value={t('messageDoctor')}
+          icon="chat"
+          tone="primary"
+          onPress={onOpenChat}
           style={styles.tile}
         />
       </View>

@@ -54,6 +54,10 @@ Thumbs.db
 !.vscode/extensions.json
 *.sw?
 *.bak
+
+# Local terminology store and downloaded release files
+backend/data/
+
 .neon
 
 .agents/mcp_config.json

@@ -94,7 +94,7 @@ async def reschedule_appointment(
     await db.refresh(apt)
 
     data = appointment_to_dict(apt)
-    await ws_manager.broadcast({
+    await ws_manager.send_to([apt.patient_id, current_doctor["user_id"]], {
         "type": "appointment_event",
         "event": "appointment_rescheduled",
         "patient_id": apt.patient_id,

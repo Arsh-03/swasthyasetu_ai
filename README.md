@@ -130,7 +130,10 @@ swasthyasetu_ai/
 │   │   │   ├── scribe.py             # AI SOAP note draft & doctor sign-off
 │   │   │   ├── cdss.py               # Drug-drug interaction checks
 │   │   │   ├── fhir.py               # HL7 FHIR R4 bundle export
-│   │   │   ├── audit.py              # Audit log
+│   │   │   ├── audit.py              # Audit log (+ filterable /audit/events)
+│   │   │   ├── doctor.py             # Doctor portal: dashboard, calendar, patients, visits, notifications, settings
+│   │   │   ├── chat.py               # Patient ↔ doctor chat (open around visits, emergency words → 108 + urgent alert)
+│   │   │   ├── vitals.py             # Readings patients take at home (heart rate from the phone camera)
 │   │   │   └── translate.py          # Kannada / Hindi / English translation
 │   │   └── services/                 # Token vault, DDI engine, FHIR, scribe,
 │   │                                 # translation & WebSocket connection manager
@@ -138,18 +141,19 @@ swasthyasetu_ai/
 │
 ├── frontend Doctor/                  # Doctor web portal (React + Vite)
 │   └── src/
-│       ├── App.tsx                   # Root view & WebSocket event handling
+│       ├── App.tsx                   # Sign-in, live events, the call (kept running on every page), routing
+│       ├── portal/                   # The portal: Home · My patients · Audit trail · Settings + meeting room
+│       │   ├── Shell.tsx                   # Sidebar, language dropdown, notification bell, profile menu
+│       │   ├── screens/                    # Home, Patients, Patient (tabs), Visit, Meeting, Audit, Settings
+│       │   ├── meeting/                    # Device choice, floating notepad, visit note form
+│       │   ├── i18n.ts                     # English / Kannada / Hindi texts
+│       │   └── time.ts, router.ts, ui.tsx  # Time zone & formats, hash routes, building blocks
 │       ├── components/
 │       │   ├── DoctorLoginView.tsx         # NMC registration login
-│       │   ├── DoctorHeader.tsx
-│       │   ├── PatientQueueView.tsx        # Today's patient queue
-│       │   ├── PatientMedicalChartView.tsx # Patient chart
-│       │   ├── ConsultationWorkspace.tsx   # Video call, AI scribe & prescriptions
+│       │   ├── ClinicalNotepad.tsx         # AI IntelliSense notepad
 │       │   ├── ConsentRequestModal.tsx     # Ask a patient for record access
-│       │   ├── ClinicalRecordsView.tsx     # Records shared under consent
-│       │   └── AuditLedgerView.tsx         # Consent & access audit log
-│       ├── services/api.ts           # Backend client
-│       └── utils/translations.ts
+│       │   └── call/                       # Call windows and overlays
+│       └── services/                 # api.ts, doctorApi.ts, call engine copy
 │
 ├── frontend Patient/                 # Patient mobile app (Expo + React Native)
 │   ├── App.tsx                       # Root view, tab bar & WebSocket event handling
@@ -181,13 +185,46 @@ swasthyasetu_ai/
 ## 🚀 Getting Started
 
 ### Prerequisites
-- **Python 3.12+**
+- **Python 3.11+** (the backend uses `asyncio.timeout`)
 - **Node.js 20+** and **npm**
 - For the patient app on a phone: the **Expo Go** app, or an Android emulator / iOS simulator
 
 Start the backend first. Both apps talk to it at `http://localhost:8000`.
 
 ---
+
+### Quick start (recommended)
+
+One command sets everything up and starts everything. It creates a Python virtual environment in `backend/.venv`, installs the backend requirements **into that environment** (not your system Python), installs the packages of both apps, creates `.env` with a random `SECRET_KEY`, and starts:
+
+- the backend on port **8000**,
+- the **Doctor portal** on port **5173** (login `NMC-KA-581920` / `password123`),
+- the **Patient app's web version** on port **8081** (tap "Demo 1-Click").
+
+Consultation calls (video or audio, either side can call), consent-based AI minutes and the AI IntelliSense notepad work between these two. On a phone (Expo Go) the Patient app shows a note instead of the call: real calls on a phone need a development build with a WebRTC module.
+
+**Windows:** double-click `start.bat`, or in PowerShell:
+```powershell
+.\start.ps1                # set up if needed, then start (opens the browser)
+.\start.ps1 -SetupData     # first time: also download + import ICD-11, RxNorm and DDInter (~95 MB)
+.\stop.ps1                 # stop all servers
+```
+
+**macOS / Linux:**
+```bash
+./start.sh                 # Ctrl+C stops both servers
+./start.sh --setup-data    # first time: also download + import the clinical datasets
+```
+
+Later runs skip the installs and only reinstall when `backend/requirements.txt` or an app's `package-lock.json` change (`-Reinstall` / `--reinstall` rebuilds the virtual environment).
+
+**Clinical datasets:** `backend/data/terminology.db` is not in git, so each machine builds it once with `-SetupData`. The free datasets (WHO ICD-11/ICD-10, NLM RxNorm, DDInter 2.0) download automatically. SNOMED CT, LOINC and CDCI need accounts; see [docs/08_standards_integration](docs/08_standards_integration/). DDInter is CC BY-NC-SA 4.0 (non-commercial use only).
+
+To run backend commands yourself, use the environment's Python: `backend\.venv\Scripts\python.exe` on Windows, `backend/.venv/bin/python` on macOS/Linux (for example `python -m app.terminology status` from the `backend` folder).
+
+---
+
+### Manual setup
 
 ### 1. Backend
 
@@ -283,10 +320,11 @@ Installing `expo-dev-client` makes `npx expo start` target that development app.
 
 ### Try the full flow
 1. Sign in as the **doctor** in the web portal and as the **patient** in the mobile app.
-2. From the doctor's queue, request access to a record. The patient gets a consent prompt and approves it with the OTP.
-3. Start a call from the doctor side. The patient sees an incoming call and accepts.
-4. End the call. The patient app opens the care plan automatically.
-5. On the patient's **Privacy** tab, see who accessed which record and revoke access.
+2. On the doctor's **Home**, open **Ramesh Gowda**'s appointment (schedule list or calendar). The meeting room shows a camera/microphone check and whether the patient is in the app.
+3. Click **Join with video**. The patient's app rings; accept it. Take notes in the floating notepad during the call.
+4. End the call and sign the visit note. The patient app opens the care plan automatically; the visit appears under the patient's **Visits** tab.
+5. On the patient's **Records** tab, request access to a record. The patient approves it with the OTP.
+6. On the patient's **Privacy** tab, see who accessed which record and revoke access.
 
 ---
 
@@ -345,6 +383,36 @@ All REST routes are under `/api/v1`. The live, complete list is always at **`htt
 | `POST` | `/cdss/validate` | Check prescriptions for drug interactions |
 | `GET` | `/fhir/encounter/{encounter_id}` | Export encounter as FHIR R4 bundle |
 | `GET` | `/audit/logs` | Audit log |
+| `GET` | `/audit/events` | Audit log with filters (time, category, problems, search) and links |
+
+### Doctor portal
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/doctor/dashboard` | Next appointment, today's list, key numbers, chart data, urgent alerts |
+| `GET` | `/doctor/appointments` | Appointments in a date range (calendar) |
+| `POST` / `PATCH` | `/doctor/appointments[/{id}]` | Book, reschedule or cancel (409 outside available hours unless `force`) |
+| `POST` | `/doctor/appointments/{id}/open` | Open the appointment's meeting room (consultation) |
+| `GET` | `/doctor/patients` · `/doctor/patients/{id}` | My patients · one patient with visits |
+| `GET` | `/doctor/visits/{encounter_id}` | One past visit (note, plan, notepad, activity) |
+| `GET` / `POST` | `/doctor/notifications` · `/doctor/notifications/read` | Notification bell |
+| `GET` / `PUT` | `/doctor/settings` | Profile, preferences, weekly hours and leave |
+
+### Chat (patients and doctors)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/chat/threads` | My conversations (doctor: patients · patient: doctors) |
+| `GET` | `/chat/threads/{other_id}` | Messages, and whether the patient can write now (open from booking until N days after a visit) |
+| `POST` | `/chat/threads/{other_id}/messages` | Send; patient messages with emergency words are flagged (patient told to call 108, doctor alerted) |
+| `POST` | `/chat/threads/{other_id}/read` | Mark read (read receipts) |
+| `GET` | `/chat/unread` | Unread count |
+
+### Home readings
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/vitals` | Patient saves a reading (heart rate from the phone camera: an estimate, 30–220 bpm accepted; outside 45–120 warns the doctor) |
+| `GET` | `/vitals/me` · `/vitals/patient/{id}` | Patient's own readings · a patient's readings (doctor) |
+
+**Heart rate from the phone camera** (patient app → Home → Heart rate): the patient covers the back camera and flash with a fingertip for 30 s; `frontend Patient/src/services/heartRate.ts` turns the tiny brightness changes into beats per minute and refuses unclear signals. Works in the web app (Chrome on Android also turns the flash on); the installed app needs a native camera module first.
 | `GET` | `/translate/languages` | Supported languages |
 | `POST` | `/translate` | Translate text |
 | `POST` | `/translate/batch` | Translate several texts |

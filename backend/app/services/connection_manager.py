@@ -1,50 +1,44 @@
 import json
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional, Set
+
 from fastapi import WebSocket
 
 
 class ConnectionManager:
     """
-    WebSocket connection hub for WebRTC signaling and real-time consent alerts.
-
-    Each socket may be tied to a signed-in user (from the token passed when connecting).
-    Messages with a "to" user id are delivered only to that user's sockets (call signaling);
-    everything else is broadcast as before.
+    Real-time notifications (ABHA consent requests/decisions, history updates) for signed-in users.
+    Each message goes only to the users it concerns; there is no broadcast to everyone.
     """
-
     def __init__(self):
-        # socket -> user id (None for sockets that connected without a valid token)
-        self.active_connections: Dict[WebSocket, Optional[str]] = {}
+        self._by_user: Dict[str, Set[WebSocket]] = {}
+        self._roles: Dict[str, str] = {}              # user id -> "doctor" | "patient" | ...
 
-    async def connect(self, websocket: WebSocket, user_id: Optional[str] = None):
-        await websocket.accept()
-        self.active_connections[websocket] = user_id
+    def add(self, user_id: str, websocket: WebSocket, role: str = "") -> None:
+        self._by_user.setdefault(user_id, set()).add(websocket)
+        if role:
+            self._roles[user_id] = role
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.pop(websocket, None)
+    def remove(self, user_id: str, websocket: WebSocket) -> None:
+        sockets = self._by_user.get(user_id)
+        if sockets:
+            sockets.discard(websocket)
+            if not sockets:
+                self._by_user.pop(user_id, None)
+                self._roles.pop(user_id, None)
 
-    def user_of(self, websocket: WebSocket) -> Optional[str]:
-        return self.active_connections.get(websocket)
+    async def send_to(self, user_ids: Iterable[Optional[str]], message: Dict) -> None:
+        text = json.dumps(message, default=str)
+        for user_id in {u for u in user_ids if u}:
+            for ws in list(self._by_user.get(user_id, ())):
+                try:
+                    await ws.send_text(text)
+                except Exception:  # noqa: BLE001 - closed connection
+                    self.remove(user_id, ws)
 
-    async def _send(self, connection: WebSocket, text: str):
-        try:
-            await connection.send_text(text)
-        except Exception:
-            self.disconnect(connection)
 
-    async def broadcast(self, message: Dict, exclude: Optional[WebSocket] = None):
-        text = json.dumps(message)
-        for connection in list(self.active_connections):
-            if connection is not exclude:
-                await self._send(connection, text)
-
-    async def send_to_user(self, user_id: str, message: Dict) -> int:
-        """Delivers to every open socket of one user. Returns how many sockets received it."""
-        text = json.dumps(message)
-        targets = [c for c, uid in list(self.active_connections.items()) if uid == user_id]
-        for connection in targets:
-            await self._send(connection, text)
-        return len(targets)
+    async def send_to_role(self, role: str, message: Dict) -> None:
+        """For clinician-only updates (queue, check-ins): every signed-in user with this role."""
+        await self.send_to([u for u, r in self._roles.items() if r == role], message)
 
 
 ws_manager = ConnectionManager()

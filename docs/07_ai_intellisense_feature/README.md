@@ -36,3 +36,7 @@ This directory contains the production-grade engineering, clinical, and UI/UX do
 6. [06_ui_ux_consultation_notepad_specs.md](file:///c:/Users/AITNS/Documents/swasthyasetu_ai/docs/07_ai_intellisense_feature/06_ui_ux_consultation_notepad_specs.md)
    - **UI/UX Component & Interaction Specifications:** Complete color tokens, doctor notepad ghost-text DOM mechanics, ABHA record tag badges.
    - Mobile patient in-call consent modal wireframe, high-touch accessibility, and post-call clinician verification approval console.
+
+7. [07_tier3_sovereign_deployment.md](07_tier3_sovereign_deployment.md)
+   - **Tier 3 Self-Hosted Language Model:** modes (off / stub / local), production architecture with no third-party AI APIs.
+   - Hardware sizing, Ollama setup, network lockdown checklist, wasted-work controls, app protections, clinical safety filter and go-live checks.

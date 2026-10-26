@@ -48,5 +48,14 @@
     "lint": "expo lint",
     "contrast": "node --import ./scripts/ts-resolve.mjs scripts/contrast-check.ts"
   },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "react-native-webrtc"
+        ]
+      }
+    }
+  },
   "private": true
 }

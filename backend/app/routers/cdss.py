@@ -13,9 +13,9 @@ async def validate_prescriptions(
 ):
     """
     Deterministic rule check comparing proposed medications against patient's current medication list.
-    Flags dangerous combinations with National Formulary of India (NFI) citations.
+    Flags interactions (DDInter 2.0 + curated NFI rules) and allergy conflicts, each with its source.
     """
-    alerts = check_drug_safety(data.proposed_drugs, data.patient_active_meds)
+    alerts = check_drug_safety(data.proposed_drugs, data.patient_active_meds, data.allergies)
     
     output = []
     for a in alerts:

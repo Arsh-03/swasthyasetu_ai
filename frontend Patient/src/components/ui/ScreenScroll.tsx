@@ -10,6 +10,8 @@ export interface ChromeInsets {
 const ChromeInsetsContext = createContext<ChromeInsets>({ top: 0, bottom: 0 });
 
 export const ChromeInsetsProvider = ChromeInsetsContext.Provider;
+/** Space taken by the floating toolbar and tab bar (for screens that lay out their own scrolling). */
+export const useChromeInsets = () => useContext(ChromeInsetsContext);
 
 /**
  * Screen-level ScrollView that lets content scroll *under* the glass bars

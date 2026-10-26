@@ -11,8 +11,10 @@ export const API_HOST =
   process.env.EXPO_PUBLIC_API_HOST ||
   (expoHost && expoHost !== 'localhost' && expoHost !== '127.0.0.1' ? expoHost : '') ||
   (Platform.OS === 'android' ? '10.0.2.2' : 'localhost');
-export const API_BASE_URL = `http://${API_HOST}:8000/api/v1`;
-export const WS_BASE_URL = `ws://${API_HOST}:8000/ws/telehealth`;
+// Backend port; override with EXPO_PUBLIC_API_PORT (e.g. for a second test backend). Default: 8000.
+const API_PORT = process.env.EXPO_PUBLIC_API_PORT || '8000';
+export const API_BASE_URL = `http://${API_HOST}:${API_PORT}/api/v1`;
+export const WS_BASE_URL = `ws://${API_HOST}:${API_PORT}/ws/telehealth`;
 
 /** The socket URL carries the login token so the backend can route call signaling to this patient. */
 export const telehealthSocketUrl = (token: string | null) =>
@@ -137,6 +139,63 @@ export interface UploadDocumentInput {
   fileObj?: any;
 }
 
+export interface VisitSummaryData {
+  summary_id: string;
+  encounter_id: string | null;
+  language: string;
+  sections: { told?: string[]; advice?: string[]; next?: string[]; urgent?: string[] };
+  engine: string;
+  created_at: string;
+}
+
+export interface VitalReading {
+  reading_id: string;
+  kind: 'heart_rate';
+  value: number;
+  unit: string;
+  method: 'camera_ppg' | 'manual';
+  confidence: 'good' | 'fair' | null;
+  details: Record<string, unknown>;
+  out_of_range: boolean;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  message_id: string;
+  sender: 'patient' | 'doctor';
+  body: string;
+  lang: string;
+  translation: string | null;
+  translation_lang: string | null;
+  urgent: boolean;
+  created_at: string;
+  read: boolean;
+}
+
+export interface ChatStatus {
+  open: boolean;
+  reason: 'upcoming' | 'recent_visit' | 'consultation' | 'doctor_reply' | 'closed';
+  open_until: string | null;
+  window_days: number;
+  doctor_available_now: boolean;
+  doctor_next_available: string | null;
+}
+
+export interface ChatThreadSummary {
+  other_id: string;
+  name: string;
+  subtitle: string | null;
+  last_message: ChatMessage | null;
+  unread: number;
+  open: boolean;
+}
+
+export interface ChatThread {
+  doctor: { id: string; name: string; specialty: string };
+  status: ChatStatus;
+  messages: ChatMessage[];
+}
+
 export interface PatientRegisterRequest {
   full_name: string;
   abha_address: string;
@@ -243,11 +302,66 @@ class PatientApiService {
     return data as T;
   }
 
-  async approveConsent(consentId: string, otpCode: string) {
-    return this.request(`/consents/${consentId}/verify-otp-and-grant`, {
+  /** One tap: the patient is already signed in, so no OTP; the server checks it's their request. */
+  async approveConsent(consentId: string) {
+    return this.request(`/consents/${consentId}/decision`, {
       method: 'POST',
-      body: JSON.stringify({ otp_code: otpCode }),
+      body: JSON.stringify({ approved: true }),
     });
+  }
+
+  // ---- Visit summaries (offered after a call with AI minutes; kept only if the patient says yes) ----
+  async getPendingSummaries(): Promise<{ summary_id: string; encounter_id: string }[]> {
+    return this.request('/calls/summaries/pending');
+  }
+
+  async acceptSummary(summaryId: string): Promise<VisitSummaryData> {
+    return this.request(`/calls/summaries/${encodeURIComponent(summaryId)}/accept`, { method: 'POST' });
+  }
+
+  async declineSummary(summaryId: string): Promise<{ ok: boolean }> {
+    return this.request(`/calls/summaries/${encodeURIComponent(summaryId)}/decline`, { method: 'POST' });
+  }
+
+  async getMySummaries(): Promise<VisitSummaryData[]> {
+    return this.request('/calls/summaries/me');
+  }
+
+  // ---- Home readings (heart rate from the camera) ----
+  async saveReading(reading: {
+    kind: 'heart_rate'; value: number; method: 'camera_ppg' | 'manual'; confidence?: 'good' | 'fair'; details?: Record<string, unknown>;
+  }): Promise<VitalReading> {
+    return this.request('/vitals', { method: 'POST', body: JSON.stringify(reading) });
+  }
+
+  async getMyReadings(): Promise<VitalReading[]> {
+    return this.request('/vitals/me');
+  }
+
+  // ---- Chat with the doctor (backend/app/routers/chat.py) ----
+  async getChatThreads(): Promise<ChatThreadSummary[]> {
+    return this.request('/chat/threads');
+  }
+
+  async getChatThread(doctorId: string): Promise<ChatThread> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}`);
+  }
+
+  async sendChatMessage(doctorId: string, body: string, lang: string): Promise<ChatMessage & { emergency: boolean }> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}/messages`, { method: 'POST', body: JSON.stringify({ body, lang }) });
+  }
+
+  async markChatRead(doctorId: string): Promise<{ marked: number }> {
+    return this.request(`/chat/threads/${encodeURIComponent(doctorId)}/read`, { method: 'POST' });
+  }
+
+  async getChatUnread(): Promise<{ count: number }> {
+    return this.request('/chat/unread');
+  }
+
+  /** The patient's open consultation (where the doctor's call room is). */
+  async getActiveEncounter(): Promise<{ encounter_id: string | null; doctor_name?: string }> {
+    return this.request('/calls/active-encounter');
   }
 
   async declineConsent(consentId: string) {

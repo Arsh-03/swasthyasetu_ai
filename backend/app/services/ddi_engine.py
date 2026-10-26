@@ -41,11 +41,32 @@ VERIFIED_DDI_RULES = [
 
 def check_drug_safety(
     proposed_drugs: List[str],
-    current_meds: List[str]
+    current_meds: List[str],
+    allergies: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Deterministic rule engine checking proposed medications against current patient medications.
+    Check proposed medications against current medications (and allergies, if given).
+    Uses the safety engine (DDInter 2.0 + these curated rules); falls back to the rules alone on error.
     """
+    try:
+        from app.services.safety_engine import check  # lazy: safety_engine imports this module
+        result = check("\n".join(proposed_drugs), current_meds, allergies or [])
+        return [
+            {
+                "severity": a["severity"].upper(),
+                "conflicting_pair": a["title"],
+                "clinical_mechanism": a["detail"],
+                "formulary_citation": a["source"],
+                "recommended_action": a["context"],
+            }
+            for a in result["alerts"] if not a.get("low_priority")
+        ]
+    except Exception:  # noqa: BLE001 - never let a data problem block the clinician
+        pass
+    return _check_curated_rules(proposed_drugs, current_meds)
+
+
+def _check_curated_rules(proposed_drugs: List[str], current_meds: List[str]) -> List[Dict[str, Any]]:
     alerts = []
     
     all_combined = [d.lower().strip() for d in proposed_drugs]

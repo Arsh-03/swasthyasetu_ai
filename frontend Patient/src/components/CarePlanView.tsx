@@ -9,6 +9,7 @@ import { localized } from '../utils/localized';
 import { playBirthdayPopperSound, playMedicationAlertSound } from '../utils/soundEffects';
 import { triggerBirthdayPopper } from '../utils/confetti';
 import { EmptyMedications } from './illustrations';
+import { SavedSummaries } from './VisitSummary';
 import {
   AppText,
   AudioListenButton,
@@ -33,6 +34,8 @@ import {
 
 interface CarePlanViewProps {
   onBack: () => void;
+  /** Bumped when a new visit summary was saved. */
+  summariesKey?: number;
 }
 
 type CheckinStatus = 'better' | 'same' | 'worse';
@@ -77,7 +80,7 @@ const getCurrentTimeSlot = (): DoseSlot => {
   return 'night';
 };
 
-export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
+export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey = 0 }) => {
   const { lang, t } = useLanguage();
   const [plan, setPlan] = useState<CarePlan | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -263,6 +266,8 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack }) => {
         title={t('carePlan')}
         subtitle={subtitle || (status === 'loading' ? t('loading') : t('noCarePlan'))}
       />
+
+      <SavedSummaries refreshKey={summariesKey} />
 
       {/* Voice instructions */}
       <AudioListenButton
