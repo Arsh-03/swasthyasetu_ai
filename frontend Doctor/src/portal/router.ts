@@ -12,6 +12,7 @@ export type Route =
   | { page: 'meeting'; appointmentId: string }
   | { page: 'messages'; patientId?: string }
   | { page: 'audit' }
+  | { page: 'lab' }
   | { page: 'settings'; section?: string };
 
 export function parseHash(hash: string): Route {
@@ -26,6 +27,7 @@ export function parseHash(hash: string): Route {
   if (seg[0] === 'meeting' && seg[1]) return { page: 'meeting', appointmentId: seg[1] };
   if (seg[0] === 'messages') return { page: 'messages', patientId: seg[1] };
   if (seg[0] === 'audit') return { page: 'audit' };
+  if (seg[0] === 'lab') return { page: 'lab' };
   if (seg[0] === 'settings') return { page: 'settings', section: params.get('section') || undefined };
   return { page: 'home' };
 }
@@ -39,6 +41,7 @@ export function hrefFor(route: Route): string {
     case 'meeting': return `#/meeting/${e(route.appointmentId)}`;
     case 'messages': return `#/messages${route.patientId ? `/${e(route.patientId)}` : ''}`;
     case 'audit': return '#/audit';
+    case 'lab': return '#/lab';
     case 'settings': return `#/settings${route.section ? `?section=${e(route.section)}` : ''}`;
     default: return '#/home';
   }

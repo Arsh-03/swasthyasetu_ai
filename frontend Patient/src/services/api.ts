@@ -89,6 +89,23 @@ export interface NextAppointment {
   status: string;
   instructionsForPatient: LocalizedText[];
   isRescheduled: boolean;
+  /** Google Meet style code; joining opens 10 minutes before the start. */
+  meetingCode?: string | null;
+  scheduledAt?: string | null;
+  durationMinutes?: number;
+}
+
+export interface MeetingInfo {
+  meeting_code: string;
+  appointment_id: string;
+  doctor_name: string;
+  scheduled_at: string | null;
+  duration_minutes: number;
+  agenda: string;
+  opens_at: string | null;
+  closes_at: string | null;
+  ends_at: string | null;
+  state: 'early' | 'open' | 'closed' | 'cancelled' | 'completed';
 }
 
 export type DoseSlot = 'morning' | 'afternoon' | 'night' | 'prn';
@@ -116,6 +133,12 @@ export interface CarePlan {
   doses_today: Record<string, boolean>;
   checkin_today: 'better' | 'same' | 'worse' | null;
   latest_note: { assessment: string; plan: Record<string, LocalizedText>; signed_at: string } | null;
+  /** The last consultation, read from the doctor's note (CareBridge note format). */
+  latest_visit?: {
+    encounter_id: string; signed_at: string; complaints: string[]; diagnosis: string[]; advice: string[];
+    investigations: string[]; follow_up: { text: string | null; in_days: number | null };
+    prescription: { name: string; strength: string | null; frequency: string | null; duration: string | null }[];
+  } | null;
 }
 
 export interface ConsentHistoryItem {
@@ -130,6 +153,47 @@ export interface ConsentHistoryItem {
   remaining: LocalizedText | null;
   created_at: string;
   expires_at: string | null;
+}
+
+export type ReadingKind = 'heart_rate' | 'blood_pressure' | 'blood_sugar' | 'temperature' | 'weight';
+
+export interface AshaReadingItem {
+  kind: ReadingKind;
+  value: number;
+  value2?: number;
+  details?: Record<string, unknown>;
+}
+
+export interface AshaPatient {
+  patient_id: string;
+  full_name: string;
+  age?: number;
+  gender?: string;
+  district?: string;
+  phone_number: string;
+  preferred_language: 'kn' | 'hi' | 'en';
+  avatar_url?: string | null;
+  conditions: string[];
+}
+
+export interface AshaTask {
+  task_id: string;
+  patient_id: string;
+  kinds: ReadingKind[];
+  note: string;
+  due_at: string | null;
+  status: string;
+  doctor_name: string | null;
+  created_at: string;
+  patient?: AshaPatient;
+  consent?: boolean;
+}
+
+export interface AshaVisit {
+  patient: AshaPatient;
+  consent: { granted: boolean; method?: string; expires_at?: string };
+  tasks: AshaTask[];
+  my_readings: (VitalReading & { display: string; level: string })[];
 }
 
 export interface VisitSummaryData {
@@ -289,7 +353,8 @@ class PatientApiService {
     const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: this.getHeaders() });
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      throw new Error((data && data.detail) || `Request failed (${res.status})`);
+      // ApiError is an Error that keeps the HTTP status (the ASHA outbox retries network errors, not refusals).
+      throw new ApiError((data && data.detail) || `Request failed (${res.status})`, res.status);
     }
     return data as T;
   }
@@ -300,6 +365,50 @@ class PatientApiService {
       method: 'POST',
       body: JSON.stringify({ approved: true }),
     });
+  }
+
+  // ---- Meetings (Google Meet style: link / code, waiting room) ----
+  async getMeeting(code: string): Promise<MeetingInfo> {
+    return this.request(`/calls/meetings/${encodeURIComponent(code)}`);
+  }
+
+  async joinMeeting(code: string): Promise<{ encounter_id: string; doctor_name: string }> {
+    return this.request(`/calls/meetings/${encodeURIComponent(code)}/join`, { method: 'POST' });
+  }
+
+  // ---- ASHA worker (community health worker) ----
+  async loginAsha(identifier: string, password = 'password123'): Promise<PatientUser> {
+    const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ identifier, password, role: 'asha' }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) throw new ApiError((data && data.detail) || 'Sign-in failed', res.status);
+    this.setToken(data.token);
+    this.setCurrentUser(data.user);
+    return data.user;
+  }
+
+  async ashaTasks(): Promise<AshaTask[]> {
+    return this.request('/asha/tasks');
+  }
+
+  async ashaFindPatients(q = ''): Promise<AshaPatient[]> {
+    return this.request(`/asha/patients?q=${encodeURIComponent(q)}`);
+  }
+
+  async ashaVisit(patientId: string): Promise<AshaVisit> {
+    return this.request(`/asha/patients/${encodeURIComponent(patientId)}`);
+  }
+
+  async ashaConsent(patientId: string, method: 'tap' | 'thumb' | 'verbal') {
+    return this.request('/asha/consent', { method: 'POST', body: JSON.stringify({ patient_id: patientId, method }) });
+  }
+
+  async ashaSaveReadings(body: { patient_id: string; items: AshaReadingItem[]; task_id?: string; measured_at?: string; client_id?: string }) {
+    return this.request<{ saved: unknown[]; duplicate: boolean; alerts: { kind: string; level: string; reason: string }[] }>(
+      '/asha/readings', { method: 'POST', body: JSON.stringify(body) });
   }
 
   // ---- Visit summaries (offered after a call with AI minutes; kept only if the patient says yes) ----

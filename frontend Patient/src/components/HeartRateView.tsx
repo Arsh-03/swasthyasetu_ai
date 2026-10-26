@@ -4,7 +4,7 @@ import Svg, { Circle, Polyline } from 'react-native-svg';
 import { colors, radii, spacing, tints } from '../theme/tokens';
 import { patientApi, type VitalReading } from '../services/api';
 import { estimateHeartRate, fingerOnCamera, waveform, type ColorSample, type HeartRateResult } from '../services/heartRate';
-import { CAMERA_HEART_RATE_SUPPORTED, startFingertipCapture, type CameraCapture } from '../services/heartRateCamera';
+import { CAMERA_SAMPLER_SUPPORTED, CameraSampler } from './CameraSampler';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatTimestamp } from '../utils/dates';
 import { haptic } from '../utils/haptics';
@@ -23,6 +23,8 @@ type Phase = 'intro' | 'measuring' | 'result' | 'failed';
 export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () => void }> = ({ onBack, onMessageDoctor }) => {
   const { lang, t } = useLanguage();
   const [phase, setPhase] = useState<Phase>('intro');
+  const phaseRef = useRef<Phase>('intro');
+  phaseRef.current = phase;
   const [progress, setProgress] = useState(0); // seconds of good signal
   const [fingerOn, setFingerOn] = useState(false);
   const [live, setLive] = useState<number | null>(null);
@@ -32,21 +34,20 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
   const [error, setError] = useState<string | null>(null);
   const [torch, setTorch] = useState(true);
   const [history, setHistory] = useState<VitalReading[]>([]);
-  const capture = useRef<CameraCapture | null>(null);
+  // Camera on while measuring (web: browser camera; phones: a small WebView page).
+  const [capturing, setCapturing] = useState(false);
   const samples = useRef<ColorSample[]>([]);
   const start = useRef<number | null>(null);
   const lostSince = useRef<number | null>(null);
 
   const loadHistory = () => patientApi.getMyReadings().then(setHistory).catch(() => undefined);
   useEffect(() => { void loadHistory(); }, []);
-  useEffect(() => () => capture.current?.stop(), []);
 
-  const stop = () => {
-    capture.current?.stop();
-    capture.current = null;
-  };
+  const stop = () => setCapturing(false);
 
   const finish = async () => {
+    if (phaseRef.current !== 'measuring') return; // frames that arrive while finishing
+    phaseRef.current = 'result';
     stop();
     const r = estimateHeartRate(samples.current);
     setResult(r);
@@ -78,36 +79,40 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
     samples.current = [];
     start.current = null;
     lostSince.current = null;
-    try {
-      capture.current = await startFingertipCapture((s) => {
-        const on = fingerOnCamera(s);
-        setFingerOn(on);
-        if (!on) {
-          lostSince.current ??= s.t;
-          if (s.t - lostSince.current > LOST_RESET_MS) { samples.current = []; start.current = null; setProgress(0); setLive(null); }
-          return;
-        }
-        lostSince.current = null;
-        start.current ??= s.t;
-        if (s.t - start.current < WARMUP_SECONDS * 1000) return;
-        samples.current.push(s);
-        const secs = (s.t - samples.current[0].t) / 1000;
-        setProgress(Math.min(MEASURE_SECONDS, secs));
-        if (samples.current.length % 15 === 0) {
-          setWave(waveform(samples.current));
-          if (secs >= 10) {
-            const est = estimateHeartRate(samples.current.filter((x) => x.t >= s.t - 12000));
-            setLive(est && est.confidence !== 'poor' ? est.bpm : null);
-          }
-        }
-        if (secs >= MEASURE_SECONDS) void finish();
-      });
-      setTorch(capture.current.torch);
-      setPhase('measuring');
-    } catch (err) {
-      const denied = err instanceof Error && /denied|NotAllowed/i.test(err.name + err.message);
-      setError(denied ? t('hrCameraDenied') : t('hrCameraError'));
+    setCapturing(true);
+    setPhase('measuring');
+  };
+
+  const onSample = (s: ColorSample) => {
+    if (phaseRef.current !== 'measuring') return;
+    const on = fingerOnCamera(s);
+    setFingerOn(on);
+    if (!on) {
+      lostSince.current ??= s.t;
+      if (s.t - lostSince.current > LOST_RESET_MS) { samples.current = []; start.current = null; setProgress(0); setLive(null); }
+      return;
     }
+    lostSince.current = null;
+    start.current ??= s.t;
+    if (s.t - start.current < WARMUP_SECONDS * 1000) return;
+    samples.current.push(s);
+    const secs = (s.t - samples.current[0].t) / 1000;
+    setProgress(Math.min(MEASURE_SECONDS, secs));
+    if (samples.current.length % 15 === 0) {
+      setWave(waveform(samples.current));
+      if (secs >= 10) {
+        const est = estimateHeartRate(samples.current.filter((x) => x.t >= s.t - 12000));
+        setLive(est && est.confidence !== 'poor' ? est.bpm : null);
+      }
+    }
+    if (secs >= MEASURE_SECONDS) void finish();
+  };
+
+  const onCameraStarted = (hasTorch: boolean) => setTorch(hasTorch);
+  const onCameraError = (kind: 'denied' | 'failed') => {
+    setCapturing(false);
+    setPhase('intro');
+    setError(kind === 'denied' ? t('hrCameraDenied') : t('hrCameraError'));
   };
 
   const cancel = () => { stop(); setPhase('intro'); };
@@ -117,7 +122,7 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
       <NavBar backLabel={t('home')} onBack={() => { stop(); onBack(); }} />
       <AppText variant="largeTitle" accessibilityRole="header">{t('hrTitle')}</AppText>
 
-      {!CAMERA_HEART_RATE_SUPPORTED ? (
+      {!CAMERA_SAMPLER_SUPPORTED ? (
         <Card>
           <AppText variant="body">{t('hrNotSupported')}</AppText>
         </Card>
@@ -149,6 +154,7 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
             {fingerOn ? t('hrHoldStill', { n: Math.max(0, Math.ceil(MEASURE_SECONDS - progress)) }) : t('hrCoverCamera')}
           </AppText>
           {!torch && <AppText variant="footnote" color="inkMuted" align="center">{t('hrNoFlash')}</AppText>}
+          <CameraSampler active={capturing} onSample={onSample} onStarted={onCameraStarted} onError={onCameraError} />
           <Wave values={wave} />
           <SecondaryButton label={t('hrCancel')} onPress={cancel} />
         </View>

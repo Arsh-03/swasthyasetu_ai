@@ -94,8 +94,10 @@ AUDIT_CATEGORIES = ("appointments", "consultations", "messages", "consent_record
 def audit_category(action: str) -> str:
     if action.startswith("APPOINTMENT_"):
         return "appointments"
-    if action == "VITAL_READING_RECORDED":
+    if action == "VITAL_READING_RECORDED" or action.startswith("ASHA_READINGS"):
         return "consultations"
+    if action == "ASHA_RECORDING_CONSENT_GIVEN":
+        return "consent_records"
     if action.startswith("CHAT_"):
         return "alerts" if action == "CHAT_MESSAGE_URGENT" else "messages"
     if action in ("RECOVERY_CHECKIN",) or action.startswith("ALERT_") or action.startswith("UNAUTHORIZED_"):

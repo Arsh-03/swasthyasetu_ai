@@ -1,17 +1,11 @@
-// Live assistant during the call: which engine is running, suggestions as they stream in, and safety alerts.
-// Nothing goes into the note without the doctor's click.
-import { Icon, type IconName } from '../../components/ui/Icon';
+// Live assistant during the call, kept quiet on purpose: a one-line status (is the AI listening, which engines),
+// short "Noted: ..." toasts when something new is understood, and pop-ups only for safety alerts.
+// The AI's help with writing comes as autocomplete inside the notepad (it sees the masked conversation).
+import { useEffect, useRef, useState } from 'react';
+import { Icon } from '../../components/ui/Icon';
 import { cx } from '../../components/ui/cx';
-import type { AssistAlert, AssistSuggestion } from '../../services/call/callTypes';
+import type { AssistAlert } from '../../services/call/callTypes';
 import { usePortal } from '../PortalContext';
-import type { StringKey } from '../i18n';
-
-const KIND: Record<string, { label: StringKey; icon: IconName; tone: string; section: string | null; prefix: string }> = {
-  ASK: { label: 'assistAsk', icon: 'chat', tone: 'bg-primary-tint text-primary', section: null, prefix: '' },
-  CHECK: { label: 'assistCheck', icon: 'vitals', tone: 'bg-ice text-primary-deep', section: 'exam', prefix: 'Check: ' },
-  NOTE: { label: 'assistNote', icon: 'clinicalNotes', tone: 'bg-success-tint text-success-deep', section: 'history', prefix: '' },
-  SAFETY: { label: 'assistSafety', icon: 'drugAlert', tone: 'bg-warning-tint text-warning-deep', section: 'plan', prefix: 'Safety: ' },
-};
 
 /** Engine badges: your own model (live) or the built-in demo engine. */
 export function EngineBadges() {
@@ -29,67 +23,81 @@ export function EngineBadges() {
   return <span className="flex flex-wrap gap-1">{badge(t('engineSpeech'), a.speech)}{badge(t('engineSuggestions'), a.model)}</span>;
 }
 
-export function LiveAssist() {
-  const { t, call, addToNote } = usePortal();
-  const a = call.assist;
-  if (!call.aiOn && a.suggestions.length === 0 && !a.streaming) {
+/** One line above the notes: listening or not, which engines, practice. */
+export function AssistStrip() {
+  const { t, call } = usePortal();
+  if (!call.aiOn) {
     return (
-      <div className="mb-3 rounded-control border border-dashed border-border px-3 py-2 text-xs text-ink-muted flex items-center gap-2">
-        <Icon name="aiAssist" size={16} /> {t('assistOff')}
-      </div>
+      <p className="mb-2 flex items-center gap-2 text-xs text-ink-muted">
+        <Icon name="aiAssist" size={14} /> {t('assistOffShort')}
+      </p>
     );
   }
-  const add = (s: AssistSuggestion) => {
-    const k = KIND[s.kind] ?? KIND.NOTE;
-    addToNote({ id: `assist_${s.id}`, text: `${k.prefix}${s.text}`, section: k.section ?? 'history' });
-    call.dismissSuggestion(s.id);
-  };
   return (
-    <section aria-label={t('assistTitle')} className="sticky -top-3 z-10 -mx-3 -mt-3 mb-3 border-b border-primary/30 bg-card p-2.5 shadow-card max-h-[45%] overflow-y-auto">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="flex items-center gap-1.5 text-xs font-semibold text-primary"><Icon name="aiAssist" size={16} weight="duotone" /> {t('assistTitle')}</span>
-        <EngineBadges />
-      </div>
-      {a.streaming && (
-        <p className="text-xs text-ink whitespace-pre-wrap bg-card rounded-tight px-2.5 py-2 mb-2" aria-live="polite">
-          {a.streaming}<span className="inline-block w-1.5 h-3.5 bg-primary ml-0.5 align-middle animate-pulse" />
-        </p>
-      )}
-      {a.suggestions.length === 0 && !a.streaming && <p className="text-xs text-ink-muted px-1">{t('assistListening')}</p>}
-      <ul className="flex flex-col gap-1.5">
-        {a.suggestions.map((s) => {
-          const k = KIND[s.kind] ?? KIND.NOTE;
-          return (
-            <li key={s.id} className="bg-card rounded-tight px-2.5 py-2 flex items-start gap-2">
-              <span className={cx('shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-3xs font-bold', k.tone)}>
-                <Icon name={k.icon} size={11} /> {t(k.label)}
-              </span>
-              <span className="flex-1 text-xs text-ink">{s.text}</span>
-              {k.section && (
-                <button type="button" onClick={() => add(s)} className="shrink-0 text-3xs font-bold text-primary hover:underline cursor-pointer">
-                  + {t('addToNote')}
-                </button>
-              )}
-              <button type="button" onClick={() => call.dismissSuggestion(s.id)} aria-label={t('dismiss')}
-                className="shrink-0 text-ink-muted hover:text-ink cursor-pointer"><Icon name="close" size={12} /></button>
-            </li>
-          );
-        })}
-      </ul>
-      <p className="text-3xs text-ink-muted mt-2 px-1">{t('assistPrivacy')}</p>
-    </section>
+    <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
+      <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
+        <span className="w-2 h-2 rounded-full bg-success animate-pulse" />
+        {call.practice ? (call.practiceVoice ? t('practiceListeningVoice') : t('practiceListeningDemo')) : t('assistListeningShort')}
+      </span>
+      {call.practice && <span className="rounded-full bg-warning-tint text-warning-deep text-3xs font-bold px-2 py-0.5">{t('practiceBadge')}</span>}
+      <EngineBadges />
+      <span className="text-ink-muted">{t('assistAutocompleteHint')}</span>
+    </div>
   );
 }
 
-/** Safety alerts as pop-ups (shown over the video, so they are seen even with the notepad closed). */
-export function AlertStack() {
+/** "Noted: fever for 3 days" toasts for each new thing the AI picked up from the conversation. */
+export function NotedToasts() {
+  const { t, call } = usePortal();
+  const seen = useRef<Set<string>>(new Set());
+  const [queue, setQueue] = useState<{ id: string; text: string }[]>([]);
+  const minutes = call.minutes?.minutes;
+
+  useEffect(() => {
+    if (!minutes) return;
+    const fresh: { id: string; text: string }[] = [];
+    for (const items of Object.values(minutes)) {
+      for (const text of items) {
+        const id = text.toLowerCase();
+        if (seen.current.has(id)) continue;
+        seen.current.add(id);
+        fresh.push({ id, text: text.replace(/\s*\(patient-reported\)\.?$/i, '').replace(/\.$/, '') });
+      }
+    }
+    if (fresh.length) setQueue((q) => [...q, ...fresh].slice(-4));
+  }, [minutes]);
+
+  // One at a time, each for a few seconds.
+  const current = queue[0];
+  useEffect(() => {
+    if (!current) return;
+    const id = setTimeout(() => setQueue((q) => q.slice(1)), 3500);
+    return () => clearTimeout(id);
+  }, [current]);
+
+  if (!current) return null;
+  return (
+    <div role="status" aria-live="polite"
+      className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[58] max-w-[min(520px,calc(100vw-2rem))] flex items-center gap-2 rounded-full bg-night/90 text-white text-sm px-4 py-2 shadow-lg">
+      <Icon name="aiAssist" size={16} />
+      <span className="font-semibold">{t('noted')}:</span>
+      <span className="truncate">{current.text}</span>
+      {queue.length > 1 && <span className="text-ice text-2xs">+{queue.length - 1}</span>}
+    </div>
+  );
+}
+
+/** Safety alerts as pop-ups (over everything, so they are seen even with the notes open). */
+/** Danger signs heard in the call. `inline`: a quiet strip above the notes instead of a floating pop-up. */
+export function AlertStack({ inline = false }: { inline?: boolean } = {}) {
   const { t, call, addToNote } = usePortal();
-  const alerts = call.assist.alerts.slice(0, 3);
+  const alerts = call.assist.alerts.slice(0, inline ? 2 : 3);
   if (alerts.length === 0) return null;
   return (
-    <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[60] w-[min(420px,calc(100vw-2rem))] flex flex-col gap-2" aria-live="assertive">
+    <div className={inline ? 'flex flex-col gap-2 mb-2' : 'fixed top-20 left-1/2 -translate-x-1/2 z-[60] w-[min(420px,calc(100vw-2rem))] flex flex-col gap-2'}
+      aria-live="assertive">
       {alerts.map((a: AssistAlert) => (
-        <div key={a.id} role="alert" className="rounded-control bg-card border-2 border-danger shadow-lg p-3">
+        <div key={a.id} role="alert" className={inline ? 'rounded-control bg-danger-tint border border-danger/40 px-3 py-2' : 'rounded-control bg-card border-2 border-danger shadow-lg p-3'}>
           <p className="flex items-center gap-1.5 text-sm font-bold text-danger-deep">
             <Icon name={a.kind === 'allergy' ? 'drugAlert' : 'emergency'} size={18} /> {a.title}
           </p>

@@ -38,6 +38,8 @@ export interface PatientSummary {
   avatar_url?: string;
   /** Latest heart rate the patient measured at home (phone camera estimate). */
   latest_heart_rate?: import('./doctorApi').VitalReading | null;
+  /** Latest home reading of each kind (BP, sugar...), from the patient or an ASHA worker. */
+  latest_readings?: Record<string, import('./doctorApi').VitalReading>;
 }
 
 export interface RecordSummary {

@@ -10,7 +10,7 @@ import { hrefFor, navigate } from '../router';
 import { BookAppointment } from '../BookAppointment';
 import { AppointmentRow } from '../Schedule';
 import { Conversation } from '../Conversation';
-import { HeartRateReading } from '../HeartRateReading';
+import { ReadingsCard } from '../Readings';
 import { Avatar, Button, Card, CardHeader, Empty, ErrorNote, Facts, Loading, Pill, Tabs } from '../ui';
 
 type Tab = 'overview' | 'visits' | 'messages' | 'records' | 'history';
@@ -72,7 +72,7 @@ export function PatientScreen({ patientId, tab }: { patientId: string; tab?: str
         />
       </div>
       <div className="pt-5">
-        {current === 'overview' && <OverviewTab detail={detail} onOpenVisits={() => setTab('visits')} />}
+        {current === 'overview' && <OverviewTab detail={detail} onOpenVisits={() => setTab('visits')} onChanged={() => setReload((n) => n + 1)} />}
         {current === 'visits' && <VisitsTab detail={detail} onBook={() => setBooking(true)} />}
         {current === 'messages' && (
           <Card className="h-[600px] max-h-[75vh] overflow-hidden"><Conversation patientId={patientId} showHeader={false} /></Card>
@@ -120,7 +120,7 @@ function PatientHeader({ detail, onBook }: { detail: PatientDetail; onBook: () =
 
 // ------------------------------------------------------------------------------------------ Overview
 
-function OverviewTab({ detail, onOpenVisits }: { detail: PatientDetail; onOpenVisits: () => void }) {
+function OverviewTab({ detail, onOpenVisits, onChanged }: { detail: PatientDetail; onOpenVisits: () => void; onChanged: () => void }) {
   const { t, fmt } = usePortal();
   const p = detail.patient;
   const chart = detail.chart ?? {};
@@ -180,21 +180,7 @@ function OverviewTab({ detail, onOpenVisits }: { detail: PatientDetail; onOpenVi
             {detail.upcoming[0] ? <AppointmentRow apt={detail.upcoming[0]} showDate hidePatient /> : <p className="px-3 pb-2 text-sm text-ink-muted">{t('notBooked')}</p>}
           </div>
         </Card>
-        <Card>
-          <CardHeader icon="vitals" title={t('homeReadings')} subtitle={t('homeReadingsHint')} />
-          <div className="px-5 pb-5 flex flex-col gap-2">
-            {detail.readings.length === 0 ? <p className="text-sm text-ink-muted">{t('noReadings')}</p> : (
-              <>
-                <HeartRateReading reading={detail.readings[0]} />
-                {detail.readings.length > 1 && (
-                  <p className="text-2xs text-ink-muted">
-                    {t('earlierReadings')}: {detail.readings.slice(1, 6).map((r) => `${r.value} (${fmt.date(r.created_at)})`).join(' · ')}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        </Card>
+        <ReadingsCard patientId={p.patient_id} readings={detail.readings} requests={detail.requests} onChanged={onChanged} />
         <Card>
           <CardHeader icon="symptom" title={t('activeConditions')} />
           <div className="px-5 pb-5 flex flex-wrap gap-1.5">

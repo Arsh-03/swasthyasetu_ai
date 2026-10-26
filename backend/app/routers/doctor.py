@@ -15,14 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import (
-    Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, Notification,
-    PatientProfile, Practitioner, PractitionerSettings, User, VitalReading,
+    Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, ConsultationRecord, Encounter, Notification,
+    CareTask, HealthWorker, PatientProfile, Practitioner, PractitionerSettings, User, VitalReading,
 )
 from app.services.auth_dependencies import require_doctor
 from app.services.connection_manager import ws_manager
 from app.services.notifications import notification_to_dict
 from app.services.serializers import as_aware, wait_label
-from app.routers.vitals import latest_heart_rate, reading_out
+from app.services.meetings import ensure_encounter, window as meeting_window
+from app.services.note_format import parse_note, soap_from_structured
+from app.routers.vitals import LABELS, latest_by_kind, latest_heart_rate, reading_out
 
 router = APIRouter(prefix="/doctor", tags=["doctor portal"])
 
@@ -95,6 +97,8 @@ def appointment_out(apt: Appointment, profile: Optional[PatientProfile] = None,
         "complaint": enc.symptoms_text if enc else None,
         "date_label": apt.date_label,
         "time_label": apt.time_label,
+        "meeting_code": apt.meeting_code,
+        "meeting": {k: v for k, v in meeting_window(apt).items()},
     }
 
 
@@ -370,31 +374,10 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
     The patient app joins the patient's oldest open consultation, so an existing open one is reused."""
     me = current_doctor["user_id"]
     apt = await _own_appointment(db, appointment_id, me)
-    enc = await db.get(Encounter, apt.encounter_id) if apt.encounter_id else None
-    created = False
-    if not enc or enc.status not in OPEN:
-        enc = (await db.execute(
-            select(Encounter).where(Encounter.patient_id == apt.patient_id, Encounter.status.in_(OPEN))
-            .order_by(Encounter.start_time)
-        )).scalars().first()
-    if not enc:
-        profile = await db.get(PatientProfile, apt.patient_id)
-        chart = (profile.chart_json if profile else None) or {}
-        enc = Encounter(
-            encounter_id=f"enc_{uuid.uuid4().hex[:8]}", patient_id=apt.patient_id, practitioner_id=me,
-            mode="video" if "video" in (apt.mode or "").lower() else "audio", status="queued", urgency="routine",
-            symptoms_text=apt.agenda or "",
-            allergies_json=[a.get("allergen") for a in chart.get("allergies", []) if a.get("allergen")],
-            current_meds_json=[f"{rx.get('name')} {rx.get('dosage') or ''}".strip()
-                               for rx in chart.get("prescriptions", []) if rx.get("status", "Active") == "Active"],
-        )
-        db.add(enc)
-        created = True
-    apt.encounter_id = enc.encounter_id
-    enc.practitioner_id = enc.practitioner_id or me
-    if created:
-        db.add(AuditEvent(actor_id=me, action="CONSULTATION_OPENED", resource_id=enc.encounter_id,
-                          outcome="SUCCESS", purpose=f"For appointment {apt.appointment_id}"))
+    enc, created = await ensure_encounter(db, apt, me)
+    if not apt.meeting_code:
+        from app.services.meetings import new_code
+        apt.meeting_code = new_code()
     await db.commit()
     if created:
         # The patient app looks up its call room again and can now receive the call.
@@ -403,6 +386,7 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
     user = await db.get(User, apt.patient_id)
     summary = queue_style_summary(enc, profile, user)
     summary["latest_heart_rate"] = await latest_heart_rate(db, apt.patient_id)
+    summary["latest_readings"] = await latest_by_kind(db, apt.patient_id)
     return {"appointment": appointment_out(apt, profile, enc), "patient": summary}
 
 
@@ -413,7 +397,7 @@ async def open_appointment(appointment_id: str, current_doctor: Dict[str, Any] =
 async def _my_patient_ids(db: AsyncSession, me: str) -> set:
     ids = set((await db.execute(select(Appointment.patient_id).where(Appointment.practitioner_id == me))).scalars())
     ids |= set((await db.execute(select(Encounter.patient_id).where(Encounter.practitioner_id == me))).scalars())
-    return ids
+    return {i for i in ids if not str(i).startswith("lab_")}       # the CHIBI Test Lab's stand-in patient
 
 
 @router.get("/patients")
@@ -492,8 +476,58 @@ async def patient_detail(patient_id: str, current_doctor: Dict[str, Any] = Depen
         "cancelled": [appointment_out(a, profile) for a in apts if a.visit_status in ("cancelled", "no_show")],
         "readings": [reading_out(r) for r in (await db.execute(
             select(VitalReading).where(VitalReading.patient_id == patient_id)
-            .order_by(desc(VitalReading.created_at)).limit(10))).scalars()],
+            .order_by(desc(VitalReading.created_at)).limit(40))).scalars()],
+        "requests": [await _task_view(db, t) for t in (await db.execute(
+            select(CareTask).where(CareTask.patient_id == patient_id, CareTask.status == "open")
+            .order_by(CareTask.due_at))).scalars()],
     }
+
+
+async def _task_view(db: AsyncSession, t: CareTask) -> Dict[str, Any]:
+    w = await db.get(HealthWorker, t.worker_id) if t.worker_id else None
+    return {"task_id": t.task_id, "kinds": t.kinds_json or [], "note": t.note or "", "due_at": as_aware(t.due_at),
+            "status": t.status, "worker_name": w.display_name if w else None, "created_at": as_aware(t.created_at)}
+
+
+class ReadingRequestIn(BaseModel):
+    kinds: List[str] = Field(..., min_length=1)
+    due_at: Optional[datetime] = None
+    note: Optional[str] = Field(None, max_length=300)
+
+
+@router.post("/patients/{patient_id}/requests")
+async def request_readings(patient_id: str, req: ReadingRequestIn, current_doctor: Dict[str, Any] = Depends(require_doctor),
+                           db: AsyncSession = Depends(get_db)):
+    """Ask the patient's ASHA worker for readings on a home visit (e.g. BP before the next consultation)."""
+    kinds = [k for k in req.kinds if k in LABELS and k != "heart_rate"]
+    if not kinds:
+        raise HTTPException(status_code=422, detail="Choose at least one reading.")
+    profile = await db.get(PatientProfile, patient_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    # The ASHA worker covering the patient's district (first match); otherwise any ASHA worker can pick it up.
+    district = str((profile.demographics_json or {}).get("district", "")).lower()
+    worker = next((w for w in (await db.execute(select(HealthWorker))).scalars()
+                   if w.area and w.area.split(",")[0].strip().lower() in district), None)
+    task = CareTask(patient_id=patient_id, practitioner_id=current_doctor["user_id"], worker_id=worker.worker_id if worker else None,
+                    kinds_json=kinds, note=req.note or "", due_at=as_aware(req.due_at) if req.due_at else now_utc() + timedelta(days=2))
+    db.add(task)
+    db.add(AuditEvent(actor_id=current_doctor["user_id"], action="ASHA_READINGS_REQUESTED", resource_id=patient_id, outcome="SUCCESS",
+                      purpose=", ".join(LABELS[k] for k in kinds) + (f" · {worker.display_name}" if worker else " · any ASHA worker")))
+    await db.commit()
+    if worker:
+        await ws_manager.send_to([worker.worker_id], {"type": "asha_task", "task_id": task.task_id, "patient_id": patient_id})
+    return await _task_view(db, task)
+
+
+@router.post("/requests/{task_id}/cancel")
+async def cancel_request(task_id: str, current_doctor: Dict[str, Any] = Depends(require_doctor), db: AsyncSession = Depends(get_db)):
+    task = await db.get(CareTask, task_id)
+    if not task or task.practitioner_id not in (current_doctor["user_id"], None):
+        raise HTTPException(status_code=404, detail="Request not found")
+    task.status = "cancelled"
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/visits/{encounter_id}")
@@ -506,6 +540,7 @@ async def visit_detail(encounter_id: str, current_doctor: Dict[str, Any] = Depen
     doctor = await db.get(Practitioner, enc.practitioner_id) if enc.practitioner_id else None
     note = (await db.execute(select(ClinicalNote).where(ClinicalNote.encounter_id == encounter_id))).scalar_one_or_none()
     pad = await db.get(ConsultationNotepad, encounter_id)
+    record = await db.get(ConsultationRecord, encounter_id)
     apt = (await db.execute(select(Appointment).where(Appointment.encounter_id == encounter_id))).scalars().first()
     events = (await db.execute(select(AuditEvent).where(AuditEvent.resource_id == encounter_id)
                                .order_by(AuditEvent.timestamp))).scalars().all()
@@ -529,12 +564,22 @@ async def visit_detail(encounter_id: str, current_doctor: Dict[str, Any] = Depen
             "signed_by": note.clinician_signature, "signed_at": as_aware(note.signed_at), "status": note.status,
         } if note else None,
         "notepad": pad.content if pad else "",
+        "structured": (record.structured_json if record else (parse_note(pad.content) if pad and pad.content else None)),
         "coded_terms": (pad.coded_terms_json or []) if pad else [],
         "appointment": appointment_out(apt) if apt else None,
         "timeline": [{"action": e.action, "at": as_aware(e.timestamp), "detail": e.purpose or ""} for e in events],
         "messages": [{"sender": m.sender_role, "body": m.body, "translation": m.translation, "urgent": bool(m.urgent),
                       "created_at": as_aware(m.created_at)} for m in chat],
     }
+
+
+@router.get("/encounters/{encounter_id}/structured")
+async def structured_note(encounter_id: str, current_doctor: Dict[str, Any] = Depends(require_doctor),
+                          db: AsyncSession = Depends(get_db)):
+    """The current notepad parsed into the CareBridge note format, plus a sign-off pre-fill (nothing is saved)."""
+    pad = await db.get(ConsultationNotepad, encounter_id)
+    st = parse_note(pad.content if pad else "")
+    return {"structured": st, "prefill": soap_from_structured(st)}
 
 
 # ---------------------------------------------------------------------------

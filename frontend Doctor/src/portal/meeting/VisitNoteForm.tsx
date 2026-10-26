@@ -1,7 +1,9 @@
 // Visit note: the five fields the doctor signs to finish the consultation (the signed note becomes the
-// visit summary and the patient's care plan).
-import { useState } from 'react';
+// visit summary and the patient's care plan). They fill themselves from the notepad (CareBridge note format),
+// so the doctor reviews instead of typing everything again; every Rx line goes to the patient's medicine plan.
+import { useCallback, useEffect, useState } from 'react';
 import { api, type PatientSummary } from '../../services/api';
+import { authFetch } from '../../services/backend';
 import { Icon } from '../../components/ui/Icon';
 import { usePortal } from '../PortalContext';
 import { Button, Field, TextArea, TextInput } from '../ui';
@@ -19,6 +21,28 @@ export function VisitNoteForm({ patient, onSigned, compact = false }: {
   const [error, setError] = useState<string | null>(null);
   const [signed, setSigned] = useState(false);
   const set = (k: NoteField) => (v: string) => setValues((prev) => ({ ...prev, [k]: v }));
+  const [fromNotes, setFromNotes] = useState<{ medicines: number } | null>(null);
+
+  const fillFromNotes = useCallback(async (overwrite: boolean) => {
+    if (!patient.encounter_id) return;
+    try {
+      const res = await authFetch(`/api/v1/doctor/encounters/${encodeURIComponent(patient.encounter_id)}/structured`);
+      if (!res.ok) return;
+      const d = await res.json() as { structured: { prescription: unknown[] }; prefill: { subjective: string; assessment: string; plan: Record<string, string> } };
+      const from: Record<NoteField, string> = {
+        complaint: d.prefill.subjective, diagnosis: d.prefill.assessment, medicine: d.prefill.plan.medicine ?? '',
+        advice: d.prefill.plan.advice ?? '', follow_up: d.prefill.plan.follow_up ?? '',
+      };
+      setValues(prev => {
+        const next = { ...prev };
+        (Object.keys(from) as NoteField[]).forEach(k => { if (from[k] && (overwrite || !prev[k].trim())) next[k] = from[k]; });
+        return next;
+      });
+      setFromNotes({ medicines: d.structured.prescription.length });
+    } catch { /* the form still works by hand */ }
+  }, [patient.encounter_id]);
+
+  useEffect(() => { void fillFromNotes(false); }, [fillFromNotes]);
   const allergyWarning = (patient.allergies ?? []).length > 0;
 
   const sign = async () => {
@@ -58,6 +82,13 @@ export function VisitNoteForm({ patient, onSigned, compact = false }: {
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 rounded-control bg-ink-tint px-3 py-2 text-xs text-ink-muted">
+        <Icon name="aiAssist" size={15} />
+        <span className="flex-1">{fromNotes
+          ? `Filled from your notes${fromNotes.medicines ? ` · ${fromNotes.medicines} medicine(s) will go to the patient's plan` : ''}. Check and sign.`
+          : 'Write in the notepad; these fields fill from it.'}</span>
+        <button type="button" className="font-semibold text-primary hover:underline cursor-pointer" onClick={() => void fillFromNotes(true)}>Fill from notes</button>
+      </div>
       {allergyWarning && (
         <p className="flex items-start gap-2 rounded-control bg-danger-tint text-danger-deep px-3 py-2 text-xs">
           <Icon name="drugAlert" size={16} className="mt-0.5" />

@@ -17,6 +17,7 @@ export interface PatientAppointmentInfo {
   specialty?: LocalizedText;
   agenda?: LocalizedText;
   isRescheduled?: boolean;
+  meetingCode?: string | null;
 }
 
 export type AppointmentStatus = 'loading' | 'ready' | 'error';

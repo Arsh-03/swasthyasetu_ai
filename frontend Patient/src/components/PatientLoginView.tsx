@@ -7,6 +7,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGE_NAMES, t as translate, type SupportedLanguage } from '../utils/translations';
 import { LoginHero } from './illustrations';
 import { PatientSignUpView } from './PatientSignUpView';
+import { AshaLoginPanel } from './AshaLoginPanel';
 import {
   AppText,
   AudioListenButton,
@@ -81,7 +82,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
   const [showOtpField, setShowOtpField] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorKind, setErrorKind] = useState<SignInErrorKind | null>(null);
-  const [mode, setMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [mode, setMode] = useState<'signIn' | 'signUp' | 'asha'>('signIn');
 
   const handleContinue = async () => {
     if (!showOtpField) {
@@ -164,6 +165,8 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
           <Badge label={t('badgeDpdp')} tone="primary" icon="shieldCheck" size="md" solid />
         </View>
       </View>
+
+      {mode === 'asha' && <AshaLoginPanel onLoginSuccess={onLoginSuccess} onBack={() => setMode('signIn')} />}
 
       {mode === 'signUp' && (
         <PatientSignUpView
@@ -263,6 +266,15 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
               icon="personAdd"
               onPress={() => {
                 setMode('signUp');
+                setErrorKind(null);
+              }}
+              disabled={loading}
+            />
+            <SecondaryButton
+              label={t('ashaSignInLink')}
+              icon="people"
+              onPress={() => {
+                setMode('asha');
                 setErrorKind(null);
               }}
               disabled={loading}

@@ -72,6 +72,8 @@ class Deidentifier:
     def __init__(self, patient_names: Sequence[str] = (), doctor_names: Sequence[str] = (),
                  places: Sequence[str] = (), other_people: Sequence[str] = ()):
         self._known: List[tuple] = []          # (regex, placeholder)
+        # The people and places this call knows about (for the privacy gateway's final check).
+        self.sources: List[str] = [*patient_names, *doctor_names, *other_people, *places]
         for label, sources in (("PATIENT", patient_names), ("DOCTOR", doctor_names), ("PERSON", other_people)):
             for src in sources:
                 for variant in _name_variants(src):

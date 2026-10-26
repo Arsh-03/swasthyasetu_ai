@@ -75,4 +75,7 @@ def appointment_to_dict(apt: Appointment) -> Dict[str, Any]:
         "status": apt.status,
         "instructionsForPatient": apt.instructions_json or [],
         "isRescheduled": bool(apt.is_rescheduled),
+        "meetingCode": apt.meeting_code,
+        "scheduledAt": as_aware(apt.scheduled_at).isoformat() if apt.scheduled_at else None,
+        "durationMinutes": apt.duration_minutes or 20,
     }

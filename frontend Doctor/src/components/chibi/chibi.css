@@ -1,0 +1,46 @@
+.chibi { position: relative; display: inline-block; flex: none; --chibi-body: #1f6f78; --chibi-screen: #0f2b33; --chibi-glow: #5eead4; }
+.chibi svg { overflow: visible; display: block; }
+.chibi-head { fill: var(--chibi-body); }
+.chibi-ear { fill: var(--chibi-body); filter: brightness(0.85); }
+.chibi-screen { fill: var(--chibi-screen); }
+.chibi-eye { fill: var(--chibi-glow); transform-box: fill-box; transform-origin: center; animation: chibi-blink 5s infinite; }
+.chibi-mouth { stroke: var(--chibi-glow); }
+.chibi-dots { fill: var(--chibi-glow); display: none; }
+.chibi-cheek { fill: #fda4af; opacity: .55; }
+.chibi-stroke { stroke: var(--chibi-body); }
+.chibi-light { fill: var(--chibi-glow); }
+.chibi-ring { fill: none; stroke: var(--chibi-glow); stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.chibi { animation: chibi-bob 4s ease-in-out infinite; }
+
+.chibi-listening .chibi-ring { animation: chibi-ring 2.2s ease-out infinite; }
+.chibi-listening .chibi-ring.r2 { animation-delay: 1.1s; }
+.chibi-listening .chibi-light { animation: chibi-pulse 1.2s ease-in-out infinite; }
+
+.chibi-thinking .chibi-mouth { display: none; }
+.chibi-thinking .chibi-dots { display: inline; }
+.chibi-thinking .chibi-dots circle { animation: chibi-dot 1s ease-in-out infinite; }
+.chibi-thinking .chibi-dots circle:nth-child(2) { animation-delay: .15s; }
+.chibi-thinking .chibi-dots circle:nth-child(3) { animation-delay: .3s; }
+.chibi-thinking .chibi-eye { animation: none; transform: translateY(-1px) scaleY(.75); }
+
+.chibi-hint { --chibi-glow: #c4b5fd; --chibi-body: #5b3fb8; }
+.chibi-hint .chibi-light { animation: chibi-pulse 1.6s ease-in-out infinite; }
+
+.chibi-alert { --chibi-glow: #fecaca; --chibi-body: #b42318; }
+.chibi-alert .chibi-light { animation: chibi-pulse .7s ease-in-out infinite; }
+.chibi-alert .chibi-mouth { d: path("M27 40.5 Q32 37.5 37 40.5"); }
+
+.chibi-badge {
+  position: absolute; top: -2px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+  background: #b42318; color: #fff; font: 700 11px/20px system-ui, sans-serif; text-align: center; box-shadow: 0 0 0 2px #fff;
+}
+.chibi-hint .chibi-badge { background: #5b3fb8; }
+
+@keyframes chibi-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes chibi-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+@keyframes chibi-ring { 0% { opacity: .55; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.25); } }
+@keyframes chibi-pulse { 50% { opacity: .35; } }
+@keyframes chibi-dot { 50% { transform: translateY(-2px); opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+  .chibi, .chibi * { animation: none !important; }
+}

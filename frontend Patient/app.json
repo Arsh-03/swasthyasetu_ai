@@ -31,7 +31,8 @@
           "cameraPermission": "SwasthyaSetu uses your camera so your doctor can see you during a video consultation.",
           "microphonePermission": "SwasthyaSetu uses your microphone so your doctor can hear you during a video consultation."
         }
-      ]
+      ],
+      "expo-secure-store"
     ]
   }
 }

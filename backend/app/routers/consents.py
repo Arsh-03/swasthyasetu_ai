@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, or_
 from app.database import get_db
-from app.models.models import Consent, RecordMetadata, AuditEvent, Encounter, PatientProfile, Practitioner, User
+from app.models.models import (Consent, RecordMetadata, AuditEvent, Encounter, PatientProfile, Practitioner, User,
+                               PartnerClient, PartnerConsent)
 from app.schemas.schemas import (
     ConsentRequestIn, ConsentDecisionIn, ConsentOut, AuditEventOut,
     LinkPatientRequestIn, ConsentOtpVerifyIn
@@ -286,6 +287,20 @@ async def get_pending_consents_for_patient(
             "expires_at": consent.expires_at,
             "created_at": consent.created_at
         })
+    # Requests from partner apps (Partner API): same prompt, the organisation shown as the requester.
+    partner_rows = (await db.execute(
+        select(PartnerConsent, PartnerClient).join(PartnerClient, PartnerClient.client_id == PartnerConsent.client_id)
+        .where(PartnerConsent.patient_id == target_patient_id, PartnerConsent.status == "requested")
+        .order_by(PartnerConsent.created_at.desc()))).all()
+    for pc, client in partner_rows:
+        output.append({
+            "consent_id": pc.consent_id, "encounter_id": "", "patient_id": pc.patient_id, "practitioner_id": "",
+            "practitioner_name": client.name, "practitioner_reg": f"Partner app · {client.org_type}",
+            "record_title": ", ".join(d.replace("_", " ") for d in (pc.data_types_json or [])) or "Your records",
+            "clinical_purpose": pc.purpose, "duration_minutes": (pc.valid_hours or 24) * 60, "purpose": pc.purpose,
+            "scope": "read_only", "status": pc.status, "expires_at": None, "created_at": pc.created_at,
+            "partner": True,
+        })
     return output
 
 @router.post("/request", response_model=ConsentOut)
@@ -392,6 +407,8 @@ async def decide_consent(
     accepts the decision from the logged-in patient the request was sent to, and only once.
     If approved, generates HMAC-SHA256 single-purpose grant token in Ephemeral Vault.
     """
+    if consent_id.startswith("pc_"):
+        return await _decide_partner(consent_id, decision.approved, current_patient["user_id"], db)
     query = select(Consent).where(Consent.consent_id == consent_id)
     res = await db.execute(query)
     consent = res.scalar_one_or_none()
@@ -487,6 +504,13 @@ async def revoke_consent(
     1-Click Patient Revocation: Instantly invalidates the grant in Redis/Vault.
     Any active stream severed immediately.
     """
+    if consent_id.startswith("pc_"):
+        from app.routers.partner import apply_patient_decision
+        pc = await db.get(PartnerConsent, consent_id)
+        if not pc or pc.patient_id != current_patient["user_id"]:
+            raise HTTPException(status_code=404, detail="Consent not found")
+        await apply_patient_decision(db, pc, None, revoked=True)
+        return {"status": "revoked", "message": "Access withdrawn. The partner's grant token stops working now."}
     query = select(Consent).where(Consent.consent_id == consent_id)
     res = await db.execute(query)
     consent = res.scalar_one_or_none()
@@ -567,4 +591,29 @@ async def get_my_consent_history(
             "expires_at": c.expires_at,
         }
         for c, p, r in rows
+    ] + [
+        {
+            "consent_id": pc.consent_id, "doctor": client.name, "reg": f"Partner app · {client.org_type}", "facility": "",
+            "record": ", ".join(d.replace("_", " ") for d in (pc.data_types_json or [])), "purpose": pc.purpose,
+            "status": pc.status, "active": pc.status == "approved" and (not pc.expires_at or as_aware(pc.expires_at) > datetime.now(timezone.utc)),
+            "remaining": remaining_label(pc.expires_at) if pc.status == "approved" else None,
+            "created_at": pc.created_at, "expires_at": pc.expires_at, "partner": True,
+        }
+        for pc, client in (await db.execute(
+            select(PartnerConsent, PartnerClient).join(PartnerClient, PartnerClient.client_id == PartnerConsent.client_id)
+            .where(PartnerConsent.patient_id == current_patient["user_id"], PartnerConsent.status != "requested"))).all()
     ]
+
+
+async def _decide_partner(consent_id: str, approved: bool, patient_id: str, db: AsyncSession) -> ConsentOut:
+    """The patient's answer to a partner app's request (Partner API)."""
+    from app.routers.partner import apply_patient_decision
+    pc = await db.get(PartnerConsent, consent_id)
+    if not pc or pc.patient_id != patient_id:
+        raise HTTPException(status_code=404, detail="Consent request not found")
+    if pc.status != "requested":
+        raise HTTPException(status_code=409, detail=f"This request was already {pc.status}.")
+    await apply_patient_decision(db, pc, approved)
+    return ConsentOut(consent_id=pc.consent_id, encounter_id="", patient_id=pc.patient_id, practitioner_id="",
+                      record_id="", purpose=pc.purpose, scope="read_only", status=pc.status, expires_at=pc.expires_at,
+                      created_at=pc.created_at)

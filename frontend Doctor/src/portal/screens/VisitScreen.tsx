@@ -70,7 +70,26 @@ export function VisitScreen({ patientId, encounterId }: { patientId: string; enc
               )}
             </div>
           </Card>
-          {visit.note && (
+          {visit.structured && visit.structured.prescription.length > 0 ? (
+            <Card>
+              <CardHeader icon="medication" title={t('treatmentPlan')} subtitle="From the consultation note" />
+              <div className="px-5 pb-5 flex flex-col gap-4">
+                <table className="w-full text-left text-sm">
+                  <thead className="text-xs text-ink-muted"><tr><th className="py-1">Medicine</th><th>Dose</th><th>How often</th><th>For</th><th>When</th></tr></thead>
+                  <tbody>
+                    {visit.structured.prescription.map((m, i) => (
+                      <tr key={i} className="border-t border-hairline">
+                        <td className="py-1.5 font-semibold">{m.name}</td><td>{m.strength ?? '–'}</td><td>{m.frequency ?? '–'}</td>
+                        <td>{m.duration ?? '–'}</td><td>{m.timing ?? '–'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <NoteBlock label={t('fieldAdvice')} text={visit.structured.advice.join('; ')} />
+                <NoteBlock label={t('fieldFollowUp')} text={visit.structured.follow_up.text ?? ''} />
+              </div>
+            </Card>
+          ) : visit.note && (
             <Card>
               <CardHeader icon="medication" title={t('treatmentPlan')} />
               <div className="px-5 pb-5 flex flex-col gap-4">

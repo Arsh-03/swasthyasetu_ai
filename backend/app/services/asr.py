@@ -185,6 +185,8 @@ def _build() -> Optional[object]:
 
 
 asr = _build()
+# Always available: the scripted demo conversation (practice runs in the doctor portal).
+demo_asr = StubASR()
 
 
 def asr_info() -> Dict[str, object]:

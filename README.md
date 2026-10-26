@@ -133,7 +133,8 @@ swasthyasetu_ai/
 │   │   │   ├── audit.py              # Audit log (+ filterable /audit/events)
 │   │   │   ├── doctor.py             # Doctor portal: dashboard, calendar, patients, visits, notifications, settings
 │   │   │   ├── chat.py               # Patient ↔ doctor chat (open around visits, emergency words → 108 + urgent alert)
-│   │   │   ├── vitals.py             # Readings patients take at home (heart rate from the phone camera)
+│   │   │   ├── vitals.py             # Home readings: heart rate (phone camera), BP, sugar, temperature, weight
+│   │   │   ├── asha.py               # ASHA worker app: doctors' requests, patient consent, home-visit readings (offline-safe)
 │   │   │   └── translate.py          # Kannada / Hindi / English translation
 │   │   └── services/                 # Token vault, DDI engine, FHIR, scribe,
 │   │                                 # translation & WebSocket connection manager
@@ -406,17 +407,46 @@ All REST routes are under `/api/v1`. The live, complete list is always at **`htt
 | `POST` | `/chat/threads/{other_id}/read` | Mark read (read receipts) |
 | `GET` | `/chat/unread` | Unread count |
 
+### ASHA workers (community health workers)
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/asha/tasks` · `/asha/patients?q=` · `/asha/patients/{id}` | Doctors' requests, patients in her area, one visit |
+| `POST` | `/asha/consent` | The patient agrees she may add readings (tap, thumb impression or verbal; 90 days) |
+| `POST` | `/asha/readings` | Readings from a visit (`client_id` makes offline re-sends safe; urgent BP alerts the doctor) |
+| `POST` | `/doctor/patients/{id}/requests` | Doctor asks the patient's ASHA worker for readings |
+
+Demo ASHA sign-in (patient app → "ASHA / health worker sign-in"): `ASHA-HSN-0142` / `password123`.
+
 ### Home readings
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `POST` | `/vitals` | Patient saves a reading (heart rate from the phone camera: an estimate, 30–220 bpm accepted; outside 45–120 warns the doctor) |
 | `GET` | `/vitals/me` · `/vitals/patient/{id}` | Patient's own readings · a patient's readings (doctor) |
 
-**Heart rate from the phone camera** (patient app → Home → Heart rate): the patient covers the back camera and flash with a fingertip for 30 s; `frontend Patient/src/services/heartRate.ts` turns the tiny brightness changes into beats per minute and refuses unclear signals. Works in the web app (Chrome on Android also turns the flash on); the installed app needs a native camera module first.
+**Heart rate from the phone camera** (patient app → Home → Heart rate): the patient covers the back camera and flash with a fingertip for 30 s; `frontend Patient/src/services/heartRate.ts` turns the tiny brightness changes into beats per minute and refuses unclear signals. Works in the web app (Chrome on Android also turns the flash on) and in Expo Go, where the same measurement runs inside a WebView camera page.
 | `GET` | `/translate/languages` | Supported languages |
 | `POST` | `/translate` | Translate text |
 | `POST` | `/translate/batch` | Translate several texts |
 | `POST` | `/translate/careplan` | Translate a care plan |
+
+### Meetings (Google Meet style)
+Every appointment has a meeting code (`abc-defg-hij`) and a link: `<patient app>/?join=<code>`. Patients can join from 10 minutes before the start until 30 minutes after the scheduled end. "Ask to join" puts them in a waiting room until the doctor admits them. If the doctor is already waiting in the meeting, the patient is let in straight away.
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/calls/meetings/{code}` | Meeting for the signed-in patient: doctor, time, join window and state (`early` / `open` / `closed` / `cancelled` / `completed`) |
+| `POST` | `/calls/meetings/{code}/join` | Opens the call room inside the join window (409 outside it) |
+
+Call-room messages (`/ws/v1/encounters/{id}/call`): `KNOCK` / `KNOCK_CANCEL` (patient), `HOST_WAITING` / `DENY` (doctor); admitting is the doctor's `CALL_START`. The doctor's portal also gets a `patient_waiting` event on `/ws/telehealth`.
+
+**Live assistant:** during a call, the assistant shows one status line, short "Noted: …" toasts, and safety alerts. Its suggestions appear as autocomplete in the notepad, which also sees the masked conversation. Set `LIVE_SUGGESTION_CARDS=1` to bring back the old suggestion cards. Practice mode uses the doctor's microphone (spoken as the patient) when the speech server is online, and plays the demo script otherwise.
+
+### CHIBI, Test Lab, notes and Partner API
+- **CHIBI** (Central Health Informatics Bot Interface): the assistant in the corner of both apps. During consultations it listens in batches with memory and shows what was said but isn't in the note as grey hints in the note (no pop-ups). See [docs/14_chibi](docs/14_chibi/README.md).
+- **Test Lab** (doctor portal → CHIBI Lab): talk with no call; the note fills in, then a summary and the structured note. `POST /lab/sessions`, `/lab/sessions/{id}/lines`, `/process`, `/end`, `GET /lab/status`.
+- **AI provider:** your Ollama server, or Gemini / OpenAI with `AI_PROVIDER` + `AI_API_KEY` (see `.env.example`, `backend/app/services/ai_client.py`).
+- **One note, used everywhere:** the notepad uses fixed headings (CareBridge note v1). When signed, it is parsed into structured data: medicines go onto the patient's plan with a schedule, and the visit page and the patient's "Your last visit" card read from it. `GET /doctor/encounters/{id}/structured` pre-fills the sign-off form.
+- **Partner API** (`/partner/v1`, `X-API-Key`): the consent layer, SETU-Shield and note parsing for other apps. Keys come from `python -m app.partner_admin`. Architecture and schema: [docs/13_platform_architecture](docs/13_platform_architecture/README.md).
 
 ### WebSocket
 **`ws://localhost:8000/ws/telehealth`** carries live events between the two apps:
@@ -433,7 +463,8 @@ Connect with `?token=<login token>`. Frames that carry a `"to": "<user id>"` fie
 
 - **Digital Personal Data Protection (DPDP) Act 2023:** Enforces strict consent purpose binding, data minimization, right to revoke, and complete cryptographic accountability.
 - **ABDM Telemedicine Practice Guidelines (TPG 2020):** Registered medical practitioner verification, patient identity confirmation, and clinical record retention standards.
-- **End-to-End Encryption:** 256-bit AES encryption for all data-at-rest and TLS/WSS for all data-in-transit.
+- **SETU-Shield (AI privacy standard):** every request to an AI model passes seven steps: minimise, mask, generalise, unlink, verify (blocks the request if any identifier is left), record (no content kept) and restore. Voice is never sent to a third party. See [docs/12_privacy_standard](docs/12_privacy_standard/README.md); in the doctor's notepad, **What the AI sees** shows the exact request.
+- **Encryption:** offline data on the phone (ASHA visit readings) is encrypted with AES-256-GCM, using a key held in the Android Keystore / iOS Keychain. Traffic uses TLS/WSS in deployment. Field-level encryption of the server database is planned and not yet in place.
 - **No Unconsented Data Access:** Doctor accounts cannot view patient records without an active, non-expired cryptographic HMAC token.
 
 ---

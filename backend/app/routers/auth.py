@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from sqlalchemy.orm.attributes import flag_modified
 from app.database import get_db
-from app.models.models import User, PatientProfile, Practitioner, Representative, AuditEvent, RecordMetadata
+from app.models.models import User, PatientProfile, Practitioner, Representative, AuditEvent, RecordMetadata, HealthWorker
 from app.schemas.schemas import (
     LoginRequest, PatientRegisterRequest, DoctorRegisterRequest, AuthResponse,
     CreateAbhaRequest, MedicalHistoryUpdateRequest, DoctorUpdateHistoryIn
@@ -199,6 +199,27 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
                 "specialty": practitioner.specialty,
                 "credential_status": practitioner.credential_status
             }
+        )
+    elif req.role == "asha":
+        record = (await db.execute(
+            select(User, HealthWorker).join(HealthWorker, User.user_id == HealthWorker.worker_id).where(
+                or_(User.phone_number == clean_id, User.login_identifier.ilike(clean_id), HealthWorker.worker_code.ilike(clean_id))
+            )
+        )).first()
+        if not record:
+            raise HTTPException(status_code=401, detail="Health worker not found. Check your ASHA ID or mobile number.")
+        user, worker = record
+        if req.password not in ["password123", user.password_hash, "demo"]:
+            raise HTTPException(status_code=401, detail="Incorrect password. For demo, use: password123")
+        token = create_access_token({"sub": user.user_id, "role": "asha", "login_identifier": worker.worker_code,
+                                     "name": worker.display_name})
+        db.add(AuditEvent(actor_id=user.user_id, action="ASHA_LOGIN_AUTHENTICATED", resource_id=worker.worker_code, outcome="SUCCESS"))
+        await db.commit()
+        return AuthResponse(
+            success=True, message="Health worker logged in successfully", token=token,
+            user={"user_id": user.user_id, "role": "asha", "full_name": worker.display_name, "display_name": worker.display_name,
+                  "worker_code": worker.worker_code, "area": worker.area, "facility": worker.facility,
+                  "phone_number": user.phone_number or "", "preferred_language": "kn"},
         )
     else:
         raise HTTPException(status_code=400, detail="Invalid role specified")

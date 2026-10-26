@@ -142,7 +142,7 @@ export interface SafetyResult {
 
 /** Inline suggestion shown as ghost text / dropdown at the cursor. */
 export interface Suggestion {
-  kind: 'complete' | 'phrase' | 'shorthand' | 'nomenclature' | 'spelling' | 'ai';
+  kind: 'complete' | 'phrase' | 'shorthand' | 'nomenclature' | 'spelling' | 'ai' | 'chibi';
   replaceStart: number;
   replaceEnd: number;
   insert: string;

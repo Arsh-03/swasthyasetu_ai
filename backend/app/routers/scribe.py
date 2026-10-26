@@ -3,11 +3,12 @@ import hashlib
 import uuid
 from typing import Dict, Any
 from datetime import datetime, timezone
+from app.services.note_format import chart_prescription, parse_note
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
-from app.models.models import Appointment, Encounter, ClinicalNote, Practitioner, AuditEvent, PatientProfile
+from app.models.models import ConsultationNotepad, ConsultationRecord, Appointment, Encounter, ClinicalNote, Practitioner, AuditEvent, PatientProfile
 from app.schemas.schemas import ScribeGenerateIn, ClinicalNoteOut, ClinicalNoteSignIn
 from app.services.scribe_service import generate_soap_note_from_dialogue
 from app.services.auth_dependencies import require_doctor
@@ -142,8 +143,37 @@ async def sign_care_plan(
     for apt in (await db.execute(select(Appointment).where(Appointment.encounter_id == encounter_id))).scalars():
         apt.visit_status = "completed"
 
-    # New medicine from the signed plan goes onto the patient's chart (and care plan).
+    # The notepad is the single source: parse it, keep the structured record, and put every prescribed
+    # medicine (with dose, frequency, duration and a daily schedule) on the patient's chart.
+    pad = await db.get(ConsultationNotepad, encounter_id)
+    structured = parse_note(pad.content) if pad and pad.content and pad.content.strip() else None
+    doctor_row = (await db.execute(select(Practitioner).where(Practitioner.practitioner_id == current_doctor["user_id"]))).scalar_one_or_none()
+    doctor_label = doctor_row.display_name if doctor_row else sign_data.doctor_signature_name
     medicine = (sign_data.plan or {}).get("medicine")
+    if structured:
+        record = await db.get(ConsultationRecord, encounter_id)
+        if not record:
+            record = ConsultationRecord(encounter_id=encounter_id, patient_id=enc.patient_id)
+            db.add(record)
+        record.practitioner_id = current_doctor["user_id"]
+        record.structured_json = structured
+        record.note_text = pad.content
+        record.signed_at = now
+        profile = (await db.execute(select(PatientProfile).where(PatientProfile.patient_id == enc.patient_id))).scalar_one_or_none()
+        if profile and (structured["prescription"] or structured["allergies"]):
+            chart = dict(profile.chart_json or {})
+            purpose = "; ".join(structured["diagnosis"])[:120]
+            when_label = now.strftime("%d %b %Y")
+            chart["prescriptions"] = [chart_prescription(m, doctor_label, when_label, purpose) for m in structured["prescription"]] \
+                + list(chart.get("prescriptions", []))
+            known = {str(a.get("allergen", "")).lower() for a in chart.get("allergies", []) if isinstance(a, dict)}
+            new_allergies = [{"allergen": a, "reaction": "", "source": "Consultation note"} for a in structured["allergies"]
+                             if a.lower() not in known and not any(k and k in a.lower() for k in known)]
+            if new_allergies:
+                chart["allergies"] = list(chart.get("allergies", [])) + new_allergies
+            profile.chart_json = chart
+        if structured["prescription"]:
+            medicine = None              # already on the chart, line by line
     if medicine and medicine.strip():
         profile = (await db.execute(select(PatientProfile).where(PatientProfile.patient_id == enc.patient_id))).scalar_one_or_none()
         if profile:

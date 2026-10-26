@@ -58,6 +58,18 @@ class Settings(BaseModel):
     # Shared secret for a remote AI gateway (e.g. the Colab GPU notebook in docs/10_remote_gpu_colab).
     # Sent as "Authorization: Bearer <token>" on every speech-to-text and language-model request.
     AI_GATEWAY_TOKEN: str = os.getenv("AI_GATEWAY_TOKEN", "").strip()
+    # SETU-Shield (services/privacy_gateway.py): who runs the AI servers. "self_hosted" (ours, e.g. Colab) or
+    # "third_party" (an outside API). Voice is never sent to a third party.
+    AI_TEXT_DESTINATION: str = os.getenv("AI_TEXT_DESTINATION", "self_hosted").strip().lower()
+    AI_SPEECH_DESTINATION: str = os.getenv("AI_SPEECH_DESTINATION", "self_hosted").strip().lower()
+
+    # Text AI provider for every feature (services/ai_client.py): "ollama" (your server, the default when
+    # INTELLISENSE_LOCAL_MODEL is set), "gemini", "openai" or "openai_compatible".
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "").strip().lower()
+    AI_API_KEY: str = (os.getenv("AI_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY") or "").strip()
+    AI_MODEL: str = os.getenv("AI_MODEL", "").strip()
+    AI_API_BASE: str = os.getenv("AI_API_BASE", "").strip()
+    AI_MAX_RPM: int = int(os.getenv("AI_MAX_RPM", "0"))          # requests per minute; 0 = provider default
 
 settings = Settings()
 

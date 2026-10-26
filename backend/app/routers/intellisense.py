@@ -30,6 +30,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from app.services import call_minutes as cm
+from app.services.privacy_gateway import shield_for_encounter
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -98,7 +100,8 @@ async def complete_text(
     db: AsyncSession = Depends(get_db),
 ):
     enc = await _get_encounter(db, req.encounter_id)
-    return await completion_service.complete(req.text, req.cursor, await _patient_context(db, enc))
+    return await completion_service.complete(req.text, req.cursor, await _patient_context(db, enc),
+                                             cm.conversation_for(enc.encounter_id), await shield_for_encounter(db, enc))
 
 
 @router.post("/analyze")
@@ -297,6 +300,7 @@ async def intellisense_ws(websocket: WebSocket, encounter_id: str):
             return
         patient_ctx = await _patient_context(db, enc)
         safety_ctx = await _safety_context(db, enc)
+        shield = await shield_for_encounter(db, enc)
 
     session_id = f"sess_{uuid.uuid4().hex[:8]}"
     spell_cache: Dict[str, Optional[str]] = {}  # per-session, in memory only
@@ -308,7 +312,8 @@ async def intellisense_ws(websocket: WebSocket, encounter_id: str):
             await websocket.send_json(payload)
 
     async def run_completion(seq: Any, text: str, cursor: int) -> None:
-        result = await completion_service.complete(text, cursor, patient_ctx)
+        # What was said in the live call (de-identified) helps the autocomplete finish the doctor's sentence.
+        result = await completion_service.complete(text, cursor, patient_ctx, cm.conversation_for(encounter_id), shield)
         try:
             await send({"type": "COMPLETION_PAYLOAD", "seq": seq, **result})
         except (WebSocketDisconnect, RuntimeError):

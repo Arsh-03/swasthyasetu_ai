@@ -67,7 +67,9 @@ Rules:
 - At most 12 words. Stop at the end of the current sentence or clause. Never start a new line.
 - Use standard clinical English and the doctor's existing abbreviations/style.
 - Complete what the doctor is already describing. Do not invent new findings, diagnoses, drugs, doses,
-  vitals, durations, dates or any numbers that are not already in the note.
+  vitals, durations, dates or any numbers that are not already in the note or in the conversation.
+- When a conversation is given, prefer completing with what the patient actually said there
+  (symptoms, durations, how it started), e.g. "Fever for" -> " 3 days, worse at night" if the patient said so.
 - Prefer common, neutral phrasing (e.g. completing "pain radiating to the" -> " left arm").
 - If you cannot predict a continuation with confidence, output exactly {NONE_MARKER}"""
 
@@ -81,6 +83,8 @@ class CompletionContext:
     text_before: str
     section: Optional[str]
     patient: Dict[str, Any]
+    # De-identified recent conversation from the live call (empty without a consented call).
+    conversation: str = ""
 
 
 class CompletionProvider(Protocol):
@@ -101,12 +105,19 @@ class CompletionProvider(Protocol):
 def build_prompt(ctx: CompletionContext) -> str:
     age = ctx.patient.get("age")
     sex = ctx.patient.get("sex") or ctx.patient.get("gender")
-    patient = " ".join(p for p in [f"{age}-year-old" if age else "", str(sex).lower() if sex else ""] if p) or "unknown"
+    band = ctx.patient.get("age_band")
+    age_text = (f"{age}-year-old" if age else "") or (f"in their {band}" if band and band[0].isdigit() else band or "")
+    patient = " ".join(p for p in [str(sex).lower() if sex else "", "patient" if (sex or age_text) else "", age_text] if p) or "unknown"
     section = SECTION_NAMES.get(ctx.section or "", "unspecified")
     # Stable parts first, the growing note next, and the parts that vary per request last,
     # so consecutive requests share the longest possible prefix.
+    said = (
+        "What was said in the consultation (de-identified; [PATIENT] / [DOCTOR] are the speakers):\n"
+        f"<conversation>\n{ctx.conversation}\n</conversation>\n"
+    ) if ctx.conversation else ""
     return (
         f"Patient: {patient}\n"
+        f"{said}"
         "Note so far (most recent text; it may be cut off at the start):\n"
         f"<note>\n{ctx.text_before}</note>\n"
         f"The doctor is writing in the section: {section}\n"
@@ -221,7 +232,51 @@ class LocalOllamaProvider:
         await self._client.aclose()
 
 
+class RemoteChatProvider:
+    """Gemini / OpenAI / any OpenAI-style API through ai_client (shares its per-minute request budget)."""
+    name = "remote"
+
+    def __init__(self) -> None:
+        from app.services.ai_client import ai
+        self._ai = ai
+        self.name = ai.provider
+        self.model = ai.model
+
+    async def complete(self, ctx: CompletionContext, prompt: str) -> str:
+        from app.services.ai_client import AIUnavailable
+        out = ""
+        try:
+            # important=False: autocomplete gives way when the free tier's per-minute budget runs low.
+            async for piece in self._ai.stream_chat([{"role": "system", "content": SYSTEM_PROMPT},
+                                                     {"role": "user", "content": prompt}],
+                                                    max_tokens=40, temperature=0.2, timeout=settings.INTELLISENSE_LLM_TIMEOUT_S,
+                                                    important=False, stop=["\n"]):
+                out += piece
+                if "\n" in out or NONE_MARKER in out or len(out) > MAX_COMPLETION_CHARS + 20:
+                    break
+        except AIUnavailable as exc:
+            if "budget" in str(exc):
+                return NONE_MARKER          # quietly skip this one; not a failure
+            raise ProviderError(str(exc)) from exc
+        except (TimeoutError, httpx.HTTPError, ValueError) as exc:
+            raise ProviderError(type(exc).__name__) from exc
+        self.model = self._ai.model
+        return out
+
+    async def health(self) -> bool:
+        return await self._ai.online()
+
+    async def warm_up(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
 def _build_provider() -> Optional[CompletionProvider]:
+    from app.services.ai_client import ai
+    if ai.third_party and ai.enabled and settings.INTELLISENSE_LLM_PROVIDER != "stub":
+        return RemoteChatProvider()
     kind = settings.INTELLISENSE_LLM_PROVIDER
     if kind == "stub":
         return StubProvider(settings.INTELLISENSE_STUB_DELAY_MS)
@@ -239,7 +294,7 @@ def _build_provider() -> Optional[CompletionProvider]:
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 
 
-def clean_completion(raw: Optional[str], text_before: str) -> Optional[str]:
+def clean_completion(raw: Optional[str], text_before: str, conversation: str = "") -> Optional[str]:
     if not raw:
         return None
     out = raw.split("\n", 1)[0]
@@ -270,7 +325,7 @@ def clean_completion(raw: Optional[str], text_before: str) -> Optional[str]:
     out = out[:MAX_COMPLETION_CHARS].rstrip()
 
     # Never let the model introduce numbers (doses, vitals, dates) the doctor hasn't written.
-    known = set(_NUMBER_RE.findall(text_before))
+    known = set(_NUMBER_RE.findall(text_before)) | set(_NUMBER_RE.findall(conversation))
     if any(n not in known for n in _NUMBER_RE.findall(out)):
         return None
     return out or None
@@ -286,7 +341,7 @@ def _excerpt(text_before: str) -> str:
     return "".join(words[start:])
 
 
-def extract_context(text: str, cursor: int, patient: Dict[str, Any]) -> Optional[CompletionContext]:
+def extract_context(text: str, cursor: int, patient: Dict[str, Any], conversation: str = "") -> Optional[CompletionContext]:
     """Return context for a completion, or None when completing here makes no sense."""
     cursor = max(0, min(cursor, len(text)))
     if cursor < len(text) and text[cursor] != "\n":
@@ -294,7 +349,8 @@ def extract_context(text: str, cursor: int, patient: Dict[str, Any]) -> Optional
     line = text[text.rfind("\n", 0, cursor) + 1: cursor]
     if len(line.split()) < 2 or line.rstrip().endswith(":"):
         return None  # empty line or a section heading
-    return CompletionContext(text_before=_excerpt(text[:cursor]), section=detect_section(text, cursor), patient=patient)
+    return CompletionContext(text_before=_excerpt(text[:cursor]), section=detect_section(text, cursor), patient=patient,
+                             conversation=conversation)
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +412,8 @@ class CompletionService:
             self._failures = 0
 
     # --- request -------------------------------------------------------------
-    async def complete(self, text: str, cursor: int, patient: Dict[str, Any]) -> Dict[str, Any]:
+    async def complete(self, text: str, cursor: int, patient: Dict[str, Any], conversation: str = "",
+                       shield: Any = None) -> Dict[str, Any]:
         started = time.perf_counter()
         result: Dict[str, Any] = {"completion": None, "cached": False}
 
@@ -371,9 +428,20 @@ class CompletionService:
             return done(skipped="disabled")
         if self.state() in ("offline", "paused"):
             return done(skipped=self.state())
-        ctx = extract_context(text, cursor, patient)
+        ctx = extract_context(text, cursor, patient, conversation)
         if not ctx:
             return done(skipped="no_context")
+        if shield is None:
+            from app.services.privacy_gateway import Shield
+            from app.services.deidentify import Deidentifier
+            shield = Shield("unknown", Deidentifier())      # generic patterns still apply: fail safe, not open
+        # SETU-Shield S1-S3: only the masked note + conversation, an age band and sex leave the server.
+        sent = shield.prepare("notepad_autocomplete", {"note": ctx.text_before, "conversation": ctx.conversation,
+                                                       "age": patient.get("age"), "sex": patient.get("sex"),
+                                                       "section": ctx.section})
+        ctx = CompletionContext(text_before=sent.get("note", ""), section=ctx.section,
+                                patient={"age_band": sent.get("age_band"), "sex": sent.get("sex")},
+                                conversation=sent.get("conversation", ""))
 
         prompt = build_prompt(ctx)
         key = hashlib.sha256(prompt.encode()).hexdigest()
@@ -383,6 +451,12 @@ class CompletionService:
 
         if self._slots.locked():
             return done(skipped="busy")  # never queue: a queued suggestion would arrive too late
+        from app.services.privacy_gateway import OutboundBlocked
+        try:
+            shield.release("notepad_autocomplete", {"system": SYSTEM_PROMPT, "prompt": prompt},
+                           engine="demo" if provider.name == "stub" else "")
+        except OutboundBlocked as exc:
+            return done(skipped="privacy_blocked", blocked=exc.kinds)
         async with self._slots:
             try:
                 raw = await provider.complete(ctx, prompt)
@@ -391,7 +465,8 @@ class CompletionService:
                 return done(skipped="error")
         self._failures = 0
 
-        completion = clean_completion(raw, ctx.text_before)
+        completion = clean_completion(raw, ctx.text_before, ctx.conversation)
+        completion = shield.restore(completion)      # S7: real names only on the doctor's screen
         self._cache[key] = completion
         if len(self._cache) > CACHE_SIZE:
             self._cache.popitem(last=False)

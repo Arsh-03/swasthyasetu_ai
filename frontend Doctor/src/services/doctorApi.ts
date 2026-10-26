@@ -18,6 +18,9 @@ export interface Appointment {
   encounter_id: string | null;
   urgency: 'high' | 'follow_up' | 'routine' | null;
   complaint: string | null;
+  /** Google Meet style code ("rgw-pqtk-zma"); the patient's link is <patient app>/?join=<code>. */
+  meeting_code: string | null;
+  meeting: { opens_at: string | null; closes_at: string | null; ends_at: string | null; state: 'early' | 'open' | 'closed' | 'cancelled' | 'completed' } | null;
 }
 
 export interface NotificationItem {
@@ -91,15 +94,35 @@ export interface VisitRow {
   appointment_id: string | null;
 }
 
+export type ReadingKind = 'heart_rate' | 'blood_pressure' | 'blood_sugar' | 'temperature' | 'weight';
+
 export interface VitalReading {
   reading_id: string;
-  kind: 'heart_rate';
+  kind: ReadingKind;
   value: number;
+  value2: number | null;
+  value_f: number | null;
+  display: string;
   unit: string;
-  method: 'camera_ppg' | 'manual';
+  method: 'camera_ppg' | 'manual' | 'asha_device';
   confidence: 'good' | 'fair' | null;
-  details: { quality?: number; irregularity?: number | null; seconds?: number; torch?: boolean };
+  details: { quality?: number; irregularity?: number | null; seconds?: number; torch?: boolean; timing?: string; readings_averaged?: number; pulse?: number };
+  level: 'normal' | 'high' | 'low' | 'urgent';
+  reason: string;
   out_of_range: boolean;
+  recorded_by_role: 'patient' | 'asha';
+  recorded_by_name: string | null;
+  created_at: string;
+}
+
+/** A doctor's request for home-visit readings by an ASHA worker. */
+export interface ReadingRequest {
+  task_id: string;
+  kinds: ReadingKind[];
+  note: string;
+  due_at: string | null;
+  status: string;
+  worker_name: string | null;
   created_at: string;
 }
 
@@ -111,6 +134,18 @@ export interface PatientDetail {
   open_consultation: PatientSummary | null;
   cancelled: Appointment[];
   readings: VitalReading[];
+  requests: ReadingRequest[];
+}
+
+export interface StructuredMedicine {
+  name: string; form: string | null; strength: string | null; frequency: string | null; duration: string | null;
+  timing: string | null; route: string | null; text: string;
+}
+export interface StructuredNote {
+  complaints: string[]; history: string[]; allergies: string[]; diagnosis: string[]; investigations: string[];
+  examination: string[]; advice: string[]; prescription: StructuredMedicine[];
+  vitals: Record<string, { value: string; unit: string }>;
+  follow_up: { text: string | null; in_days: number | null };
 }
 
 export interface VisitDetail {
@@ -135,6 +170,8 @@ export interface VisitDetail {
     status: string;
   } | null;
   notepad: string;
+  /** The note parsed into the CareBridge note format (backend/app/services/note_format.py). */
+  structured: StructuredNote | null;
   coded_terms: { name: string; category?: string; codes?: { system: string; code: string }[] }[];
   appointment: Appointment | null;
   timeline: { action: string; at: string; detail: string }[];
@@ -227,6 +264,9 @@ export const doctorApi = {
   openAppointment: (id: string) =>
     call<{ appointment: Appointment; patient: PatientSummary }>(`/doctor/appointments/${id}/open`, { method: 'POST' }),
   patients: () => call<PatientListItem[]>('/doctor/patients'),
+  requestReadings: (patientId: string, body: { kinds: ReadingKind[]; due_at?: string; note?: string }) =>
+    call<ReadingRequest>(`/doctor/patients/${encodeURIComponent(patientId)}/requests`, { method: 'POST', body: JSON.stringify(body) }),
+  cancelRequest: (taskId: string) => call<{ ok: boolean }>(`/doctor/requests/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
   patient: (id: string) => call<PatientDetail>(`/doctor/patients/${id}`),
   visit: (encounterId: string) => call<VisitDetail>(`/doctor/visits/${encounterId}`),
   notifications: () => call<{ items: NotificationItem[]; unread: number }>('/doctor/notifications'),
