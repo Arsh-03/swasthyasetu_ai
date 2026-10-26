@@ -1,9 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors, spacing, type Domain, type Tone } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { IconTile } from './IconTile';
 import type { IconName } from './Icon';
+import { DoubleTapSpeakable } from './DoubleTapSpeakable';
 
 interface ListRowProps {
   title: string;
@@ -19,11 +20,14 @@ interface ListRowProps {
   /** Selected row: ice tint + 3px primary accent bar. */
   selected?: boolean;
   accessibilityLabel?: string;
+  /** Custom speech text on double-tap; defaults to `title. subtitle.` */
+  speechText?: string;
 }
 
 /**
  * Mobile list row (min 56px height).
  * Hairline dividers separate rows. Selected row = ice tint + 3px primary accent bar.
+ * Supports zero-lag single-tap action and double-tap speech reading aloud.
  */
 export const ListRow: React.FC<ListRowProps> = ({
   title,
@@ -36,6 +40,7 @@ export const ListRow: React.FC<ListRowProps> = ({
   onPress,
   selected = false,
   accessibilityLabel,
+  speechText,
 }) => {
   const content = (
     <>
@@ -55,18 +60,21 @@ export const ListRow: React.FC<ListRowProps> = ({
     </>
   );
 
+  const spoken = speechText || [title, subtitle].filter(Boolean).join('. ');
+
   if (!onPress) {
     return (
-      <View style={[styles.row, selected && styles.selected]}>
+      <DoubleTapSpeakable speechText={spoken} style={[styles.row, selected && styles.selected]}>
         {selected && <View style={styles.accentBar} />}
         {content}
-      </View>
+      </DoubleTapSpeakable>
     );
   }
 
   return (
-    <Pressable
+    <DoubleTapSpeakable
       onPress={onPress}
+      speechText={spoken}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       style={({ pressed }) => [
@@ -77,7 +85,7 @@ export const ListRow: React.FC<ListRowProps> = ({
     >
       {selected && <View style={styles.accentBar} />}
       {content}
-    </Pressable>
+    </DoubleTapSpeakable>
   );
 };
 

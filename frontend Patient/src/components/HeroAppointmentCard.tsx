@@ -7,7 +7,7 @@ import { parseDateLabel, parseTimeLabel, relativeDay, formatLongDate, daysAgoKey
 import { localized, type LocalizedText } from '../utils/localized';
 import { departmentName } from '../utils/departments';
 import { DepartmentBadge, DoctorAvatar } from './doctors/DoctorParts';
-import { AppText, AudioListenButton, Badge, CriticalButton, ExpandableText, Groove, Icon, IconDisc, type IconName, NeuInset, NeuPanel } from './ui';
+import { AppText, AudioListenButton, Badge, CriticalButton, DoubleTapSpeakable, ExpandableText, Groove, Icon, IconDisc, type IconName, NeuInset, NeuPanel } from './ui';
 
 export interface PatientAppointmentInfo {
   date: string;
@@ -98,66 +98,68 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
       .join('. ');
 
   return (
-    <NeuPanel radius={radii.xl} style={styles.card}>
-      <View style={styles.topRow}>
-        <AppText variant="eyebrow" color="inkMuted" compact style={styles.shrink}>
-          {t('nextAppointment')}
-        </AppText>
-        <AudioListenButton text={spoken} />
-      </View>
-
-      {/* Time + doctor */}
-      <View style={styles.header}>
-        {/* The demo portrait belongs to Dr. Ananya; every other doctor gets their initials */}
-        {/ananya/i.test(doctor) ? <DoctorPortrait /> : <DoctorAvatar name={doctor} department={appointment.department} size={72} />}
-        <View style={styles.headerText}>
-          <AppointmentTime label={appointment.time} />
-          <AppText variant="callout" numberOfLines={2}>
-            {doctor}
+    <DoubleTapSpeakable speechText={spoken} radius={radii.xl}>
+      <NeuPanel radius={radii.xl} style={styles.card}>
+        <View style={styles.topRow}>
+          <AppText variant="eyebrow" color="inkMuted" compact style={styles.shrink}>
+            {t('nextAppointment')}
           </AppText>
-          {clinic ? (
-            <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
-              {clinic}
+          <AudioListenButton text={spoken} />
+        </View>
+
+        {/* Time + doctor */}
+        <View style={styles.header}>
+          {/* The demo portrait belongs to Dr. Ananya; every other doctor gets their initials */}
+          {/ananya/i.test(doctor) ? <DoctorPortrait /> : <DoctorAvatar name={doctor} department={appointment.department} size={72} />}
+          <View style={styles.headerText}>
+            <AppointmentTime label={appointment.time} />
+            <AppText variant="callout" numberOfLines={2}>
+              {doctor}
             </AppText>
+            {clinic ? (
+              <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
+                {clinic}
+              </AppText>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Status at a glance: when (computed on device), plus reschedule if flagged */}
+        <View style={styles.badges}>
+          <RelativeBadge date={appointment.date} time={appointment.time} fallback={localized(appointment.relativeTime, lang)} />
+          {appointment.department ? <DepartmentBadge department={appointment.department} size="md" /> : null}
+          {inPerson ? <Badge label={t('visitInPerson')} tone="teal" icon="hospital" size="md" /> : null}
+          {appointment.isRescheduled ? (
+            <>
+              <Badge label={t('rescheduledByClinician')} tone="primary" icon="rescheduled" size="md" />
+              <Badge label={t('newTime')} tone="success" icon="clock" size="md" />
+            </>
           ) : null}
         </View>
-      </View>
 
-      {/* Status at a glance: when (computed on device), plus reschedule if flagged */}
-      <View style={styles.badges}>
-        <RelativeBadge date={appointment.date} time={appointment.time} fallback={localized(appointment.relativeTime, lang)} />
-        {appointment.department ? <DepartmentBadge department={appointment.department} size="md" /> : null}
-        {inPerson ? <Badge label={t('visitInPerson')} tone="teal" icon="hospital" size="md" /> : null}
-        {appointment.isRescheduled ? (
-          <>
-            <Badge label={t('rescheduledByClinician')} tone="primary" icon="rescheduled" size="md" />
-            <Badge label={t('newTime')} tone="success" icon="clock" size="md" />
-          </>
-        ) : null}
-      </View>
-
-      {/* Date and agenda as icon rows on the panel (labels go to screen readers) */}
-      <View>
-        <DetailRow icon="calendar" label={t('appointmentDate')} value={dateText} />
-        {agenda ? (
-          <>
-            <Groove inset={48} />
-            <DetailRow icon="clipboard" label={t('agenda')} value={agenda} expandable />
-          </>
-        ) : null}
-      </View>
-
-      {inPersonVisit ? (
-        <View style={styles.inline}>
-          <Icon name="mapPin" size={18} color={colors.inkMuted} />
-          <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
-            {t('inPersonAt', { place: localized(appointment.facility, lang) || t('theClinic') })}
-          </AppText>
+        {/* Date and agenda as icon rows on the panel (labels go to screen readers) */}
+        <View>
+          <DetailRow icon="calendar" label={t('appointmentDate')} value={dateText} />
+          {agenda ? (
+            <>
+              <Groove inset={48} />
+              <DetailRow icon="clipboard" label={t('agenda')} value={agenda} expandable />
+            </>
+          ) : null}
         </View>
-      ) : (
-        join
-      )}
-    </NeuPanel>
+
+        {inPersonVisit ? (
+          <View style={styles.inline}>
+            <Icon name="mapPin" size={18} color={colors.inkMuted} />
+            <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
+              {t('inPersonAt', { place: localized(appointment.facility, lang) || t('theClinic') })}
+            </AppText>
+          </View>
+        ) : (
+          join
+        )}
+      </NeuPanel>
+    </DoubleTapSpeakable>
   );
 };
 

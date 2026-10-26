@@ -1,7 +1,10 @@
 import React from 'react';
 import type { Icon as PhosphorIcon } from 'phosphor-react-native';
 import { BellIcon } from 'phosphor-react-native/src/icons/Bell';
+import { BedIcon } from 'phosphor-react-native/src/icons/Bed';
 import { BoneIcon } from 'phosphor-react-native/src/icons/Bone';
+import { BowlFoodIcon } from 'phosphor-react-native/src/icons/BowlFood';
+import { PintGlassIcon } from 'phosphor-react-native/src/icons/PintGlass';
 import { ChatCircleTextIcon } from 'phosphor-react-native/src/icons/ChatCircleText';
 import { PaperPlaneRightIcon } from 'phosphor-react-native/src/icons/PaperPlaneRight';
 import { BrainIcon } from 'phosphor-react-native/src/icons/Brain';
@@ -132,6 +135,9 @@ const REGISTRY = {
   morning: SunIcon,
   afternoon: SunHorizonIcon,
   night: MoonIcon,
+  bowlFood: BowlFoodIcon,
+  bed: BedIcon,
+  glass: PintGlassIcon,
 
   // Call & audio
   call: PhoneIcon,

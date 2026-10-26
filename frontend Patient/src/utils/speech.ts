@@ -1,4 +1,5 @@
 import type { SupportedLanguage } from './translations';
+import { formatSpokenText } from './speechTranslation';
 
 const VOICE_LANG: Record<SupportedLanguage, string> = { en: 'en-IN', kn: 'kn-IN', hi: 'hi-IN' };
 
@@ -10,7 +11,8 @@ export const speak = (text: string, lang: SupportedLanguage, onEnd?: () => void)
   const s = synth();
   if (!s) return false;
   s.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
+  const formatted = formatSpokenText(text, lang);
+  const utterance = new SpeechSynthesisUtterance(formatted);
   utterance.lang = VOICE_LANG[lang];
   utterance.rate = 0.85;
   if (onEnd) {
