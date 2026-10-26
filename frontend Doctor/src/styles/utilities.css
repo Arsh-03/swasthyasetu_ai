@@ -1,127 +1,127 @@
 /*
- * Depth language (design_system_tokens.md § 5, web version), glass, critical fills, ambient background.
- * RAISED = actionable. INSET = holds / shows / receives. STRONG tier = controls, SOFT tier = panels, rows, wells.
- * Classes live in @layer components so a Tailwind utility on the same element (bg-*, p-*, rounded-*) still wins.
- * Motion rule: only transform and opacity transition; shadow swaps on press are instant.
+ * Clean surface system (design_system_tokens.md, web version), glass, critical actions.
+ * Replaces neumorphism: elevation tokens (e1, e2, e3), 1px subtle borders (#DCE5EA),
+ * crisp white cards (#FFFFFF) over light canvas (#F2F5F8), no ambient blobs.
+ * Classes live in @layer components so a Tailwind utility on the same element still wins.
  */
 
 @layer components {
-  /* ---------- RAISED ---------- */
+  /* ---------- SURFACES ---------- */
+  /* Card: pure white, 1px subtle border, e1 shadow */
+  .surface-card,
+  .neu-panel,
+  .neu-panel-sm,
   .neu-raised,
   .neu-raised-sm {
-    background-color: var(--neu-raised-lo);
-    background-image: linear-gradient(to bottom right, var(--neu-raised-hi), var(--neu-raised-lo));
-    border: 1px solid;
-    border-color: var(--neu-light) var(--neu-dark-soft) var(--neu-dark-soft) var(--neu-light);
-    box-shadow: var(--neu-shadow-raised);
-  }
-  /* Small controls (< 48px: buttons, chips, discs, thumbs): halved offsets */
-  .neu-raised-sm {
-    box-shadow: var(--neu-shadow-raised-sm);
-  }
-  /* SOFT raised panel: grouped content, tables, cards */
-  .neu-panel,
-  .neu-panel-sm {
-    background-color: var(--neu-raised-soft-lo);
-    background-image: linear-gradient(to bottom right, var(--neu-raised-soft-hi), var(--neu-raised-soft-lo));
-    border: 1px solid;
-    border-color: var(--neu-light-soft) var(--neu-groove-dark) var(--neu-groove-dark) var(--neu-light-soft);
-    box-shadow: var(--neu-shadow-panel);
-  }
-  .neu-panel-sm {
-    box-shadow: var(--neu-shadow-panel-sm);
+    background-color: var(--color-card);
+    border: 1px solid var(--color-card-border);
+    box-shadow: var(--shadow-e1);
   }
 
-  /* ---------- INSET ---------- */
-  /* STRONG inset: inputs, editable areas, toggle / segmented tracks */
-  .neu-inset,
-  .neu-inset-sm {
-    background-color: var(--neu-inset-hi);
-    background-image: linear-gradient(to bottom right, var(--neu-inset-hi), var(--neu-inset-lo));
-    border: 1px solid;
-    border-color: var(--neu-inset-dark) var(--neu-light-inset) var(--neu-light-inset) var(--neu-inset-dark);
-    box-shadow: var(--neu-shadow-inset);
+  /* Interactive card: elevates to e2 on hover / focus */
+  .surface-card-interactive {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-card-border);
+    box-shadow: var(--shadow-e1);
+    transition: box-shadow var(--duration-transition) var(--ease-calm), transform var(--duration-press) var(--ease-calm);
   }
-  .neu-inset-sm {
-    box-shadow: var(--neu-shadow-inset-sm);
-  }
-  /* SOFT inset well: read-only text wells, trays, informational discs, badges */
-  .neu-well,
-  .neu-well-sm {
-    background-color: var(--neu-inset-soft-hi);
-    background-image: linear-gradient(to bottom right, var(--neu-inset-soft-hi), var(--neu-inset-soft-lo));
-    border: 1px solid;
-    border-color: var(--neu-inset-dark-soft) var(--neu-light-inset-soft) var(--neu-light-inset-soft) var(--neu-inset-dark-soft);
-    box-shadow: var(--neu-shadow-well);
-  }
-  .neu-well-sm {
-    box-shadow: var(--neu-shadow-well-sm);
-  }
-
-  /* ---------- Interactive raised surface: hover lifts 1px, active / selected = inset ---------- */
-  .neu-press {
-    transition: transform var(--duration-press) var(--ease-calm);
-  }
-  .neu-press:hover:not(:disabled, [aria-disabled='true']),
-  .neu-press[data-state='hover'] {
+  .surface-card-interactive:hover:not(:disabled, [aria-disabled='true']) {
+    box-shadow: var(--shadow-e2);
     transform: translateY(-1px);
   }
-  .neu-press:active:not(:disabled, [aria-disabled='true']),
-  .neu-press:is([aria-pressed='true'], [aria-selected='true'], [aria-current='page'], [data-state='on'], [data-state='pressed']) {
-    transform: none;
-    background-color: var(--neu-inset-hi);
-    background-image: linear-gradient(to bottom right, var(--neu-inset-hi), var(--neu-inset-lo));
-    border-color: var(--neu-inset-dark) var(--neu-light-inset) var(--neu-light-inset) var(--neu-inset-dark);
-    box-shadow: var(--neu-shadow-inset-sm);
-  }
-  .neu-press:is(:disabled, [aria-disabled='true']) {
-    background-image: none;
-    background-color: var(--color-base);
-    box-shadow: none;
-    border-color: var(--color-hairline);
-    color: var(--color-ink-muted);
-    cursor: not-allowed;
+
+  /* Modal & Sheet: e3 elevation */
+  .surface-modal,
+  .surface-sheet {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-card-border);
+    box-shadow: var(--shadow-e3);
   }
 
-  /* ---------- Grooves: debossed dividers (no per-row shadows in dense lists) ---------- */
+  /* Well / container: light canvas container with hairline or card border */
+  .surface-well,
+  .neu-inset,
+  .neu-inset-sm,
+  .neu-well,
+  .neu-well-sm {
+    background-color: var(--color-card);
+    border: 1px solid var(--color-input-border);
+  }
+
+  /* ---------- Interactive control press ---------- */
+  .surface-press,
+  .neu-press {
+    transition: transform var(--duration-press) var(--ease-calm), background-color var(--duration-press) var(--ease-calm);
+  }
+  .surface-press:hover:not(:disabled, [aria-disabled='true']),
+  .neu-press:hover:not(:disabled, [aria-disabled='true']) {
+    transform: translateY(-1px);
+  }
+  .surface-press:active:not(:disabled, [aria-disabled='true']),
+  .neu-press:active:not(:disabled, [aria-disabled='true']) {
+    transform: scale(0.98);
+  }
+  .surface-press:is(:disabled, [aria-disabled='true']),
+  .neu-press:is(:disabled, [aria-disabled='true']) {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* ---------- Hairline dividers (clean hairline, no debossed dual lines) ---------- */
+  .divider,
   .groove {
-    height: 2px;
+    height: 1px;
     border: 0;
     margin: 0;
-    background: linear-gradient(to bottom, var(--neu-groove-dark) 0 1px, var(--neu-groove-light) 1px 2px);
+    background-color: var(--color-separator);
   }
+  .divider-v,
   .groove-v {
-    width: 2px;
+    width: 1px;
     align-self: stretch;
-    background: linear-gradient(to right, var(--neu-groove-dark) 0 1px, var(--neu-groove-light) 1px 2px);
+    background-color: var(--color-separator);
   }
-  /* Every row after the first gets a 1px dark line with 1px white right below */
+  .divider-rows > * + *,
+  .divider-rows > tr + tr > :is(td, th),
   .groove-rows > * + *,
   .groove-rows > tr + tr > :is(td, th) {
-    border-top: 1px solid var(--neu-groove-dark);
-    box-shadow: inset 0 1px 0 var(--neu-groove-light);
-  }
-  /* Tables: the groove sits on the cells (box-shadow on <tr> is unreliable) */
-  .groove-rows > tr + tr {
-    border-top: 0;
-    box-shadow: none;
+    border-top: 1px solid var(--color-separator);
   }
 
-  /* ---------- CRITICAL: strong raised shape + SOLID deep fill + coloured glow ---------- */
+  /* Selected list row: ice tint + 3px primary accent bar */
+  .row-selected {
+    background-color: var(--color-ice);
+    position: relative;
+  }
+  .row-selected::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background-color: var(--color-primary);
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* ---------- CRITICAL ACTIONS: Flat solid deep colour, icon + label, min-height 48-56 ---------- */
   .critical {
     --critical-fill: var(--color-primary);
     --critical-pressed: var(--color-primary-deep);
     position: relative;
     color: var(--color-on-primary);
     background-color: var(--critical-fill);
-    background-image: linear-gradient(to bottom right, var(--critical-sheen), transparent 90%);
-    border: 1px solid;
-    border-color: var(--critical-edge-light) transparent transparent var(--critical-edge-light);
-    border-radius: var(--radius-panel);
-    box-shadow:
-      6px 8px 24px color-mix(in srgb, var(--critical-fill) 45%, transparent),
-      -6px -6px 14px var(--critical-light-shadow);
-    transition: transform var(--duration-press) var(--ease-calm);
+    border: 1px solid transparent;
+    border-radius: var(--radius-control);
+    min-height: 48px;
+    font-weight: 600;
+    box-shadow: var(--shadow-e1);
+    transition: transform var(--duration-press) var(--ease-calm), background-color var(--duration-press) var(--ease-calm);
+  }
+  .critical-primary {
+    --critical-fill: var(--color-primary);
+    --critical-pressed: var(--color-primary-deep);
   }
   .critical-success {
     --critical-fill: var(--color-success-deep);
@@ -131,41 +131,33 @@
     --critical-fill: var(--color-danger-deep);
     --critical-pressed: var(--color-danger-pressed);
   }
-  .critical:hover:not(:disabled, [aria-disabled='true']),
-  .critical[data-state='hover'] {
-    transform: translateY(-1px);
+  .critical:hover:not(:disabled, [aria-disabled='true']) {
+    opacity: 0.95;
+    box-shadow: var(--shadow-e2);
   }
-  .critical:active:not(:disabled, [aria-disabled='true']),
-  .critical[data-state='pressed'] {
-    transform: none;
+  .critical:active:not(:disabled, [aria-disabled='true']) {
     background-color: var(--critical-pressed);
-    background-image: none;
-    border-color: transparent;
-    box-shadow: inset 6px 6px 12px var(--critical-inset-dark);
+    transform: scale(0.98);
   }
-  /* Disabled: flat primarySoft fill, ink label, no glow, no sheen (ink 4.77:1) */
   .critical:is(:disabled, [aria-disabled='true']) {
     background-color: var(--color-primary-soft);
-    background-image: none;
     color: var(--color-ink);
-    border-color: transparent;
+    opacity: 0.6;
     box-shadow: none;
     cursor: not-allowed;
+    transform: none;
   }
 
-  /* ---------- GLASS: blur + saturate, translucent fill, specular edge brighter at the top-left ---------- */
+  /* ---------- GLASS: Subtle light blur ~16px, fill ~0.8, hairline border ---------- */
   .glass,
   .glass-toolbar,
   .glass-sidebar,
   .glass-sheet {
     color: var(--color-ink);
     background-color: var(--color-glass);
-    background-image: linear-gradient(to bottom, var(--glass-highlight), transparent 45%);
     -webkit-backdrop-filter: var(--glass-blur);
     backdrop-filter: var(--glass-blur);
-    border: 1px solid;
-    border-color: var(--specular-hi) var(--specular-lo) var(--specular-lo) var(--specular-hi);
-    box-shadow: var(--shadow-glass);
+    border: 1px solid var(--color-border);
   }
   .glass-toolbar,
   .glass-sidebar {
@@ -178,62 +170,26 @@
   .glass-sidebar {
     border-width: 0 1px 0 0;
     border-right-color: var(--color-hairline);
-    box-shadow: none;
   }
   .glass-sheet {
     background-color: var(--color-glass-sheet);
-    --glass-blur: blur(32px) saturate(180%);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-e3);
   }
   .glass-night {
     color: var(--color-white);
     background-color: var(--color-glass-night);
-    -webkit-backdrop-filter: blur(28px) saturate(150%);
-    backdrop-filter: blur(28px) saturate(150%);
-    border: 1px solid var(--glass-night-border);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid rgba(255, 255, 255, 0.14);
   }
 
-  /* ---------- AMBIENT background: large blurred organic blobs (pure CSS, static) ---------- */
+  /* Clean background container (ambient blobs removed) */
   .ambient {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    overflow: hidden;
-    pointer-events: none;
-    background-color: var(--color-base);
-  }
-  .ambient-blob {
-    position: absolute;
-    filter: blur(40px);
-    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
-  }
-  .ambient-blob-ice {
-    top: -14%;
-    right: -8%;
-    width: 52vw;
-    height: 46vw;
-    background: radial-gradient(closest-side, var(--ambient-ice), transparent);
-    transform: rotate(12deg);
-  }
-  .ambient-blob-primary {
-    top: 30%;
-    left: -12%;
-    width: 46vw;
-    height: 48vw;
-    background: radial-gradient(closest-side, var(--ambient-primary-soft), transparent);
-    transform: rotate(-18deg);
-  }
-  .ambient-blob-sand {
-    bottom: -18%;
-    right: 6%;
-    width: 56vw;
-    height: 44vw;
-    background: radial-gradient(closest-side, var(--ambient-sand), transparent);
-    transform: rotate(24deg);
+    display: none;
   }
 }
 
-/* ---------- Glass fallbacks (unlayered so they always apply) ---------- */
+/* Glass fallbacks */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
   .glass-sheet {
@@ -241,7 +197,7 @@
   }
   .glass-toolbar,
   .glass-sidebar {
-    background-color: var(--color-base);
+    background-color: var(--color-card);
   }
   .glass-night {
     background-color: var(--color-night);
@@ -256,7 +212,7 @@
   }
   .glass-toolbar,
   .glass-sidebar {
-    background-color: var(--color-base);
+    background-color: var(--color-card);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
