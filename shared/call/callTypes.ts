@@ -1,3 +1,6 @@
+// GENERATED COPY of shared/call/callTypes.ts. Do not edit here: edit shared/call/callTypes.ts,
+// then run `node scripts/sync-call-engine.mjs`.
+
 // Types shared by the consultation call and the notepad.
 
 export type CallRole = 'doctor' | 'patient';
@@ -28,6 +31,12 @@ export interface CallFinding {
   at_ms: number | null;
   quote: string;
   quote_english: string;
+  /** Heading in the CareBridge note format ("Allergies", "Rx"…): the line goes under it. */
+  heading?: string;
+  /** Why CHIBI thinks it matters (from the AI), shown with the hint. */
+  why?: string | null;
+  /** Ids of earlier findings this one is a fuller version of: it takes their place in the note. */
+  replaces?: string[];
 }
 
 /** Live assistant (backend/app/services/live_assistant.py). */

@@ -9,11 +9,12 @@ import { Avatar, IconButton } from './ui';
 import type { NotificationItem } from '../services/doctorApi';
 import { useCallTimer } from '../services/call/useCallTimer';
 
-const NAV: { page: 'home' | 'patients' | 'messages' | 'audit'; icon: IconName; label: 'navHome' | 'navPatients' | 'navMessages' | 'navAudit' }[] = [
+const NAV: { page: 'home' | 'patients' | 'messages' | 'audit' | 'lab'; icon: IconName; label: 'navHome' | 'navPatients' | 'navMessages' | 'navAudit' | 'navLab' }[] = [
   { page: 'home', icon: 'home', label: 'navHome' },
   { page: 'patients', icon: 'patients', label: 'navPatients' },
   { page: 'messages', icon: 'chat', label: 'navMessages' },
   { page: 'audit', icon: 'history', label: 'navAudit' },
+  { page: 'lab', icon: 'aiAssist', label: 'navLab' },
 ];
 
 function activeSection(route: Route): string {

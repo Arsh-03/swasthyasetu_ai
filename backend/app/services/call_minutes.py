@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import httpx
 
+from app.services import privacy_gateway as pg
+
 from app.config import ai_headers, settings
 from app.services.asr import Segment, asr
 from app.services.deidentify import Deidentifier
@@ -53,12 +55,15 @@ class CallSession:
     # (set only when the patient consents from such a device).
     patient_recorded_by_doctor: bool = False
     ending: bool = False                      # the call ended; waiting for the last chunks
+    practice: bool = False                    # doctor's practice run with the demo patient (no call, no audio)
     # Live assistant (live_assistant.py)
     known_allergies: List[str] = field(default_factory=list)
     sent_alerts: set = field(default_factory=set)
     sent_suggestions: set = field(default_factory=set)
     assist_running: bool = False
     assist_dirty: bool = False
+    shield: Any = None                        # privacy_gateway.Shield for this call (built on first use)
+    agent: Any = None                         # consult_agent.AgentState (CHIBI's memory for this consultation)
 
 
 _sessions: Dict[str, CallSession] = {}
@@ -84,6 +89,15 @@ def end_session(session_id: str) -> None:
         asr.forget(session_id)
 
 
+def conversation_for(encounter_id: str, max_lines: int = 12) -> str:
+    """The recent de-identified conversation of this consultation's live (consented) call, for the notepad's
+    autocomplete. Empty when no call with AI minutes is running."""
+    for s in _sessions.values():
+        if s.encounter_id == encounter_id and s.consent_at and s.lines:
+            return "\n".join(f"[{l.segment.speaker.upper()}]: {l.redacted_english}" for l in s.lines[-max_lines:])
+    return ""
+
+
 def purge_expired() -> None:
     now = time.time()
     for sid in [k for k, v in _sessions.items() if now - v.last_activity > SESSION_TTL_S]:
@@ -95,11 +109,22 @@ async def add_audio(session: CallSession, speaker: str, audio: bytes, mime: str,
     """Transcribe one chunk (in memory), de-identify it, and keep it for this call only."""
     if asr is None:
         return []
+    # SETU-Shield: voice is biometric, so audio only goes to our own speech server (never a third party).
+    mode = asr.mode_of(session.id) if hasattr(asr, "mode_of") else ("demo" if asr.name == "stub" else "live")
+    try:
+        pg.shield_for_session(session).release("speech_to_text", audio, kind="speech", engine=mode)
+    except pg.OutboundBlocked:
+        return []
     session.pending_uploads += 1
     try:
         segments = await asr.transcribe(session.id, speaker, audio, mime, offset_ms, duration_ms)
     finally:
         session.pending_uploads -= 1
+    return add_segments(session, segments)
+
+
+def add_segments(session: CallSession, segments) -> List[TranscriptLine]:
+    """Clean, de-identify and keep transcribed speech (from a call, or a practice run)."""
     for seg in segments:
         seg.text = clean_speech(seg.text)
         seg.english = clean_speech(seg.english, english=True)
@@ -375,31 +400,38 @@ def _already_covered(text: str, note_lower: str, known: Sequence[str]) -> bool:
 
 
 async def _llm_items(session: CallSession, note_text: str, found: Sequence[str] = ()) -> List[Dict[str, str]]:
-    if settings.SCRIBE_LLM_PROVIDER != "local" or not (settings.SCRIBE_LLM_MODEL or settings.INTELLISENSE_LOCAL_MODEL):
+    from app.services.ai_client import AIUnavailable, ai
+    if not ai.enabled or not await ai.online():
         return []
-    transcript = "\n".join(f"[{l.segment.speaker.upper()}]: {l.redacted_english}" for l in session.lines)
-    payload = {
-        "model": settings.SCRIBE_LLM_MODEL or settings.INTELLISENSE_LOCAL_MODEL,
-        "stream": False, "format": "json", "options": {"temperature": 0.1},
-        "messages": [
-            {"role": "system", "content": LLM_PROMPT},
-            {"role": "user", "content": f"TRANSCRIPT:\n{transcript}\n\nDOCTOR'S NOTE:\n{session.deid.redact(note_text)}"
-                                        f"\n\nALREADY FOUND:\n" + ("\n".join(found) or "(nothing)")},
-        ],
-    }
+    shield = pg.shield_for_session(session)
+    sent = shield.prepare("minutes_check", {
+        "transcript": "\n".join(f"[{l.segment.speaker.upper()}]: {l.redacted_english}" for l in session.lines),
+        "note": note_text, "found": "\n".join(found) or "(nothing)"})
+    messages = [
+        {"role": "system", "content": LLM_PROMPT},
+        {"role": "user", "content": f"TRANSCRIPT:\n{sent.get('transcript', '')}\n\nDOCTOR'S NOTE:\n{sent.get('note', '')}"
+                                    f"\n\nALREADY FOUND:\n{sent.get('found', '')}"},
+    ]
     try:
-        async with httpx.AsyncClient(timeout=settings.SCRIBE_ASR_TIMEOUT_S, headers=ai_headers()) as client:
-            res = await client.post(f"{settings.INTELLISENSE_LOCAL_URL.rstrip('/')}/api/chat", json=payload)
-            res.raise_for_status()
-            data = json.loads(res.json().get("message", {}).get("content") or "{}")
+        shield.release("minutes_check", messages)
+    except pg.OutboundBlocked:
+        return []
+    try:
+        data = await ai.chat_json(messages, temperature=0.1, timeout=settings.SCRIBE_ASR_TIMEOUT_S, important=False)
         return [m for m in data.get("missing", []) if isinstance(m, dict) and m.get("text")]
-    except (httpx.HTTPError, ValueError, AttributeError):
+    except (AIUnavailable, httpx.HTTPError, ValueError, AttributeError):
         return []   # model unavailable: the rule-based results still stand
 
 
 # ---------------------------------------------------------------------------
 # Analysis for the doctor's screen
 # ---------------------------------------------------------------------------
+def _heading_for(kind: str) -> str:
+    from app.services.note_format import HEADING
+    return HEADING[{"symptom": "complaints", "allergy": "allergies", "medication": "medications", "family": "history",
+                    "advice": "advice"}.get(kind, "history")]
+
+
 def _line_view(line: TranscriptLine) -> Dict[str, Any]:
     seg = line.segment
     return {"speaker": seg.speaker, "start_ms": seg.start_ms, "text": seg.text, "english": seg.english,
@@ -417,7 +449,8 @@ async def analyze(session: CallSession, note_text: Optional[str] = None) -> Dict
         minutes.setdefault(it.kind, []).append(it.text)
         if not _present(it, note_lower):
             missing.append({
-                "id": it.id, "kind": it.kind, "section": it.section, "text": it.text, "severity": it.severity,
+                "id": it.id, "kind": it.kind, "section": it.section, "heading": _heading_for(it.kind),
+                "text": it.text, "severity": it.severity,
                 "source": it.source, "speaker": it.line.segment.speaker, "at_ms": it.line.segment.start_ms,
                 "quote": it.line.segment.text, "quote_english": it.line.segment.english,
             })
@@ -434,6 +467,17 @@ async def analyze(session: CallSession, note_text: Optional[str] = None) -> Dict
             "speaker": "conversation", "at_ms": None, "quote": session.deid.restore(str(extra.get("evidence", ""))),
             "quote_english": "",
         })
+    # CHIBI's agent (consult_agent.py): what it noticed with its memory of the whole consultation.
+    if session.agent is not None:
+        from app.services import consult_agent
+        known = [m["text"] for m in missing]
+        for m in consult_agent.missed(session):
+            if not _already_covered(m["text"], note_lower, known):
+                known.append(m["text"])
+                missing.append({"id": m["id"], "kind": m["key"], "section": m["section"], "heading": m["heading"],
+                                "text": m["text"], "severity": "routine", "source": "agent", "speaker": "conversation",
+                                "at_ms": None, "quote": "", "quote_english": "", "why": m.get("why"),
+                                "replaces": m.get("replaces") or []})
     return {
         "session_id": session.id,
         "transcript": [_line_view(l) for l in session.lines],

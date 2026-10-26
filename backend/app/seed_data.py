@@ -87,6 +87,10 @@ async def seed_database():
     await _seed_base_data()
     await backfill_appointment_times()
     await ensure_demo_schedule()
+    from app.services.meetings import ensure_codes
+    async with AsyncSessionLocal() as session:
+        if await ensure_codes(session):
+            await session.commit()
     await ensure_care_network()  # OPD doctors in every department + the demo patient's care team
 
 

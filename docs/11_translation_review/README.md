@@ -51,6 +51,11 @@ Doctors read these, so clinical words may stay in English where that is what doc
 - Doctor portal: `frontend Doctor/src/portal/i18n.ts`, keys `assist…`, `addToNote`, `engine…`.
 - Patient app: `frontend Patient/src/utils/translations.ts`, keys `summary…` (the offer text must keep: no names, saved only if they say yes).
 
+## 7. ASHA worker screens
+
+- Patient app: `frontend Patient/src/utils/translations.ts`, keys `asha…`. The consent text read to the patient (`ashaConsentBody`) must stay accurate and simple; the urgent message (`ashaUrgent…`) must stay clear.
+- Doctor portal: `frontend Doctor/src/portal/i18n.ts`, keys from `homeReadingsHint2` to `kindWeight`.
+
 ## Status
 
 | Language | Reviewed by | Date |

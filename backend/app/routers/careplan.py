@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.models import (
-    Appointment, AuditEvent, ClinicalNote, DoseLog, Encounter, PatientProfile,
+    Appointment, AuditEvent, ClinicalNote, ConsultationRecord, DoseLog, Encounter, PatientProfile,
     Practitioner, RecoveryCheckin,
 )
 from app.schemas.schemas import DoseLogIn, RecoveryCheckinIn
@@ -228,9 +228,23 @@ async def get_my_care_plan(
             "signed_at": note.signed_at,
         }
 
+    record = (await db.execute(select(ConsultationRecord).where(ConsultationRecord.patient_id == patient_id)
+                               .order_by(desc(ConsultationRecord.signed_at)).limit(1))).scalar_one_or_none()
+    latest_visit = None
+    if record:
+        st = record.structured_json or {}
+        latest_visit = {
+            "encounter_id": record.encounter_id, "signed_at": record.signed_at,
+            "complaints": st.get("complaints", []), "diagnosis": st.get("diagnosis", []),
+            "vitals": st.get("vitals", {}), "prescription": st.get("prescription", []),
+            "advice": st.get("advice", []), "investigations": st.get("investigations", []),
+            "follow_up": st.get("follow_up", {}),
+        }
+
     return {
         "doctor_name": doctor_name,
         "facility": facility,
+        "latest_visit": latest_visit,
         "medications": medications,
         "doses_today": {f"{log.medication_id}:{log.slot}": bool(log.taken) for log in logs},
         "checkin_today": checkin_today,

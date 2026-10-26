@@ -39,8 +39,22 @@ const WandSparkles = glyph('aiAssist');
 const ListChecks = glyph('checklist');
 const Sparkles = glyph('aiAssist');
 const ShieldAlert = glyph('drugAlert');
-const MessagesSquare = glyph('chat');
 const Plus = glyph('add');
+const ShieldCheck = glyph('shieldCheck');
+
+interface ShieldPreview {
+  standard: string;
+  destination: string;
+  original: string;
+  prompt: string;
+  blocked: boolean;
+  leaks: string[];
+  checks: { id: string; ok: boolean; detail: string }[];
+}
+interface ShieldLedgerItem { at: number; label: string; destination: string; outcome: string; bytes: number; sha256: string; masked: Record<string, number>; leaks: string[] }
+const STEP_NAMES: Record<string, string> = {
+  S1: 'Minimise', S2: 'Mask', S3: 'Generalise', S4: 'Unlink', S5: 'Verify', S6: 'Record', S7: 'Restore',
+};
 
 interface ClinicalNotepadProps {
   encounterId: string;
@@ -52,10 +66,13 @@ interface ClinicalNotepadProps {
   /** Current note text (debounced), so the call can compare it with the conversation. */
   onTextChange?: (text: string) => void;
   /** Text the doctor chose to add from the live assistant (inserted once per id, in its section). */
-  insertRequest?: { id: string; text: string; section: string } | null;
+  insertRequest?: { id: string; text: string; section: string; heading?: string } | null;
+  /** Docked beside the call video: a tall editor and compact chrome. */
+  docked?: boolean;
+  /** CHIBI's quiet hints: on an empty line, offer what was said but isn't under that heading yet. */
+  quietHints?: boolean;
 }
 
-const fmtTime = (ms: number | null) => (ms === null ? '' : `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`);
 const IDENTIFIER_LABELS: Record<string, string> = {
   PATIENT: 'patient name', DOCTOR: 'doctor name', PERSON: 'other name', PHONE: 'phone number', ABHA: 'ABHA ID',
   ID: 'ID number', EMAIL: 'e-mail', PIN: 'PIN code', PLACE: 'place', DATE: 'date',
@@ -74,12 +91,48 @@ const TERM_QUERY_WORDS = 4;
 const MAX_TERM_RESULTS = 4;
 const KIND_LABELS: Record<Suggestion['kind'], string> = {
   complete: 'Complete', phrase: 'Phrase', shorthand: 'Expand', nomenclature: 'Standardize', spelling: 'Spelling', ai: 'AI',
+  chibi: 'CHIBI',
 };
 const AUTO_THRESHOLD_DEFAULT = 0.9;
+// Headings of the CareBridge note format (backend/app/services/note_format.py).
 const SECTION_LABELS: Record<NoteSection, string> = {
-  complaints: 'Chief Complaints', history: 'Past History', exam: 'Vitals & Examination',
-  assessment: 'Assessment', labs: 'Investigations', plan: 'Plan / Medications',
+  complaints: 'Chief Complaints', history: 'History', exam: 'Examination',
+  assessment: 'Diagnosis', labs: 'Investigations', plan: 'Rx',
 };
+
+const HEADING_LINE = /^\s*([A-Za-z][A-Za-z /&-]{0,40}?)\s*:\s*$/;
+
+/** End of the last line under `heading` (where a new line for that heading goes), or null without the heading. */
+function headingInsertionPoint(text: string, heading: string): number | null {
+  const lines = text.split('\n');
+  let pos = 0;
+  let found = false;
+  let insertAt = -1;
+  for (const line of lines) {
+    const end = pos + line.length;
+    const m = HEADING_LINE.exec(line);
+    if (!found) {
+      if (m && m[1].trim().toLowerCase() === heading.toLowerCase()) { found = true; insertAt = end; }
+    } else {
+      if (m) break;
+      if (line.trim()) insertAt = end;
+    }
+    pos = end + 1;
+  }
+  return found ? insertAt : null;
+}
+
+/** The heading the caret is under ("rx", "chief complaints"…), lower-case. */
+function currentHeading(text: string, pos: number): string | null {
+  const lines = text.slice(0, pos).split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = HEADING_LINE.exec(lines[i]);
+    if (m) return m[1].trim().toLowerCase();
+  }
+  return null;
+}
+
+type TrayView = 'heard' | 'review' | 'safety' | 'coded' | 'shield' | 'fhir' | null;
 
 let annotationSeq = 0;
 const newId = () => `ann_${Date.now().toString(36)}_${annotationSeq++}`;
@@ -112,7 +165,8 @@ const SafetyRow: React.FC<{ alert: SafetyAlert }> = ({ alert: a }) => (
 );
 
 export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
-  encounterId, patientName, callMinutes = null, autoApplyCall = false, onTextChange, insertRequest = null,
+  encounterId, patientName, callMinutes = null, autoApplyCall = false, onTextChange, insertRequest = null, docked = false,
+  quietHints = true,
 }) => {
   const [lexicon, setLexicon] = useState<Lexicon | null>(null);
   const engine = useMemo(() => (lexicon ? new LocalEngine(lexicon) : null), [lexicon]);
@@ -140,6 +194,9 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
   const [dirty, setDirty] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [fhirPreview, setFhirPreview] = useState<string | null>(null);
+  const [shieldView, setShieldView] = useState<{ preview: ShieldPreview; ledger: ShieldLedgerItem[] } | null>(null);
+  const [tray, setTray] = useState<TrayView>(null);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number } | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -302,37 +359,57 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     const text = textRef.current;
     const section = (['complaints', 'history', 'exam', 'assessment', 'labs', 'plan'].includes(f.section)
       ? f.section : 'history') as NoteSection;
-    const at = engine.sectionInsertionPoint(text, section);
+    const at = (f.heading ? headingInsertionPoint(text, f.heading) : null) ?? engine.sectionInsertionPoint(text, section);
     const draft: CodedDraft = {
       kind: 'call', original: '', name: f.text, codes: [], category: `From the call · ${f.kind}`,
       severity: f.severity === 'urgent' ? 'critical' : 'routine', confidence: 1, alternatives: [], auto: true,
     };
+    // A fuller version of lines CHIBI already wrote: update them in place instead of adding another line.
+    // Lines the doctor has edited since are left alone.
+    const olds = (f.replaces ?? [])
+      .map(id => callAppliedRef.current[id])
+      .filter(p => p?.status === 'added')
+      .map(p => annRef.current.find(a => a.kind === 'call' && a.name === p.finding.text && text.slice(a.start, a.end) === p.finding.text))
+      .filter((a): a is NonNullable<typeof a> => !!a)
+      .sort((a, b) => a.start - b.start);
+    if (olds.length) {
+      let next = text;
+      const caret = taRef.current?.selectionStart ?? text.length;
+      let newCaret = caret;
+      for (const a of [...olds.slice(1)].reverse()) {                  // drop the extra lines (with their line break)
+        const start = next[a.start - 1] === '\n' ? a.start - 1 : a.start;
+        next = next.slice(0, start) + next.slice(a.end);
+        if (newCaret > a.end) newCaret -= a.end - start; else if (newCaret > start) newCaret = start;
+      }
+      const keep = olds[0];
+      next = next.slice(0, keep.start) + f.text + next.slice(keep.end);
+      if (newCaret > keep.end) newCaret += f.text.length - (keep.end - keep.start);
+      annRef.current = annRef.current.filter(a => !olds.includes(a));   // the new line gets its own marker
+      pendingCoded.current = { start: keep.start, end: keep.start + f.text.length, draft };
+      commitText(next);
+      pendingSelection.current = newCaret;
+      setCallApplied(prev => {
+        const out = { ...prev };
+        for (const id of f.replaces ?? []) delete out[id];
+        out[f.id] = { status: 'added', finding: f };
+        return out;
+      });
+      return;
+    }
     if (at !== null) {
       insertSilently(at, `\n${f.text}`, draft, at + 1);
     } else {
-      const block = `${text.endsWith('\n') || !text ? '' : '\n'}\n${SECTION_LABELS[section]}:\n${f.text}`;
+      const block = `${text.endsWith('\n') || !text ? '' : '\n'}\n${f.heading ?? SECTION_LABELS[section]}:\n${f.text}`;
       insertSilently(text.length, block, draft, text.length + block.length - f.text.length);
     }
     setCallApplied(prev => ({ ...prev, [f.id]: { status: 'added', finding: f } }));
   }, [engine, insertSilently]);
 
-  const removeCallFinding = useCallback((f: CallFinding) => {
-    const ann = annRef.current.find(a => a.kind === 'call' && a.name === f.text);
-    if (ann) {
-      const old = textRef.current;
-      const start = old[ann.start - 1] === '\n' ? ann.start - 1 : ann.start;   // take the line break with it
-      const caret = taRef.current?.selectionStart ?? old.length;
-      commitText(old.slice(0, start) + old.slice(ann.end));
-      pendingSelection.current = caret > ann.end ? caret - (ann.end - start) : Math.min(caret, start);
-    }
-    setCallApplied(prev => ({ ...prev, [f.id]: { status: 'removed', finding: f } }));
-  }, [commitText]);
-
   // "Add to note" from the live assistant.
   useEffect(() => {
     if (!insertRequest || loading || callAppliedRef.current[insertRequest.id]) return;
     addCallFinding({
-      id: insertRequest.id, kind: 'other', section: insertRequest.section, text: insertRequest.text, severity: 'routine',
+      id: insertRequest.id, kind: 'other', section: insertRequest.section, heading: insertRequest.heading, text: insertRequest.text, severity: 'routine',
       source: 'model', speaker: 'conversation', at_ms: null, quote: '', quote_english: '',
     });
   }, [insertRequest, addCallFinding, loading]);
@@ -666,8 +743,24 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
         detail: `AI suggestion${aiSuggestion?.provider === 'stub' ? ' · demo stub' : ' · on-premise model'} · review before accepting`,
       });
     }
+    // CHIBI, quietly: on an empty line, offer what was said in the consultation but isn't under this heading yet.
+    if (quietHints && callMinutes && out.length === 0) {
+      const ls = text.lastIndexOf('\n', cursor - 1) + 1;
+      const le = text.indexOf('\n', cursor) === -1 ? text.length : text.indexOf('\n', cursor);
+      if (text.slice(ls, le).trim() === '') {
+        const heading = currentHeading(text, cursor);
+        const hint = heading ? callMinutes.missing.find(f => !callApplied[f.id] &&
+          (f.heading ?? SECTION_LABELS[f.section as NoteSection] ?? '').toLowerCase() === heading) : undefined;
+        if (hint) {
+          out.push({
+            kind: 'chibi', replaceStart: cursor, replaceEnd: cursor, insert: hint.text, label: hint.text, original: hint.id,
+            detail: `CHIBI · said in the consultation${hint.why ? ` · ${hint.why}` : ''} · Tab to add`,
+          });
+        }
+      }
+    }
     return out.slice(0, 8);
-  }, [engine, dismissed, currentAnalysis, text, cursor, forced, aiSuggestion, termResults]);
+  }, [engine, dismissed, currentAnalysis, text, cursor, forced, aiSuggestion, termResults, quietHints, callMinutes, callApplied]);
 
   const top = suggestions[Math.min(highlight, suggestions.length - 1)];
   const atLineEnd = text[cursor] === undefined || text[cursor] === '\n';
@@ -696,6 +789,10 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     // A fix for the word just finished leaves the doctor's trailing space/punctuation, and the caret, after it.
     const caretAfter = s.replaceEnd < cursor ? cursor + insert.length - (s.replaceEnd - s.replaceStart) : undefined;
     replaceRange(s.replaceStart, s.replaceEnd, insert, coded, caretAfter);
+    if (s.kind === 'chibi') {
+      const f = callMinutes?.missing.find(m => m.id === s.original);
+      if (f) setCallApplied(p => ({ ...p, [f.id]: { status: 'added', finding: f } }));
+    }
     setHighlight(0);
     setNavigated(false);
     setForced(false);
@@ -900,12 +997,31 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     }).catch(() => undefined);
   }, [encounterId]);
 
+  // SETU-Shield: exactly what an AI server would receive for this note (nothing is sent).
+  const showShield = async () => {
+    try {
+      const [pre, led] = await Promise.all([
+        authFetch('/api/v1/privacy/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ encounter_id: encounterId, text: textRef.current }),
+        }),
+        authFetch(`/api/v1/privacy/ledger?encounter_id=${encodeURIComponent(encounterId)}`),
+      ]);
+      if (!pre.ok) throw new Error(`HTTP ${pre.status}`);
+      setShieldView({ preview: await pre.json(), ledger: led.ok ? (await led.json()).items : [] });
+      setTray('shield');
+    } catch (err) {
+      setSaveMsg({ ok: false, text: `Privacy preview failed (${(err as Error).message}).` });
+    }
+  };
+
   const exportFhir = async () => {
     if (dirty && !(await saveDraft())) return;
     try {
       const res = await authFetch(`/api/v1/intellisense/encounters/${encodeURIComponent(encounterId)}/fhir`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setFhirPreview(JSON.stringify(await res.json(), null, 2));
+      setTray('fhir');
     } catch (err) {
       setSaveMsg({ ok: false, text: `FHIR export failed (${(err as Error).message}).` });
     }
@@ -938,50 +1054,269 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     offline: { icon: <WifiOff size={14} />, label: 'Offline · local engine', cls: 'offline' },
   }[status];
 
+  const heardCount = callMinutes ? callMinutes.missing.filter(f => !callApplied[f.id]).length : 0;
+  const reviewCount = reviewMatches.length + spelling.length;
+  const safetyMeds = safety?.medicines.length ?? 0;
+
+  const trayContent = () => {
+    if (tray === 'heard' && callMinutes) {
+      const rows = callMinutes.missing.filter(f => !callApplied[f.id]);
+      return (
+        <>
+          <h4><Sparkles size={15} /> Heard in the consultation, not in your note
+            {rows.length > 1 && (
+              <button type="button" className="np-choice" style={{ marginLeft: 'auto' }} onClick={() => rows.forEach(f => addCallFinding(f))}>
+                <Plus size={13} /> Add all
+              </button>
+            )}
+          </h4>
+          {rows.length === 0 && <p className="np-empty">Everything discussed so far is in your note.</p>}
+          {rows.map(f => (
+            <div key={f.id} className={`np-call-row ${f.severity === 'urgent' ? 'urgent' : ''}`}>
+              <div className="np-call-main">
+                <div className="np-call-text">
+                  {f.severity === 'urgent' && <AlertTriangle size={14} />} {f.text}
+                  <span className="np-call-section">{f.heading ?? SECTION_LABELS[f.section as NoteSection] ?? f.section}</span>
+                </div>
+                {f.quote && <div className="np-call-quote">“{f.quote}”</div>}
+              </div>
+              <div className="np-call-actions">
+                <button type="button" className="np-choice" onClick={() => addCallFinding(f)}><Plus size={13} /> Add</button>
+                <button type="button" className="np-icon-btn" title="Ignore" onClick={() => setCallApplied(p => ({ ...p, [f.id]: { status: 'removed', finding: f } }))}><X size={14} /></button>
+              </div>
+            </div>
+          ))}
+          {Object.keys(callMinutes.identifiers_removed).length > 0 && (
+            <p className="np-call-meta">Removed before AI: {Object.entries(callMinutes.identifiers_removed)
+              .map(([k, n]) => `${n} ${IDENTIFIER_LABELS[k] ?? k.toLowerCase()}${n > 1 ? 's' : ''}`).join(', ')}</p>
+          )}
+        </>
+      );
+    }
+    if (tray === 'review') {
+      return (
+        <>
+          <h4>Needs your review</h4>
+          {reviewMatches.map(m => (
+            <div key={`r${m.start}`} className="np-review-row">
+              <span className="np-review-term">“{m.original}”</span>
+              <span className="np-review-meta">{Math.round(m.confidence * 100)}% sure · means:</span>
+              {m.candidates.map(c => (
+                <button key={c.name} type="button" className={`np-choice ${c.severity === 'critical' ? 'critical' : ''}`}
+                  onClick={() => resolveMatch(m, c)}>
+                  {c.name} <small>{c.codes.map(formatCode).join(' · ')}</small>
+                </button>
+              ))}
+              <button type="button" className="np-icon-btn" title="Keep as written" onClick={() => ignoreRange(m.start, m.end, m.original)}><X size={14} /></button>
+            </div>
+          ))}
+          {spelling.map(sp => (
+            <div key={`s${sp.start}`} className="np-review-row">
+              <span className="np-review-term np-spell">“{sp.original}”</span>
+              <span className="np-review-meta">possible misspelling of</span>
+              <button type="button" className="np-choice" onClick={() => { replaceRange(sp.start, sp.end, sp.suggestion); scheduleAnalysis(); }}>
+                {sp.suggestion}
+              </button>
+              <button type="button" className="np-icon-btn" title="Ignore" onClick={() => ignoreRange(sp.start, sp.end, sp.original)}><X size={14} /></button>
+            </div>
+          ))}
+        </>
+      );
+    }
+    if (tray === 'safety' && safety) {
+      return (
+        <>
+          <h4><ShieldAlert size={15} /> Medication safety</h4>
+          {minorAlerts.length === 0 && <p className="np-empty">No interactions or allergy conflicts found.</p>}
+          {minorAlerts.map(a => <SafetyRow key={`${a.kind}-${a.title}`} alert={a} />)}
+          <p className="np-safety-meta">
+            Checked: {safety.medicines.map(m => m.drugs.join(' + ')).join(', ') || 'none'} against {safety.checked_against.current_medications.length} current
+            medicine(s) and {safety.checked_against.allergies.length} allerg{safety.checked_against.allergies.length === 1 ? 'y' : 'ies'}.
+            {' '}Data: {safety.interaction_data === 'DDInter' ? 'DDInter 2.0 + curated rules' : 'curated rules'}. Supports, never replaces, clinical judgement.
+          </p>
+        </>
+      );
+    }
+    if (tray === 'coded') {
+      return (
+        <>
+          <h4>Coded terms ({coded.length})</h4>
+          <div className="np-pills">
+            {coded.map(a => {
+              const tone = a.severity === 'critical' ? 'critical' : a.confidence < autoThreshold ? 'ambiguous' : 'coded';
+              return (
+                <div key={a.id} className={`np-pill np-pill-${tone}`}>
+                  <span className="np-pill-name">{a.name}</span>
+                  {a.codes.map(c => <span key={c.system} className={`np-code np-code-${c.system}`}>{formatCode(c)}</span>)}
+                  {a.auto && <span className="np-auto" title={`Auto-converted (${Math.round(a.confidence * 100)}% confidence)`}>auto</span>}
+                  <button type="button" className="np-icon-btn" aria-label={`Options for ${a.name}`}
+                    onClick={() => setOpenPill(openPill === a.id ? null : a.id)}><ChevronDown size={14} /></button>
+                  {openPill === a.id && (
+                    <div className="np-popover">
+                      <div className="np-popover-meta">Written as “{a.original}” · {a.category}</div>
+                      {a.alternatives.map(alt => (
+                        <button key={alt.name} type="button" className="np-popover-item" onClick={() => switchAlternative(a, alt)}>
+                          Switch to {alt.name} <small>{alt.codes.map(formatCode).join(' · ')}</small>
+                        </button>
+                      ))}
+                      <button type="button" className="np-popover-item np-revert" onClick={() => revertAnnotation(a)}>
+                        <RotateCcw size={13} /> Revert to “{a.original}”
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      );
+    }
+    if (tray === 'shield' && shieldView) {
+      return (
+        <div className="np-shield" aria-label="What the AI sees">
+          <h4><ShieldCheck size={15} /> {shieldView.preview.standard}: what the AI sees</h4>
+          <p className="np-shield-sub">
+            Nothing was sent. This is the exact request the autocomplete would send to the
+            {shieldView.preview.destination === 'third_party' ? ' third-party' : ' self-hosted'} AI server for your note.
+          </p>
+          <div className="np-shield-cols">
+            <div>
+              <div className="np-shield-label">Your note (stays on the server)</div>
+              <pre className="np-fhir" ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>{shieldView.preview.original || '(empty)'}</pre>
+            </div>
+            <div>
+              <div className="np-shield-label">{shieldView.preview.blocked ? 'Would be BLOCKED' : 'What leaves the server'}</div>
+              <pre className={`np-fhir${shieldView.preview.blocked ? ' np-shield-blocked' : ''}`} ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>{shieldView.preview.prompt}</pre>
+            </div>
+          </div>
+          <ol className="np-shield-steps">
+            {shieldView.preview.checks.map(c => (
+              <li key={c.id} className={c.ok ? 'ok' : 'fail'}>
+                <span className="np-shield-step">{c.ok ? <Check size={13} /> : <AlertTriangle size={13} />} {c.id} {STEP_NAMES[c.id]}</span>
+                <span>{c.detail}</span>
+              </li>
+            ))}
+          </ol>
+          {shieldView.ledger.length > 0 && (
+            <>
+              <div className="np-shield-label">Recent AI requests for this consultation (no content is kept)</div>
+              <ul className="np-shield-ledger">
+                {shieldView.ledger.slice(0, 6).map((r, i) => (
+                  <li key={i}>
+                    <span>{new Date(r.at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                    <span>{r.label}</span>
+                    <span className={r.outcome === 'blocked' ? 'fail' : 'ok'}>{r.outcome === 'blocked' ? `blocked (${r.leaks.join(', ')})` : r.destination.replace('_', '-')}</span>
+                    <span>{r.bytes} B · #{r.sha256}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      );
+    }
+    if (tray === 'fhir' && fhirPreview) {
+      return (
+        <>
+          <h4>FHIR R4 bundle (from saved draft)</h4>
+          <pre className="np-fhir">{fhirPreview}</pre>
+        </>
+      );
+    }
+    return null;
+  };
+
   return (
-    <div className="cb-card portal-card-elevated np-root">
-      <div className="cb-card-header">
+    <div className={`cb-card portal-card-elevated np-root${docked ? ' np-docked' : ''}`}>
+      <div className="cb-card-header np-head">
         <div className="cb-card-title">
-          <NotebookPen size={20} className="text-primary" />
-          <span>AI IntelliSense Notepad{patientName ? ` · ${patientName}` : ''}</span>
+          <NotebookPen size={18} className="text-primary" />
+          <span>Notes{patientName ? ` · ${patientName}` : ''}</span>
         </div>
-        <div className="np-status-group">
-        <span className={`np-status np-status-${statusView.cls}`} title="IntelliSense engine connection">
-          {statusView.icon}{statusView.label}
+        <span className={`np-health np-health-${statusView.cls} ${aiPending ? 'pending' : ''}`}
+          title={`${statusView.label} · ${aiView.label}: ${aiView.title}`}>
+          <span className="np-health-dot" />
+          {aiPending ? 'AI thinking…' : status === 'live' ? (tier3?.enabled ? aiView.label : 'Ready') : statusView.label}
         </span>
-        <span
-          className={`np-status np-ai-status ${aiView.cls} ${aiPending ? 'pending' : ''}`}
-          title={aiView.title}
-        >
-          <Sparkles size={14} />
-          {aiView.label}{aiPending ? ' · thinking…' : ''}
-        </span>
-        </div>
       </div>
 
       <div className="np-toolbar">
-        <button type="button" className="np-btn" onClick={runExpandAll} disabled={!engine}>
-          <WandSparkles size={15} /> Expand shorthand
+        <button type="button" className="np-btn" onClick={runFormatAll} disabled={!engine} title="Tidy headings, spacing and abbreviations">
+          <ListChecks size={15} /> Format
         </button>
-        <button type="button" className="np-btn" onClick={runFormatAll} disabled={!engine}>
-          <ListChecks size={15} /> Format note
-        </button>
-        <label className="np-toggle">
-          <input type="checkbox" checked={autoStandardize} onChange={e => setAutoStandardize(e.target.checked)} />
-          Auto-standardize confident terms
-        </label>
-        <label className="np-toggle" title="Fix clear-cut typos when a word is finished, and tidy punctuation when you press Enter. Ctrl+Z undoes.">
-          <input type="checkbox" checked={autoCorrect} onChange={e => setAutoCorrect(e.target.checked)} />
-          Auto-correct &amp; punctuate
-        </label>
+        <div className="np-more-wrap">
+          <button type="button" className="np-btn" aria-haspopup="menu" aria-expanded={moreOpen} onClick={() => setMoreOpen(o => !o)}>
+            More <ChevronDown size={14} />
+          </button>
+          {moreOpen && (
+            <div className="np-menu" role="menu" onMouseLeave={() => setMoreOpen(false)}>
+              <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); runExpandAll(); }} disabled={!engine}>
+                <WandSparkles size={14} /> Expand all shorthand
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void showShield(); }}>
+                <ShieldCheck size={14} /> What the AI sees
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMoreOpen(false); void exportFhir(); }}>
+                <FileJson size={14} /> FHIR coded terms
+              </button>
+              <label className="np-menu-toggle">
+                <input type="checkbox" checked={autoStandardize} onChange={e => setAutoStandardize(e.target.checked)} />
+                Auto-standardize confident terms
+              </label>
+              <label className="np-menu-toggle" title="Fix clear-cut typos when a word is finished, and tidy punctuation when you press Enter. Ctrl+Z undoes.">
+                <input type="checkbox" checked={autoCorrect} onChange={e => setAutoCorrect(e.target.checked)} />
+                Auto-correct &amp; punctuate
+              </label>
+              <div className="np-menu-hint">
+                <Keyboard size={13} /> <kbd>Tab</kbd> accept · <kbd>Esc</kbd> dismiss · <kbd>Ctrl</kbd>+<kbd>Space</kbd> suggest · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo
+              </div>
+            </div>
+          )}
+        </div>
+        {section && <span className="np-where" title="The heading you are writing under">{SECTION_LABELS[section]}</span>}
         <span className="np-toolbar-spacer" />
-        <button type="button" className="np-btn" onClick={exportFhir}>
-          <FileJson size={15} /> FHIR coded terms
-        </button>
+        {saveMsg && (
+          <span className={`np-save-inline ${saveMsg.ok ? 'ok' : 'err'}`} role="status">
+            {saveMsg.ok ? <Check size={13} /> : <AlertTriangle size={13} />} {saveMsg.text}
+          </span>
+        )}
         <button type="button" className="np-btn np-btn-primary" onClick={() => void saveDraft()}>
-          <Save size={15} /> {dirty ? 'Save draft' : 'Saved'}
+          <Save size={15} /> {dirty ? 'Save' : 'Saved'}
         </button>
       </div>
+
+      {urgentAlerts.length > 0 && (
+        <div className="np-urgent" aria-live="assertive">
+          {urgentAlerts.slice(0, 2).map(a => <SafetyRow key={`${a.kind}-${a.title}`} alert={a} />)}
+        </div>
+      )}
+
+      {(heardCount > 0 || reviewCount > 0 || coded.length > 0 || safetyMeds > 0) && (
+        <div className="np-tray" role="toolbar" aria-label="CHIBI">
+          {heardCount > 0 && (
+            <button type="button" className={`np-chip np-chip-chibi ${tray === 'heard' ? 'on' : ''}`} onClick={() => setTray(t => (t === 'heard' ? null : 'heard'))}
+              title="Said in the consultation but not in your note yet. They also appear as grey text on an empty line under the right heading.">
+              <Sparkles size={13} /> Heard, not in note · {heardCount}
+            </button>
+          )}
+          {reviewCount > 0 && (
+            <button type="button" className={`np-chip ${tray === 'review' ? 'on' : ''}`} onClick={() => setTray(t => (t === 'review' ? null : 'review'))}>
+              Review · {reviewCount}
+            </button>
+          )}
+          {safetyMeds > 0 && (
+            <button type="button" className={`np-chip ${minorAlerts.length ? 'np-chip-warn' : 'np-chip-ok'} ${tray === 'safety' ? 'on' : ''}`}
+              onClick={() => setTray(t => (t === 'safety' ? null : 'safety'))}>
+              {minorAlerts.length ? <>Minor interactions · {minorAlerts.length}</> : <><Check size={13} /> Medicines checked</>}
+            </button>
+          )}
+          {coded.length > 0 && (
+            <button type="button" className={`np-chip ${tray === 'coded' ? 'on' : ''}`} onClick={() => setTray(t => (t === 'coded' ? null : 'coded'))}>
+              Coded · {coded.length}
+            </button>
+          )}
+        </div>
+      )}
 
       {!engine && !loading && (
         <div className="clinical-alert clinical-alert-warning np-banner">
@@ -991,6 +1326,12 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
       )}
 
       <div className="np-editor">
+        {tray && (
+          <section className="np-tray-panel" aria-label="CHIBI details">
+            <button type="button" className="np-icon-btn np-tray-close" aria-label="Close" onClick={() => setTray(null)}><X size={14} /></button>
+            {trayContent()}
+          </section>
+        )}
         <div ref={overlayRef} className="np-layer np-overlay" aria-hidden="true">{renderOverlay()}</div>
         <textarea
           ref={taRef}
@@ -1037,185 +1378,6 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
       </div>
 
       {notice && <div className="np-notice" role="status">{notice}</div>}
-
-      <div className="np-footer-hints">
-        <Keyboard size={14} />
-        <span><kbd>Tab</kbd> accept</span>
-        <span><kbd>↑</kbd><kbd>↓</kbd> choose, <kbd>Enter</kbd> confirm</span>
-        <span><kbd>Esc</kbd> dismiss</span>
-        <span><kbd>Ctrl</kbd>+<kbd>Space</kbd> suggest</span>
-        <span><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo a correction</span>
-        {section && <span className="np-section">Context: {SECTION_LABELS[section]}</span>}
-      </div>
-
-      {saveMsg && (
-        <div className={`np-save-msg ${saveMsg.ok ? 'ok' : 'err'}`} role="status">
-          {saveMsg.ok ? <Check size={15} /> : <AlertTriangle size={15} />} {saveMsg.text}
-        </div>
-      )}
-
-      {callMinutes && (
-        <section className="np-panel np-call">
-          <h4><MessagesSquare size={16} /> From the consultation call (AI minutes)</h4>
-          <p className="np-call-meta">
-            {callMinutes.transcript.length} transcript line(s) · speech: {callMinutes.engine.speech ?? 'n/a'} · analysis: {callMinutes.engine.analysis}
-            {Object.keys(callMinutes.identifiers_removed).length > 0 && (
-              <> · removed before AI: {Object.entries(callMinutes.identifiers_removed)
-                .map(([k, n]) => `${n} ${IDENTIFIER_LABELS[k] ?? k.toLowerCase()}${n > 1 ? 's' : ''}`).join(', ')}</>
-            )}
-          </p>
-          {callMinutes.missing.length === 0 && Object.values(callApplied).every(v => v.status !== 'added') && (
-            <p className="np-empty">Everything discussed so far is already in your note.</p>
-          )}
-          {[...callMinutes.missing, ...Object.values(callApplied)
-            .filter(v => v.status === 'added' && !callMinutes.missing.some(m => m.id === v.finding.id))
-            .map(v => v.finding)]
-            .filter(f => callApplied[f.id]?.status !== 'removed')
-            .map(f => {
-              const added = callApplied[f.id]?.status === 'added';
-              return (
-                <div key={f.id} className={`np-call-row ${f.severity === 'urgent' ? 'urgent' : ''} ${added ? 'added' : ''}`}>
-                  <div className="np-call-main">
-                    <div className="np-call-text">
-                      {f.severity === 'urgent' && <AlertTriangle size={14} />} {f.text}
-                      <span className="np-call-section">{SECTION_LABELS[f.section as NoteSection] ?? f.section}</span>
-                    </div>
-                    {f.quote && (
-                      <div className="np-call-quote">
-                        {f.speaker === 'patient' ? 'Patient' : f.speaker === 'doctor' ? 'Doctor' : 'Conversation'}
-                        {f.at_ms !== null && ` (${fmtTime(f.at_ms)})`}: “{f.quote}”
-                        {f.quote_english && f.quote_english !== f.quote && <span className="np-call-en"> · English: “{f.quote_english}”</span>}
-                      </div>
-                    )}
-                  </div>
-                  {added ? (
-                    <div className="np-call-actions">
-                      <span className="np-call-badge"><Check size={13} /> Added to note</span>
-                      <button type="button" className="np-icon-btn" title="Remove from note" onClick={() => removeCallFinding(f)}><X size={14} /></button>
-                    </div>
-                  ) : (
-                    <div className="np-call-actions">
-                      <button type="button" className="np-choice" onClick={() => addCallFinding(f)}><Plus size={13} /> Add to note</button>
-                      <button type="button" className="np-icon-btn" title="Ignore" onClick={() => setCallApplied(p => ({ ...p, [f.id]: { status: 'removed', finding: f } }))}><X size={14} /></button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          {callMinutes.transcript.length > 0 && (
-            <details className="np-call-transcript">
-              <summary>Call transcript (your screen only; the AI sees it without names or IDs)</summary>
-              {callMinutes.transcript.map((l, i) => (
-                <div key={i} className="np-call-line">
-                  <span className={`np-call-speaker ${l.speaker}`}>{l.speaker === 'doctor' ? 'Doctor' : 'Patient'} {fmtTime(l.start_ms)}</span>
-                  <span>{l.text}{l.english && l.english !== l.text && <span className="np-call-en"> ({l.english})</span>}</span>
-                </div>
-              ))}
-            </details>
-          )}
-          <p className="np-call-meta">AI-added lines are highlighted in violet. Please review them before signing.</p>
-        </section>
-      )}
-
-      {safety && (safety.medicines.length > 0 || safety.alerts.length > 0) && (
-        <section className="np-panel np-safety" aria-live="polite">
-          <h4>
-            <ShieldAlert size={16} /> Medication safety
-            {urgentAlerts.length === 0 && <span className="np-safe-ok"><Check size={14} /> No serious interactions or allergy conflicts found</span>}
-          </h4>
-          {urgentAlerts.map(a => <SafetyRow key={`${a.kind}-${a.title}`} alert={a} />)}
-          {minorAlerts.length > 0 && (
-            <details className="np-safety-minor">
-              <summary>{minorAlerts.length} lower-priority interaction{minorAlerts.length > 1 ? 's' : ''} (minor or ungraded)</summary>
-              {minorAlerts.map(a => <SafetyRow key={`${a.kind}-${a.title}`} alert={a} />)}
-            </details>
-          )}
-          <p className="np-safety-meta">
-            Medicines found: {safety.medicines.map(m => m.drugs.join(' + ')).join(', ') || 'none'}
-            {' · '}Checked against {safety.checked_against.current_medications.length} current medication(s) and {safety.checked_against.allergies.length} recorded allergy(ies).
-            {' '}Interaction data: {safety.interaction_data === 'DDInter' ? 'DDInter 2.0 (CC BY-NC-SA 4.0) + curated rules' : 'curated rules only'}.
-            {' '}Alerts support, not replace, clinical judgement.
-          </p>
-        </section>
-      )}
-
-      {(reviewMatches.length > 0 || spelling.length > 0) && (
-        <section className="np-panel">
-          <h4>Needs your review</h4>
-          {reviewMatches.map(m => (
-            <div key={`r${m.start}`} className="np-review-row">
-              <span className="np-review-term">“{m.original}”</span>
-              <span className="np-review-meta">{Math.round(m.confidence * 100)}% sure · means:</span>
-              {m.candidates.map(c => (
-                <button key={c.name} type="button" className={`np-choice ${c.severity === 'critical' ? 'critical' : ''}`}
-                  onClick={() => resolveMatch(m, c)}>
-                  {c.name} <small>{c.codes.map(formatCode).join(' · ')}</small>
-                </button>
-              ))}
-              <button type="button" className="np-icon-btn" title="Keep as written"
-                onClick={() => ignoreRange(m.start, m.end, m.original)}><X size={14} /></button>
-            </div>
-          ))}
-          {spelling.map(s => (
-            <div key={`s${s.start}`} className="np-review-row">
-              <span className="np-review-term np-spell">“{s.original}”</span>
-              <span className="np-review-meta">possible misspelling of</span>
-              <button type="button" className="np-choice" onClick={() => { replaceRange(s.start, s.end, s.suggestion); scheduleAnalysis(); }}>
-                {s.suggestion}
-              </button>
-              <button type="button" className="np-icon-btn" title="Ignore"
-                onClick={() => ignoreRange(s.start, s.end, s.original)}><X size={14} /></button>
-            </div>
-          ))}
-        </section>
-      )}
-
-      <section className="np-panel">
-        <h4>Coded terms ({coded.length})</h4>
-        {coded.length === 0 ? (
-          <p className="np-empty">
-            Colloquial terms like “sugar”, “heart attack” or “dama” are converted to SNOMED CT / ICD-10 / LOINC as you type.
-          </p>
-        ) : (
-          <div className="np-pills">
-            {coded.map(a => {
-              const tone = a.severity === 'critical' ? 'critical' : a.confidence < autoThreshold ? 'ambiguous' : 'coded';
-              return (
-                <div key={a.id} className={`np-pill np-pill-${tone}`}>
-                  <span className="np-pill-name">{a.name}</span>
-                  {a.codes.map(c => <span key={c.system} className={`np-code np-code-${c.system}`}>{formatCode(c)}</span>)}
-                  {a.auto && <span className="np-auto" title={`Auto-converted (${Math.round(a.confidence * 100)}% confidence)`}>auto</span>}
-                  <button type="button" className="np-icon-btn" aria-label={`Options for ${a.name}`}
-                    onClick={() => setOpenPill(openPill === a.id ? null : a.id)}><ChevronDown size={14} /></button>
-                  {openPill === a.id && (
-                    <div className="np-popover">
-                      <div className="np-popover-meta">Written as “{a.original}” · {a.category}</div>
-                      {a.alternatives.map(alt => (
-                        <button key={alt.name} type="button" className="np-popover-item" onClick={() => switchAlternative(a, alt)}>
-                          Switch to {alt.name} <small>{alt.codes.map(formatCode).join(' · ')}</small>
-                        </button>
-                      ))}
-                      <button type="button" className="np-popover-item np-revert" onClick={() => revertAnnotation(a)}>
-                        <RotateCcw size={13} /> Revert to “{a.original}”
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {fhirPreview && (
-        <section className="np-panel">
-          <div className="np-panel-head">
-            <h4>FHIR R4 bundle (from saved draft)</h4>
-            <button type="button" className="np-icon-btn" aria-label="Close" onClick={() => setFhirPreview(null)}><X size={14} /></button>
-          </div>
-          <pre className="np-fhir">{fhirPreview}</pre>
-        </section>
-      )}
     </div>
   );
 };

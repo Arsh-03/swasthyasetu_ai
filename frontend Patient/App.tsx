@@ -26,6 +26,9 @@ import { CarePlanView } from './src/components/CarePlanView';
 import { ChatView } from './src/components/ChatView';
 import { HeartRateView } from './src/components/HeartRateView';
 import { SummaryOfferSheet } from './src/components/VisitSummary';
+import { AshaApp } from './src/components/AshaApp';
+import { MeetingJoinView } from './src/components/MeetingJoinView';
+import { ChibiButton, type ChibiSkill } from './src/components/chibi/Chibi';
 import { WhoSawMyRecordsView } from './src/components/WhoSawMyRecordsView';
 import { RecordsLockerView } from './src/components/RecordsLockerView';
 import { SymptomIntakeModal } from './src/components/SymptomIntakeModal';
@@ -47,7 +50,7 @@ const CALLS_SUPPORTED = enableWebRTC();
 
 type TabType = 'home' | 'careplan' | 'chat' | 'records' | 'doctors';
 // doctors = My Doctors tab · doctor = one doctor's page · addDoctor = add a doctor / book a visit
-type ScreenType = 'home' | 'call' | 'careplan' | 'chat' | 'heartrate' | 'whosaw' | 'records' | 'doctors' | 'doctor' | 'addDoctor';
+type ScreenType = 'home' | 'call' | 'careplan' | 'chat' | 'heartrate' | 'whosaw' | 'records' | 'doctors' | 'doctor' | 'addDoctor' | 'join';
 
 // Dev-only design reference. A conditional require (folded away when __DEV__ is false)
 // keeps it out of production bundles, which a static import would not.
@@ -124,10 +127,18 @@ function PatientApp() {
   const [appointmentStatus, setAppointmentStatus] = useState<AppointmentStatus>('loading');
   // ---- Consultation call (real WebRTC call with the doctor) ----
   const [callRoom, setCallRoom] = useState<{ encounter_id: string; doctor_name?: string } | null>(null);
+  // Meeting link (web: ?join=<code>) or the next appointment's meeting
+  const [joinCode, setJoinCode] = useState<string | null>(() => {
+    try {
+      return typeof window !== 'undefined' && window.location?.search ? new URLSearchParams(window.location.search).get('join') : null;
+    } catch {
+      return null;
+    }
+  });
   const [pendingCallStart, setPendingCallStart] = useState(false);
   const call = useConsultationCall({
     role: 'patient',
-    encounterId: user && CALLS_SUPPORTED ? callRoom?.encounter_id ?? null : null,
+    encounterId: user && user.role !== 'asha' && CALLS_SUPPORTED ? callRoom?.encounter_id ?? null : null,
     peerName: callRoom?.doctor_name || appointmentInfo?.doctorName || t('yourDoctor'),
   });
   const inCall = call.callState === 'calling' || call.callState === 'in_call';
@@ -172,6 +183,11 @@ function PatientApp() {
   // Long-press on the brand mark opens the style guide in development builds only
   const openStyleGuide = StyleGuideScreen ? () => setShowStyleGuide(true) : undefined;
 
+  useEffect(() => {
+    if (user && user.role !== 'asha' && joinCode && currentScreen === 'home') setCurrentScreen('join');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const toAppointmentInfo = (apt: NextAppointment): PatientAppointmentInfo => ({
     date: apt.date,
     time: apt.time,
@@ -181,6 +197,7 @@ function PatientApp() {
     specialty: apt.specialty,
     agenda: apt.agenda,
     isRescheduled: apt.isRescheduled,
+    meetingCode: apt.meetingCode,
     practitionerId: apt.practitionerId,
     department: apt.department,
     mode: apt.mode,
@@ -220,7 +237,7 @@ function PatientApp() {
 
   // Load the next appointment and any consent requests that arrived while offline
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.role === 'asha') return;   // ASHA workers have their own home
     loadAppointments();
     patientApi
       .getPendingConsents()
@@ -236,7 +253,7 @@ function PatientApp() {
 
   // WebSocket connection for real-time consent push alerts and telehealth events
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.role === 'asha') return;
     let socket: WebSocket | null = null;
     try {
       socket = new WebSocket(telehealthSocketUrl(patientApi.getToken()));
@@ -384,6 +401,23 @@ function PatientApp() {
     );
   }
 
+  // ASHA (community health worker) signed in: her own screens
+  if (user.role === 'asha') {
+    return (
+      <View style={styles.root}>
+        <StatusBar style="dark" />
+        <AshaApp
+          user={user}
+          onLogout={() => {
+            patientApi.clearToken();
+            setUser(null);
+          }}
+        />
+        <Toast message={toastMessage} />
+      </View>
+    );
+  }
+
   // Live call (immersive) while calling or connected
   if (inCall) {
     return (
@@ -462,13 +496,19 @@ function PatientApp() {
               user={user}
               appointment={appointmentInfo}
               appointmentStatus={appointmentStatus}
-              onJoinCall={() =>
-                openIntake(
-                  appointmentInfo?.practitionerId
-                    ? { id: appointmentInfo.practitionerId, name: appointmentInfo.doctorName || t('yourDoctor') }
-                    : null
-                )
-              }
+              onJoinCall={() => {
+                // A scheduled meeting: join like Google Meet (waiting room). Otherwise: symptom intake + call.
+                if (appointmentInfo?.meetingCode) {
+                  setJoinCode(appointmentInfo.meetingCode);
+                  setCurrentScreen('join');
+                } else {
+                  openIntake(
+                    appointmentInfo?.practitionerId
+                      ? { id: appointmentInfo.practitionerId, name: appointmentInfo.doctorName || t('yourDoctor') }
+                      : null
+                  );
+                }
+              }}
               onOpenDoctors={() => {
                 setDoctorsTab('doctors');
                 setCurrentScreen('doctors');
@@ -548,6 +588,17 @@ function PatientApp() {
 
           {currentScreen === 'careplan' && <CarePlanView onBack={() => setCurrentScreen('home')} summariesKey={summariesKey} />}
 
+          {currentScreen === 'join' && (
+            <MeetingJoinView
+              code={joinCode}
+              call={call}
+              callRoomEncounterId={callRoom?.encounter_id ?? null}
+              onRoom={setCallRoom}
+              onBack={() => setCurrentScreen('home')}
+              onRequestCall={() => { setCurrentScreen('home'); setIsIntakeVisible(true); }}
+            />
+          )}
+
           {currentScreen === 'heartrate' && (
             <HeartRateView onBack={() => setCurrentScreen('home')} onMessageDoctor={() => setCurrentScreen('chat')} />
           )}
@@ -588,6 +639,20 @@ function PatientApp() {
           )}
         </BlurTargetProvider>
       </ChromeInsetsProvider>
+
+      {/* CHIBI: the assistant in the corner, with what it can do right now */}
+      {!isIntakeVisible && (
+        <ChibiButton
+          bottom={tabBarChromeHeight(insets.bottom) + 12}
+          skills={[
+            ...(appointmentInfo?.meetingCode ? [{ id: 'join', label: t('chibiJoin'), icon: 'video', run: () => { setJoinCode(appointmentInfo.meetingCode ?? null); setCurrentScreen('join'); } } as ChibiSkill] : []),
+            { id: 'heart', label: t('chibiHeart'), icon: 'heartbeat', run: () => setCurrentScreen('heartrate') },
+            { id: 'meds', label: t('chibiMeds'), icon: 'medication', run: () => setCurrentScreen('careplan') },
+            { id: 'chat', label: t('chibiChat'), icon: 'chat', run: () => setCurrentScreen('chat') },
+            { id: 'privacy', label: t('chibiPrivacy'), icon: 'shieldCheck', run: () => { setPrivacyBackTarget('home'); setCurrentScreen('whosaw'); } },
+          ]}
+        />
+      )}
 
       {/* Pre-consultation symptom intake */}
       <SymptomIntakeModal

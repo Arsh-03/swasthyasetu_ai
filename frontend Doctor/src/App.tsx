@@ -26,6 +26,8 @@ import { PatientScreen } from './portal/screens/PatientScreen';
 import { VisitScreen } from './portal/screens/VisitScreen';
 import { MeetingScreen } from './portal/screens/MeetingScreen';
 import { AuditScreen } from './portal/screens/AuditScreen';
+import { LabScreen } from './portal/screens/LabScreen';
+import { Chibi } from './portal/Chibi';
 import { SettingsScreen } from './portal/screens/SettingsScreen';
 import { MessagesScreen } from './portal/screens/MessagesScreen';
 
@@ -166,6 +168,9 @@ export function App() {
             }
             break;
           }
+          case 'patient_waiting':
+            toast(tRef.current('patientWaitingToast', { name: String(msg.patient_name || '').replace(/\s*\(.*?\)/g, '') }), 'warning');
+            break;
           case 'chat_read':
             setChatEvent((v) => v + 1);
             break;
@@ -192,7 +197,7 @@ export function App() {
 
   // ---- Consultation call ----
   const [notepadText, setNotepadText] = useState('');
-  const [insertRequest, setInsertRequest] = useState<{ id: string; text: string; section: string } | null>(null);
+  const [insertRequest, setInsertRequest] = useState<{ id: string; text: string; section: string; heading?: string } | null>(null);
   const [lobbyAnswer, setLobbyAnswer] = useState<{ video: boolean } | null>(null);
   const clearLobbyAnswer = useCallback(() => setLobbyAnswer(null), []);
   const patient = consultation?.patient ?? null;
@@ -240,9 +245,10 @@ export function App() {
       encounterId={patient.encounter_id}
       patientName={patient.full_name}
       callMinutes={call.minutes}
-      autoApplyCall={call.aiState === 'recording' || call.aiState === 'finishing'}
+      autoApplyCall={false}  // CHIBI stays quiet in calls: hints in the note, "Add all" in its chip
       onTextChange={setNotepadText}
       insertRequest={insertRequest}
+      docked={route.page === 'meeting'}
     />
   ) : null;
 
@@ -271,8 +277,10 @@ export function App() {
         {route.page === 'meeting' && <MeetingScreen appointmentId={route.appointmentId} />}
         {route.page === 'messages' && <MessagesScreen patientId={route.patientId} />}
         {route.page === 'audit' && <AuditScreen />}
+        {route.page === 'lab' && <LabScreen />}
         {route.page === 'settings' && <SettingsScreen section={route.section} />}
       </Shell>
+      <Chibi route={route} />
 
       {/* The patient's voice: one audio element for the whole portal (videos are muted). */}
       {inCall && <RemoteAudio stream={call.remoteStream} muted={!speakerOn} sinkId={speakerId} />}

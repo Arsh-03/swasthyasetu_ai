@@ -19,6 +19,7 @@ export interface PatientAppointmentInfo {
   specialty?: LocalizedText;
   agenda?: LocalizedText;
   isRescheduled?: boolean;
+  meetingCode?: string | null;
   /** Which of the patient's doctors, their OPD department and video / in-person. */
   practitionerId?: string | null;
   department?: string;

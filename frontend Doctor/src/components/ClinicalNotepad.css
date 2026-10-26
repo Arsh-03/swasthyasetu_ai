@@ -381,3 +381,72 @@
 .np-call-speaker { flex-shrink: 0; font-weight: 700; font-size: 0.7rem; padding: 1px 6px; border-radius: 4px; height: fit-content; }
 .np-call-speaker.doctor { background: var(--np-teal-bg); color: var(--np-teal); }
 .np-call-speaker.patient { background: #ede9fe; color: #6d28d9; }
+
+/* Docked beside the call video (meeting room): a tall editor that fills the panel, compact chrome. */
+.np-docked { border: 0; box-shadow: none; padding: 0; background: transparent; }
+.np-docked .np-editor { height: max(360px, calc(100vh - 330px)); }
+.np-docked .np-layer { font-size: 16px; line-height: 1.7; padding: 16px 18px; }
+.np-docked .np-toolbar { gap: 6px; }
+.np-docked .np-toggle { font-size: 0.75rem; }
+
+/* SETU-Shield preview */
+.np-shield .np-panel-head h4 { display: flex; align-items: center; gap: 6px; }
+.np-shield-sub { margin: 4px 0 10px; font-size: 13px; color: var(--color-ink-muted, #5b6b7a); }
+.np-shield-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.np-shield-cols .np-fhir { max-height: 220px; white-space: pre-wrap; word-break: break-word; }
+.np-shield-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin: 8px 0 4px; color: var(--color-ink-muted, #5b6b7a); }
+.np-shield-blocked { outline: 2px solid var(--color-danger, #c0392b); }
+.np-shield-steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.np-shield-steps li { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: baseline; }
+.np-shield-step { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.np-shield-steps li.ok .np-shield-step, .np-shield-ledger .ok { color: var(--color-success, #1e7a4d); }
+.np-shield-steps li.fail .np-shield-step, .np-shield-ledger .fail { color: var(--color-danger, #c0392b); }
+.np-shield-ledger { list-style: none; margin: 0; padding: 0; font-size: 12px; display: grid; gap: 2px; }
+.np-shield-ledger li { display: grid; grid-template-columns: 80px 1fr 1fr 1.2fr; gap: 8px; }
+@media (max-width: 640px) { .np-shield-steps li { grid-template-columns: 1fr; } .np-shield-ledger li { grid-template-columns: 1fr 1fr; } }
+
+/* ---- Redesign: one status dot, slim toolbar, CHIBI tray over the editor ---- */
+.np-root { display: flex; flex-direction: column; gap: 10px; }
+.np-head { margin-bottom: 0; }
+.np-health { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; color: #475569; white-space: nowrap; }
+.np-health-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+.np-health-live .np-health-dot { background: var(--np-teal); }
+.np-health-rest .np-health-dot { background: #6366f1; }
+.np-health-offline .np-health-dot { background: var(--np-amber); }
+.np-health.pending .np-health-dot { animation: np-pulse 1s ease-in-out infinite; background: #7c3aed; }
+.np-toolbar { margin-bottom: 0; }
+.np-more-wrap { position: relative; }
+.np-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 40; min-width: 260px; padding: 6px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .14);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.np-menu > button { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; background: none; border-radius: 6px;
+  font-size: 0.85rem; text-align: left; cursor: pointer; color: #0f172a; }
+.np-menu > button:hover:not(:disabled) { background: #f1f5f9; }
+.np-menu-toggle { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 0.8rem; color: #334155; }
+.np-menu-hint { margin-top: 4px; padding: 8px 10px 4px; border-top: 1px solid #f1f5f9; font-size: 0.72rem; color: #64748b; line-height: 1.8; }
+.np-where { font-size: 0.72rem; font-weight: 700; color: var(--np-teal); background: var(--np-teal-bg); padding: 3px 8px; border-radius: 999px; }
+.np-save-inline { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75rem; }
+.np-save-inline.ok { color: var(--np-teal); }
+.np-save-inline.err { color: #b91c1c; }
+.np-urgent { display: grid; gap: 6px; }
+.np-tray { display: flex; flex-wrap: wrap; gap: 6px; }
+.np-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; border: 1px solid #e2e8f0;
+  background: #f8fafc; font-size: 0.75rem; font-weight: 600; color: #334155; cursor: pointer; }
+.np-chip.on, .np-chip:hover { border-color: #94a3b8; background: #fff; }
+.np-chip-chibi { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+.np-chip-warn { background: var(--np-amber-bg); border-color: #fcd34d; color: var(--np-amber); }
+.np-chip-ok { color: var(--np-teal); }
+.np-tray-panel {
+  position: absolute; top: 8px; left: 8px; right: 8px; z-index: 30; max-height: 55%; overflow: auto; padding: 14px 16px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 16px 40px rgba(15, 23, 42, .16);
+}
+.np-tray-panel h4 { margin: 0 28px 10px 0; font-size: 0.85rem; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.np-tray-close { position: absolute; top: 10px; right: 10px; }
+.np-kind-chibi { background: #ede9fe; color: #6d28d9; }
+.np-editor { min-height: 320px; }
+.np-docked { gap: 8px; }
+.np-docked .np-editor { height: auto; flex: 1; min-height: max(380px, calc(100vh - 250px)); }
+.np-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.np-head .cb-card-title { display: flex; align-items: center; gap: 8px; font-weight: 700; }

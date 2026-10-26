@@ -11,7 +11,7 @@ from app.models.models import Appointment, AuditEvent, PatientProfile, Practitio
 from app.schemas.schemas import AppointmentUpdateIn
 from app.services.auth_dependencies import require_doctor, require_patient
 from app.services.connection_manager import ws_manager
-from app.services.serializers import appointment_to_dict
+from app.services.serializers import appointment_to_dict, as_aware
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
@@ -21,18 +21,16 @@ async def get_my_next_appointment(
     current_patient: Dict[str, Any] = Depends(require_patient),
     db: AsyncSession = Depends(get_db),
 ):
-    """The logged-in patient's soonest upcoming appointment with any of their doctors (null if none).
-    All of them: GET /care/appointments."""
-    apt = (
-        await db.execute(
-            select(Appointment)
-            .where(Appointment.patient_id == current_patient["user_id"],
-                   Appointment.visit_status == "scheduled",
-                   Appointment.scheduled_at >= datetime.now(timezone.utc) - timedelta(minutes=30))
-            .order_by(Appointment.scheduled_at)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
+    """The logged-in patient's next appointment: the soonest one that hasn't ended yet (null if none)."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(select(Appointment).where(
+        Appointment.patient_id == current_patient["user_id"], Appointment.visit_status == "scheduled",
+        Appointment.scheduled_at.is_not(None)).order_by(Appointment.scheduled_at))).scalars().all()
+    apt = next((a for a in rows if as_aware(a.scheduled_at) + timedelta(minutes=(a.duration_minutes or 20) + 30) > now), None)
+    if not apt:  # nothing scheduled ahead: the most recently changed one (older data without times)
+        apt = (await db.execute(select(Appointment).where(Appointment.patient_id == current_patient["user_id"])
+                                .order_by(desc(Appointment.updated_at)).limit(1))).scalar_one_or_none()
     return appointment_to_dict(apt) if apt else None
 
 

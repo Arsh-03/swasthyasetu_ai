@@ -16,8 +16,8 @@ import { useDevices, usePreview } from '../meeting/devices';
 import { FloatingNotepad } from '../meeting/FloatingNotepad';
 import { VisitNoteForm } from '../meeting/VisitNoteForm';
 import { Conversation } from '../Conversation';
-import { HeartRateReading } from '../HeartRateReading';
-import { AlertStack, LiveAssist } from '../meeting/LiveAssist';
+import { ReadingLine } from '../Readings';
+import { AlertStack, AssistStrip } from '../meeting/LiveAssist';
 import { Avatar, Button, Card, ErrorNote, Facts, Loading, PageHeader, Pill, SelectInput, Tabs, shortName } from '../ui';
 import type { StringKey } from '../i18n';
 
@@ -92,13 +92,14 @@ function MeetingRoom({ appointment, patient, inCallAlready }: { appointment: App
   return (
     <>
       {inCall ? (
-        <InCall patient={patient} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} />
+        <InCall patient={patient} notesOpen={notesOpen} onToggleNotes={() => setNotesOpen((v) => !v)} endsAt={appointment.meeting?.ends_at} />
       ) : joined ? (
         <AfterCall appointment={appointment} patient={patient} onOpenNotes={() => setNotesOpen(true)} />
       ) : (
         <PreJoin appointment={appointment} patient={patient} onOpenNotes={() => setNotesOpen(true)} />
       )}
-      <NotepadWindow open={notesOpen} onClose={() => setNotesOpen(false)} patient={patient} />
+      <NotepadWindow open={notesOpen && !inCall} onClose={() => setNotesOpen(false)} patient={patient} />
+      {!inCall && <AlertStack />}
     </>
   );
 }
@@ -108,7 +109,7 @@ function NotepadWindow({ open, onClose, patient }: { open: boolean; onClose: () 
   return (
     <FloatingNotepad open={open} onClose={onClose} title={t('notesFor', { name: shortName(patient.full_name) })}
       minimizeLabel={t('minimize')} closeLabel={t('close')}>
-      <LiveAssist />
+      <AssistStrip />
       {notepad}
     </FloatingNotepad>
   );
@@ -140,12 +141,28 @@ function PreJoin({ appointment, patient, onOpenNotes }: { appointment: Appointme
   useEffect(() => { if (joining && call.callState === 'idle' && call.notice) setJoining(false); }, [joining, call.callState, call.notice]);
 
   const ready = call.connection === 'open';
+  // Start the call (rings the patient's app, or admits a patient who asked to join).
   const join = async (video: boolean) => {
     setPreferredDevices({ audioInput: devices.choice.audioInput || undefined, videoInput: devices.choice.videoInput || undefined });
+    call.setHostWaiting(false);
+    setHostWaiting(null);
     setJoining(true); // stops the preview so the call can use the camera
     await new Promise((r) => setTimeout(r, 150));
     await call.startCall(video && camOn);
   };
+  // Google Meet style: "Join meeting" admits a waiting patient, or waits in the room until they ask to join.
+  const [hostWaiting, setHostWaiting] = useState<{ video: boolean } | null>(null);
+  const enterMeeting = (video: boolean) => {
+    if (call.waitingPatient) { void join(video); return; }
+    setHostWaiting({ video });
+    call.setHostWaiting(true);
+  };
+  const leaveWaiting = () => { setHostWaiting(null); call.setHostWaiting(false); };
+  useEffect(() => {
+    if (hostWaiting && call.waitingPatient) void join(hostWaiting.video);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hostWaiting, call.waitingPatient]);
+  useEffect(() => () => call.setHostWaiting(false), [call]);
 
   const startsIn = Math.round((new Date(appointment.scheduled_at).getTime() - Date.now()) / 60000);
   const level = micOn ? preview.level : 0;
@@ -206,21 +223,45 @@ function PreJoin({ appointment, patient, onOpenNotes }: { appointment: Appointme
                 </p>
               </div>
             </div>
-            <PatientPresence />
+            {hostWaiting ? (
+              <div className="flex items-start gap-3 rounded-control px-3 py-2.5 bg-primary-tint">
+                <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 bg-primary animate-pulse" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-primary">{t('hostWaitingTitle', { name: shortName(patient.full_name) })}</p>
+                  <p className="text-xs text-ink-muted">{t('hostWaitingHint')}</p>
+                </div>
+                <Button size="sm" variant="ghost" onClick={leaveWaiting}>{t('leaveMeeting')}</Button>
+              </div>
+            ) : call.waitingPatient ? (
+              <div className="flex flex-col gap-2 rounded-control px-3 py-2.5 bg-success-tint">
+                <p className="text-sm font-semibold text-success-deep flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-success animate-pulse" /> {t('askingToJoin', { name: shortName(call.waitingPatient.name) })}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="success" icon="check" onClick={() => void join(true)}>{t('admit')}</Button>
+                  <Button size="sm" variant="ghost" onClick={call.denyEntry}>{t('deny')}</Button>
+                </div>
+              </div>
+            ) : <PatientPresence />}
+            <MeetingWindow appointment={appointment} />
             <Facts columns={2} items={[
               { label: t('reasonForVisit'), value: appointment.agenda || patient.complaint },
               { label: t('allergies'), value: (patient.allergies ?? []).join(', ') || t('noneRecorded') },
             ]} />
-            {patient.latest_heart_rate && <HeartRateReading reading={patient.latest_heart_rate} compact />}
+            {Object.values(patient.latest_readings ?? {}).map((r) => <ReadingLine key={r.reading_id} reading={r} compact />)}
             <div className="flex flex-col gap-2">
-              <Button variant="primary" size="lg" icon="video" disabled={!ready || joining} onClick={() => join(true)}>
-                {joining ? t('joining') : t('joinCall')}
+              <Button variant="primary" size="lg" icon="video" disabled={!ready || joining || !!hostWaiting} onClick={() => enterMeeting(true)}>
+                {joining ? t('joining') : call.waitingPatient ? t('admitAndJoin') : t('joinMeeting')}
               </Button>
-              <Button size="lg" icon="call" disabled={!ready || joining} onClick={() => join(false)}>{t('joinAudioOnly')}</Button>
+              <Button size="lg" icon="call" disabled={!ready || joining || !!hostWaiting} onClick={() => enterMeeting(false)}>{t('joinAudioOnly')}</Button>
+              <button type="button" disabled={!ready || joining} onClick={() => void join(true)}
+                className="text-xs font-semibold text-primary hover:underline disabled:opacity-50 cursor-pointer">{t('ringPatientNow')}</button>
               {!ready && <p className="text-2xs text-ink-muted text-center">{call.connection === 'denied' ? t('roomDenied') : t('connectingRoom')}</p>}
               {call.notice && <p role="alert" className="text-xs text-warning-deep text-center">{call.notice}</p>}
             </div>
           </Card>
+          <MeetingLinkCard appointment={appointment} />
+          <PracticeCard onOpenNotes={onOpenNotes} />
           <div className="flex flex-wrap gap-2">
             <Button icon="notepad" onClick={onOpenNotes}>{t('openNotes')}</Button>
             <a href={hrefFor({ page: 'patient', patientId: patient.patient_id })} className="inline-flex items-center gap-2 h-10 px-4 rounded-control text-sm font-semibold text-primary hover:bg-primary-tint">
@@ -230,6 +271,65 @@ function PreJoin({ appointment, patient, onOpenNotes }: { appointment: Appointme
         </div>
       </div>
     </>
+  );
+}
+
+/** Try the live assistant without a call: the demo conversation runs through the real pipeline. */
+function PracticeCard({ onOpenNotes }: { onOpenNotes: () => void }) {
+  const { t, call } = usePortal();
+  const ready = call.connection === 'open';
+  return (
+    <Card className="p-4 flex flex-col gap-2">
+      <p className="text-sm font-semibold text-ink flex items-center gap-2"><Icon name="aiAssist" size={18} tone="primary" weight="duotone" /> {t('practiceTitle')}</p>
+      <p className="text-xs text-ink-muted">{t('practiceHint')}</p>
+      {call.practice ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone="warning" dot label={t('practiceRunning')} />
+          <Button size="sm" onClick={onOpenNotes}>{t('openNotes')}</Button>
+          <Button size="sm" variant="ghost" onClick={call.stopPractice}>{t('practiceStop')}</Button>
+        </div>
+      ) : (
+        <Button size="sm" icon="aiAssist" disabled={!ready} onClick={() => { call.startPractice(); onOpenNotes(); }}>{t('practiceStart')}</Button>
+      )}
+    </Card>
+  );
+}
+
+/** The meeting's link and code, to copy or share (WhatsApp) with the patient. */
+function MeetingLinkCard({ appointment }: { appointment: Appointment }) {
+  const { t, fmt, toast } = usePortal();
+  if (!appointment.meeting_code) return null;
+  const base = (import.meta.env.VITE_PATIENT_APP_URL as string | undefined) || `${window.location.protocol}//${window.location.hostname}:8081`;
+  const link = `${base}/?join=${appointment.meeting_code}`;
+  const message = t('shareMessage', { when: fmt.dateTime(appointment.scheduled_at), link, code: appointment.meeting_code });
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(link); toast(t('linkCopied'), 'success'); } catch { toast(link, 'info'); }
+  };
+  return (
+    <Card className="p-4 flex flex-col gap-2">
+      <p className="text-sm font-semibold text-ink flex items-center gap-2"><Icon name="video" size={18} tone="primary" /> {t('meetingLink')}</p>
+      <p className="font-mono text-lg font-semibold tracking-wide text-ink">{appointment.meeting_code}</p>
+      <p className="text-xs text-ink-muted break-all">{link}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" icon="external" onClick={() => void copy()}>{t('copyLink')}</Button>
+        <a href={`https://wa.me/?text=${encodeURIComponent(message)}`} target="_blank" rel="noreferrer"
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control text-xs font-semibold bg-success-deep text-on-primary hover:bg-success-pressed">
+          <Icon name="chat" size={14} /> {t('shareWhatsApp')}
+        </a>
+      </div>
+    </Card>
+  );
+}
+
+/** "10:30–10:50 · patients can join from 10:20" */
+function MeetingWindow({ appointment }: { appointment: Appointment }) {
+  const { t, fmt } = usePortal();
+  const m = appointment.meeting;
+  if (!m?.opens_at || !m.ends_at) return null;
+  return (
+    <p className="text-xs text-ink-muted flex items-center gap-1.5">
+      <Icon name="clock" size={14} /> {fmt.time(appointment.scheduled_at)}–{fmt.time(m.ends_at)} · {t('patientsCanJoinFrom', { time: fmt.time(m.opens_at) })}
+    </p>
   );
 }
 
@@ -245,6 +345,19 @@ function PatientPresence() {
       </div>
     </div>
   );
+}
+
+/** "Ends in 5 min" / "Running over by 3 min" from the scheduled end. */
+function EndsIn({ endsAt }: { endsAt?: string | null }) {
+  const { t } = usePortal();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(id); }, []);
+  if (!endsAt) return null;
+  const mins = Math.round((new Date(endsAt).getTime() - now) / 60000);
+  if (mins > 10) return null;
+  return mins >= 0
+    ? <span className="text-ice">· {t('endsInMinutes', { n: mins })}</span>
+    : <span className="text-warning font-semibold">· {t('runningOver', { n: -mins })}</span>;
 }
 
 function DevicePicker({ icon, label, value, options, onChange, fallback }: {
@@ -287,9 +400,12 @@ function RoundButton({ icon, label, onClick, off, danger, active, disabled }: {
 
 // ------------------------------------------------------------------------------------------ In call
 
-function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary; notesOpen: boolean; onToggleNotes: () => void }) {
-  const { t, call, speakerOn, setSpeakerOn } = usePortal();
-  const [panel, setPanel] = useState<'patient' | 'note' | 'chat' | null>(() => (window.innerWidth >= 1280 ? 'patient' : null));
+function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: PatientSummary; notesOpen: boolean; onToggleNotes: () => void; endsAt?: string | null }) {
+  const { t, call, speakerOn, setSpeakerOn, notepad } = usePortal();
+  const [panel, setPanel] = useState<'notes' | 'patient' | 'note' | 'chat' | null>(() =>
+    notesOpen ? 'notes' : window.innerWidth >= 1280 ? 'patient' : null);
+  // "Show notes" (or AI switched on) opens the notes tab; hiding them closes the panel.
+  useEffect(() => { setPanel((p) => (notesOpen ? 'notes' : p === 'notes' ? null : p)); }, [notesOpen]);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const selfRef = useRef<HTMLVideoElement>(null);
   const timer = useCallTimer(call.callStartedAt);
@@ -323,6 +439,7 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
             <p className="text-subhead font-semibold truncate">{shortName(patient.full_name)}</p>
             <p className="text-xs text-ice flex items-center gap-2">
               {timer && <span className="font-mono">{timer}</span>}
+              <EndsIn endsAt={endsAt} />
               {q && <span className="inline-flex items-center gap-1"><Icon name="online" size={12} />{weak ? t('weakConnection') : t('goodConnection')}</span>}
             </p>
           </div>
@@ -345,7 +462,7 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
           <span className="absolute bottom-1 left-1.5 text-3xs text-white/90">{t('you')}</span>
         </div>
 
-        <AlertStack />
+        {panel !== 'notes' && <AlertStack />}
 
         {call.notice && !calling && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-glass-night text-white text-xs rounded-full px-4 py-2">{call.notice}</div>
@@ -363,7 +480,7 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
             <RoundButton icon="notepad" label={notesOpen ? t('hideNotes') : t('showNotes')} active={notesOpen} onClick={onToggleNotes} />
             <RoundButton icon="aiAssist" label={call.aiOn ? t('aiTurnOff') : t('aiTurnOn')} active={call.aiOn}
               disabled={calling || !call.speechAvailable} onClick={call.toggleAi} />
-            <RoundButton icon="clinicalNotes" label={t('patientAndNote')} active={panel !== null} onClick={() => setPanel(panel ? null : 'patient')} />
+            <RoundButton icon="clinicalNotes" label={t('patientAndNote')} active={panel !== null && panel !== 'notes'} onClick={() => setPanel(panel && panel !== 'notes' ? null : 'patient')} />
             <span className="w-px h-8 bg-white/15 mx-1" aria-hidden />
             <RoundButton icon="callEnd" label={calling ? t('cancelCall') : t('endCall')} danger onClick={call.endCall} />
           </div>
@@ -379,18 +496,25 @@ function InCall({ patient, notesOpen, onToggleNotes }: { patient: PatientSummary
       </div>
 
       {panel && (
-        <aside className="absolute inset-y-0 right-0 z-10 w-[min(380px,100%)] xl:static xl:w-[380px] shrink-0 bg-card rounded-panel border border-hairline shadow-lg flex flex-col">
+        <aside className={cx('absolute inset-y-0 right-0 z-10 bg-card rounded-panel border border-hairline shadow-lg flex flex-col lg:static shrink-0',
+          panel === 'notes' ? 'w-full lg:w-1/2 lg:min-w-[520px]' : 'w-[min(380px,100%)] lg:w-[380px]')}>
           <div className="flex items-center justify-between pr-2">
             <div className="flex-1">
-              <Tabs label={t('patientAndNote')} value={panel} onChange={setPanel}
-                tabs={[{ id: 'patient', label: t('tabPatient') }, { id: 'note', label: t('tabVisitNote') }, { id: 'chat', label: t('tabChat') }]} />
+              <Tabs label={t('patientAndNote')} value={panel} onChange={(p) => { setPanel(p); if (p !== 'notes' && notesOpen) onToggleNotes(); if (p === 'notes' && !notesOpen) onToggleNotes(); }}
+                tabs={[{ id: 'notes', label: t('tabNotes') }, { id: 'patient', label: t('tabPatient') }, { id: 'note', label: t('tabVisitNote') }, { id: 'chat', label: t('tabChat') }]} />
             </div>
-            <button type="button" onClick={() => setPanel(null)} aria-label={t('close')}
+            <button type="button" onClick={() => { setPanel(null); if (notesOpen) onToggleNotes(); }} aria-label={t('close')}
               className="w-9 h-9 rounded-tight flex items-center justify-center text-ink-muted hover:bg-ink-tint cursor-pointer">
               <Icon name="close" size={18} />
             </button>
           </div>
-          {panel === 'chat' ? (
+          {panel === 'notes' ? (
+            <div className="flex-1 min-h-0 overflow-y-auto p-3">
+              <AlertStack inline />
+              <AssistStrip />
+              {notepad}
+            </div>
+          ) : panel === 'chat' ? (
             <div className="flex-1 min-h-0 flex flex-col"><Conversation patientId={patient.patient_id} showHeader={false} compact /></div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4">
@@ -418,7 +542,7 @@ function PatientSidePanel({ patient }: { patient: PatientSummary }) {
         { label: t('reasonForVisit'), value: patient.complaint },
         { label: t('vitals'), value: patient.vitals },
       ]} />
-      {patient.latest_heart_rate && <HeartRateReading reading={patient.latest_heart_rate} compact />}
+      {Object.values(patient.latest_readings ?? {}).map((r) => <ReadingLine key={r.reading_id} reading={r} compact />)}
       <div>
         <p className="text-2xs font-semibold uppercase tracking-wide text-ink-muted mb-1.5">{t('allergies')}</p>
         <div className="flex flex-wrap gap-1.5">

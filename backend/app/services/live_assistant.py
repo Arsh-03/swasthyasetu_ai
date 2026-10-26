@@ -17,6 +17,7 @@ Nothing here writes audio or transcripts to disk; the session lives in memory fo
 """
 import asyncio
 import hashlib
+import os
 import json
 import re
 import time
@@ -26,15 +27,17 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tup
 import httpx
 
 from app.config import ai_headers, settings
+from app.services import privacy_gateway as pg
+from app.services.ai_client import AIUnavailable, ai
 from app.services import safety_engine
 from app.services.call_minutes import CallSession, TranscriptLine, extract_items
 
 Send = Callable[[Dict[str, Any]], Awaitable[None]]
 
-MODEL_URL = settings.INTELLISENSE_LOCAL_URL.rstrip("/")
-MODEL_NAME = settings.SCRIBE_LLM_MODEL or settings.INTELLISENSE_LOCAL_MODEL
-HEALTH_TTL_S = max(30, settings.INTELLISENSE_HEALTH_INTERVAL_S)
 DEBOUNCE_S = 1.5          # batch lines from both speakers before asking for suggestions
+# Suggestion cards during the call. Off by default: they distracted doctors, and the one GPU is better spent on
+# the notepad's autocomplete (which now sees the masked conversation). Safety alerts are always on.
+SUGGESTION_CARDS = os.getenv("LIVE_SUGGESTION_CARDS", "").lower() in ("1", "true", "yes")
 MODEL_TIMEOUT_S = 25.0
 DEMO_TOKEN_DELAY_S = 0.035
 
@@ -45,23 +48,12 @@ _health: Dict[str, Any] = {"ok": False, "at": 0.0}
 
 
 async def model_online(force: bool = False) -> bool:
-    if not MODEL_NAME or not MODEL_URL:
-        return False
-    if not force and time.time() - _health["at"] < HEALTH_TTL_S:
-        return _health["ok"]
-    ok = False
-    try:
-        async with httpx.AsyncClient(timeout=6.0, headers=ai_headers()) as client:
-            res = await client.get(f"{MODEL_URL}/api/tags")
-            ok = res.status_code == 200 and "ngrok-error-code" not in res.headers
-    except httpx.HTTPError:
-        ok = False
-    _health.update(ok=ok, at=time.time())
-    return ok
+    """Is the text AI (your Ollama server, Gemini or OpenAI: see ai_client.py) reachable? Cached."""
+    return await ai.online(force)
 
 
 def _mark_offline() -> None:
-    _health.update(ok=False, at=time.time())
+    ai.mark_offline()
 
 
 # ---------------------------------------------------------------------------
@@ -147,10 +139,12 @@ KINDS = ("ASK", "CHECK", "NOTE", "SAFETY")
 
 def _context(session: CallSession) -> str:
     recent = session.lines[-14:]
-    transcript = "\n".join(f"[{l.segment.speaker.upper()}]: {l.redacted_english}" for l in recent)
-    note = session.deid.redact(session.note_text[-1500:]) if session.note_text else "(empty)"
-    allergies = ", ".join(session.known_allergies) or "none recorded"
-    return f"TRANSCRIPT (latest):\n{transcript}\n\nDOCTOR'S NOTE SO FAR:\n{note}\n\nRECORDED ALLERGIES: {allergies}"
+    sent = pg.shield_for_session(session).prepare("live_suggestions", {
+        "transcript": "\n".join(f"[{l.segment.speaker.upper()}]: {l.redacted_english}" for l in recent),
+        "note": session.note_text[-1500:] or "(empty)",
+        "allergies": ", ".join(session.known_allergies) or "none recorded"})
+    return (f"TRANSCRIPT (latest):\n{sent.get('transcript', '')}\n\nDOCTOR'S NOTE SO FAR:\n{sent.get('note', '')}"
+            f"\n\nRECORDED ALLERGIES: {sent.get('allergies', '')}")
 
 
 def parse_items(text: str, session: CallSession) -> List[Dict[str, str]]:
@@ -212,27 +206,14 @@ async def _stream_demo(session: CallSession, send: Send, rid: str) -> str:
 
 
 async def _stream_model(session: CallSession, send: Send, rid: str) -> str:
-    payload = {
-        "model": MODEL_NAME, "stream": True, "keep_alive": settings.INTELLISENSE_LOCAL_KEEP_ALIVE,
-        "options": {"temperature": 0.2, "num_predict": 140},
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": _context(session)}],
-    }
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": _context(session)}]
+    pg.shield_for_session(session).release("live_suggestions", messages)   # raises if anything leaks
     text = ""
-    async with httpx.AsyncClient(timeout=MODEL_TIMEOUT_S, headers=ai_headers()) as client:
-        async with client.stream("POST", f"{MODEL_URL}/api/chat", json=payload) as res:
-            res.raise_for_status()
-            async for raw in res.aiter_lines():
-                if not raw.strip():
-                    continue
-                chunk = json.loads(raw)
-                delta = (chunk.get("message") or {}).get("content") or ""
-                if delta:
-                    text += delta
-                    # The doctor's screen shows real names; the model only ever saw placeholders.
-                    await send({"type": "AI_ASSIST", "state": "streaming", "id": rid,
-                                "text": session.deid.restore(text), "engine": "live"})
-                if chunk.get("done"):
-                    break
+    async for delta in ai.stream_chat(messages, max_tokens=140, timeout=MODEL_TIMEOUT_S):
+        text += delta
+        # The doctor's screen shows real names; the model only ever saw placeholders.
+        await send({"type": "AI_ASSIST", "state": "streaming", "id": rid,
+                    "text": session.deid.restore(text), "engine": "live"})
     return text
 
 
@@ -241,7 +222,10 @@ async def _suggest_once(session: CallSession, send: Send) -> None:
     engine = "live" if await model_online() else "demo"
     try:
         text = await (_stream_model(session, send, rid) if engine == "live" else _stream_demo(session, send, rid))
-    except (httpx.HTTPError, ValueError, asyncio.TimeoutError):
+    except pg.OutboundBlocked:
+        engine = "demo"                      # privacy check failed: nothing was sent; use the offline rules
+        text = await _stream_demo(session, send, rid)
+    except (AIUnavailable, httpx.HTTPError, ValueError, asyncio.TimeoutError):
         _mark_offline()                      # model went away mid-call: carry on with the demo engine
         engine = "demo"
         text = await _stream_demo(session, send, rid)
@@ -305,18 +289,19 @@ async def build_patient_summary(session: CallSession, language: str) -> Dict[str
     facts = build_summary_facts(session)
     if language != "en" and await model_online():
         try:
-            payload = {"model": MODEL_NAME, "stream": False, "format": "json", "options": {"temperature": 0.2},
-                       "messages": [{"role": "system", "content": SUMMARY_PROMPT.format(language=LANG_NAMES.get(language, "English"))},
-                                    {"role": "user", "content": json.dumps(facts, ensure_ascii=False)}]}
-            async with httpx.AsyncClient(timeout=40.0, headers=ai_headers()) as client:
-                res = await client.post(f"{MODEL_URL}/api/chat", json=payload)
-                res.raise_for_status()
-                data = json.loads((res.json().get("message") or {}).get("content") or "{}")
+            shield = pg.shield_for_session(session)
+            sent = shield.prepare("patient_summary", {"facts": facts, "language": language})
+            messages = [{"role": "system", "content": SUMMARY_PROMPT.format(language=LANG_NAMES.get(language, "English"))},
+                        {"role": "user", "content": json.dumps(sent.get("facts", {}), ensure_ascii=False)}]
+            shield.release("patient_summary", messages)
+            data = await ai.chat_json(messages, timeout=40.0)
             written = {k: [str(x) for x in data.get(k, []) if str(x).strip()][:8] for k in ("told", "advice", "next", "urgent")}
             if any(written.values()):
                 return {"language": language, "sections": written, "engine": "live"}
-        except (httpx.HTTPError, ValueError, AttributeError):
-            _mark_offline()
+        except pg.OutboundBlocked:
+            pass
+        except (AIUnavailable, httpx.HTTPError, ValueError, AttributeError):
+            pass
     return {"language": "en", "sections": facts, "engine": "rules"}
 
 

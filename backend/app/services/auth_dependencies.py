@@ -140,4 +140,5 @@ def require_role(allowed_roles: List[str]):
 # Pre-defined convenience role dependencies
 require_doctor = require_role(["doctor", "practitioner"])
 require_patient = require_role(["patient", "representative"])
+require_asha = require_role(["asha"])
 require_authenticated = get_current_user

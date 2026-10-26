@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Integer, ForeignKey, DateTime, JSON, Boolean, UniqueConstraint
+    Column, String, Text, Integer, Float, ForeignKey, DateTime, JSON, Boolean, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
@@ -15,6 +15,11 @@ def generate_uuid() -> str:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _meeting_code() -> str:
+    from app.services.meetings import new_code
+    return new_code()
 
 class User(Base):
     __tablename__ = "users"
@@ -193,6 +198,80 @@ class ConsultationNotepad(Base):
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
+class PartnerClient(Base):
+    """An outside organisation using CareBridge services through the partner API (consent layer, SETU-Shield...)."""
+    __tablename__ = "partner_clients"
+
+    client_id = Column(String(36), primary_key=True, default=lambda: f"pcl_{uuid.uuid4().hex[:12]}")
+    name = Column(String(150), nullable=False)
+    org_type = Column(String(50), default="clinic")       # clinic, hospital, lab, pharmacy, insurer, research
+    contact_email = Column(String(150), nullable=True)
+    webhook_url = Column(String(500), nullable=True)
+    webhook_secret = Column(String(64), nullable=True)
+    status = Column(String(20), default="active")         # active, suspended
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class PartnerKey(Base):
+    """An API key: only its SHA-256 is stored. Scopes limit what it can do; rate_per_min limits how often."""
+    __tablename__ = "partner_keys"
+
+    key_id = Column(String(36), primary_key=True, default=lambda: f"pk_{uuid.uuid4().hex[:12]}")
+    client_id = Column(String(36), ForeignKey("partner_clients.client_id"), nullable=False, index=True)
+    prefix = Column(String(16), nullable=False, index=True)
+    key_hash = Column(String(64), nullable=False)
+    scopes_json = Column(JSONType, default=list)
+    rate_per_min = Column(Integer, default=60)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class PartnerUsage(Base):
+    """One row per partner API call (no request or response bodies)."""
+    __tablename__ = "partner_usage"
+
+    usage_id = Column(String(36), primary_key=True, default=generate_uuid)
+    client_id = Column(String(36), nullable=False, index=True)
+    key_id = Column(String(36), nullable=False)
+    route = Column(String(120), nullable=False)
+    status_code = Column(Integer, default=200)
+    duration_ms = Column(Integer, default=0)
+    at = Column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class PartnerConsent(Base):
+    """A partner's purpose-bound request to use a patient's data. The patient decides in the CareBridge app."""
+    __tablename__ = "partner_consents"
+
+    consent_id = Column(String(36), primary_key=True, default=lambda: f"pc_{uuid.uuid4().hex[:12]}")
+    client_id = Column(String(36), ForeignKey("partner_clients.client_id"), nullable=False, index=True)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    purpose = Column(String(255), nullable=False)
+    data_types_json = Column(JSONType, default=list)      # e.g. ["prescriptions", "lab_reports", "vitals"]
+    valid_hours = Column(Integer, default=24)
+    status = Column(String(20), default="requested")      # requested, approved, declined, revoked, expired
+    external_ref = Column(String(100), nullable=True)     # the partner's own reference
+    grant_token_hash = Column(String(64), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class ConsultationRecord(Base):
+    """The consultation note as structured data (note_format.py), saved when the doctor signs.
+    Visit summaries, the patient's medicine plan and records screens all read from this; nothing is typed twice."""
+    __tablename__ = "consultation_records"
+
+    encounter_id = Column(String(36), ForeignKey("encounters.encounter_id"), primary_key=True)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    practitioner_id = Column(String(36), nullable=True)
+    format = Column(String(40), default="carebridge-note-v1")
+    structured_json = Column(JSONType, default=dict)
+    note_text = Column(Text, default="")
+    signed_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+
+
 class Appointment(Base):
     __tablename__ = "appointments"
 
@@ -217,6 +296,8 @@ class Appointment(Base):
     # The consultation (call room, notes) this appointment opens; set when the doctor opens it.
     encounter_id = Column(String(36), nullable=True)
     visit_status = Column(String(20), default="scheduled")  # 'scheduled', 'completed', 'cancelled', 'no_show'
+    # Google Meet style meeting code ("rgw-pqtk-zma"): the join link is <patient app>/?join=<code>
+    meeting_code = Column(String(20), nullable=True, index=True, default=lambda: _meeting_code())
     department = Column(String(40), nullable=True)  # the doctor's OPD department at booking time
     booked_by = Column(String(20), nullable=True)  # 'patient' | 'doctor'
 
@@ -322,6 +403,56 @@ class VitalReading(Base):
     details_json = Column(JSONType, default=dict)  # {"quality", "irregularity", "seconds", "beats", "torch"}
     encounter_id = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+    # Readings with two numbers (blood pressure: systolic in `value`, diastolic here) or decimals (temperature, weight).
+    value2 = Column(Integer, nullable=True)
+    value_f = Column(Float, nullable=True)
+    # Who measured it: the patient themselves, or an ASHA worker on a home visit.
+    recorded_by = Column(String(36), nullable=True)
+    recorded_by_role = Column(String(20), default="patient")  # 'patient', 'asha'
+    recorded_by_name = Column(String(150), nullable=True)
+    task_id = Column(String(36), nullable=True)
+    client_id = Column(String(64), nullable=True, index=True)  # set by the ASHA app; makes offline re-sends safe
+
+
+class HealthWorker(Base):
+    """An ASHA (Accredited Social Health Activist) or other community health worker."""
+    __tablename__ = "health_workers"
+
+    worker_id = Column(String(36), ForeignKey("users.user_id"), primary_key=True)
+    display_name = Column(String(150), nullable=False)
+    worker_code = Column(String(50), nullable=False)  # e.g. ASHA-HSN-0142
+    area = Column(String(150), nullable=True)  # village / taluk / district she covers
+    facility = Column(String(200), nullable=True)  # her Ayushman Arogya Mandir / PHC
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class CareTask(Base):
+    """A doctor's request for readings, done by an ASHA worker on a home visit (e.g. BP before the next consultation)."""
+    __tablename__ = "care_tasks"
+
+    task_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    practitioner_id = Column(String(36), nullable=True)
+    worker_id = Column(String(36), nullable=True, index=True)  # assigned ASHA (null = any ASHA)
+    kinds_json = Column(JSONType, default=list)  # ["blood_pressure", "blood_sugar", "temperature", "weight"]
+    note = Column(Text, nullable=True)
+    due_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(20), default="open")  # 'open', 'done', 'cancelled'
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class WorkerConsent(Base):
+    """The patient agreed that this ASHA worker may add readings to their record (asked once, valid for 90 days)."""
+    __tablename__ = "worker_consents"
+
+    consent_id = Column(String(36), primary_key=True, default=generate_uuid)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
+    worker_id = Column(String(36), nullable=False, index=True)
+    method = Column(String(20), default="tap")  # 'tap' (patient tapped Agree), 'thumb' (thumb impression), 'verbal'
+    granted_at = Column(DateTime(timezone=True), default=utc_now)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class VisitSummary(Base):

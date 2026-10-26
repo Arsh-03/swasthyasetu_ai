@@ -2,7 +2,7 @@
 // while the user switches tabs; the call panels/windows only display it.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CallClient, type CallMessage, type CallQuality } from './callClient';
+import { AUDIO_CONSTRAINTS, CallClient, type CallMessage, type CallQuality } from './callClient';
 import { ChunkRecorder, canRecordAudio } from './audioRecorder';
 import { startTone } from './ringtone';
 import type { AiState, AssistAlert, AssistState, AssistSuggestion, CallLanguage as Language, CallMinutes, CallRole } from './callTypes';
@@ -39,6 +39,21 @@ export interface ConsultationCallApi {
   /** Extra information for the doctor about AI minutes (e.g. speech-to-text offline). */
   aiDetail: string | null;
   aiOn: boolean;
+  /** Doctor: a practice run of the live assistant with the demo patient (no call, no audio, nothing auto-added). */
+  practice: boolean;
+  /** Practice is listening to the doctor's microphone (own speech server online), not playing the demo script. */
+  practiceVoice: boolean;
+  /** Meeting waiting room. Doctor: the patient asking to join (null if nobody). */
+  waitingPatient: { name: string; video: boolean; autoAdmit: boolean } | null;
+  /** Patient: 'waiting' after asking to join, 'denied' if the doctor declined. */
+  knockState: 'idle' | 'waiting' | 'denied';
+  /** Patient: ask to join the meeting (the call is answered automatically once the doctor admits). */
+  knock: (video: boolean) => void;
+  cancelKnock: () => void;
+  /** Doctor: in the meeting and waiting, so the patient is let in straight away. */
+  setHostWaiting: (on: boolean) => void;
+  /** Doctor: turn the waiting patient away. */
+  denyEntry: () => void;
   quality: CallQuality | null;
   recordingSession: string | null;
   consentRequest: { session_id: string; doctor_name: string } | null;
@@ -56,6 +71,8 @@ export interface ConsultationCallApi {
   toggleMic: () => void;
   toggleCam: () => void;
   toggleAi: () => void;
+  startPractice: (voice?: boolean) => void;
+  stopPractice: () => void;
   respondConsent: (accepted: boolean) => void;
   withdrawConsent: () => void;
 }
@@ -97,6 +114,11 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
   const [speechAvailable, setSpeechAvailable] = useState(true);
   const [minutes, setMinutes] = useState<CallMinutes | null>(null);
   const [assist, setAssist] = useState<AssistState>(EMPTY_ASSIST);
+  const [practice, setPractice] = useState(false);
+  const [practiceVoice, setPracticeVoice] = useState<{ sessionId: string } | null>(null);
+  const [waitingPatient, setWaitingPatient] = useState<ConsultationCallApi['waitingPatient']>(null);
+  const [knockState, setKnockState] = useState<'idle' | 'waiting' | 'denied'>('idle');
+  const knockRef = useRef<{ video: boolean } | null>(null);
 
   const clientRef = useRef<CallClient | null>(null);
   const recorderRef = useRef<ChunkRecorder | null>(null);
@@ -111,6 +133,9 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
     setStateFor(encounterId);
     setMinutes(null);
     setAssist(EMPTY_ASSIST);
+    setPractice(false);
+    setWaitingPatient(null);
+    setKnockState('idle');
     setAiState('off');
     setRecordingSession(null);
     setCallState('idle');
@@ -125,6 +150,14 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
   const acceptRef = useRef<((video: boolean) => Promise<void>) | null>(null);
   useEffect(() => { autoAnswerRef.current = autoAnswer; onAutoAnsweredRef.current = onAutoAnswered; });
   const maybeAutoAnswer = () => {
+    // Patient in the waiting room: the doctor's call is the admission, answer it.
+    const knocked = knockRef.current;
+    if (knocked) {
+      knockRef.current = null;
+      setKnockState('idle');
+      window.setTimeout(() => { void acceptRef.current?.(knocked.video); }, 0);
+      return;
+    }
     const auto = autoAnswerRef.current;
     if (!auto) return;
     onAutoAnsweredRef.current?.();
@@ -147,11 +180,25 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
         setPeerPresent(!!msg.peer_present);
         setSpeechAvailable(!!msg.speech?.enabled);
         if (msg.recording && msg.session_id) setRecordingSession(msg.session_id);
+        setWaitingPatient(msg.waiting ? { name: msg.waiting.patient_name || peer, video: msg.waiting.video !== false, autoAdmit: false } : null);
         if (msg.ringing) {
           setIncoming({ callerName: msg.ringing.caller_name, video: !!msg.ringing.video });
           setCallState('incoming');
           maybeAutoAnswer();
         }
+        break;
+      case 'KNOCK':
+        setWaitingPatient({ name: msg.patient_name || peer, video: msg.video !== false, autoAdmit: !!msg.auto_admit });
+        break;
+      case 'KNOCK_CANCELLED':
+        setWaitingPatient(null);
+        break;
+      case 'WAITING':
+        setKnockState('waiting');
+        break;
+      case 'DENIED':
+        knockRef.current = null;
+        setKnockState('denied');
         break;
       case 'PEER_JOINED':
         setPeerPresent(true);
@@ -167,6 +214,7 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
         maybeAutoAnswer();
         break;
       case 'CALL_ACCEPTED':                         // we called; the other side answered: we make the offer
+        setWaitingPatient(null);
         setCallState('in_call');
         setCallStartedAt(Date.now());
         void clientRef.current?.makeOffer().then(() => setLocalStream(clientRef.current?.localStream ?? null));
@@ -208,6 +256,8 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
       case 'AI_STATUS':
         setAiState(msg.state as AiState);
         setAiDetail(msg.detail ?? null);
+        if (msg.state === 'off' || msg.practice !== undefined) setPractice(msg.state !== 'off' && !!msg.practice);
+        setPracticeVoice(msg.state === 'recording' && msg.practice && msg.practice_voice ? { sessionId: String(msg.session_id) } : null);
         break;
       case 'AI_WARNING':
         setAiDetail(msg.detail ?? null);
@@ -402,12 +452,54 @@ export function useConsultationCall({ role, encounterId, peerName, noteText, aut
     setRecordingSession(null);
   };
 
+  const knock = useCallback((video: boolean) => {
+    knockRef.current = { video };
+    setKnockState('waiting');
+    clientRef.current?.send('KNOCK', { video });
+  }, []);
+  const cancelKnock = useCallback(() => {
+    knockRef.current = null;
+    setKnockState('idle');
+    clientRef.current?.send('KNOCK_CANCEL');
+  }, []);
+  const setHostWaiting = useCallback((on: boolean) => { clientRef.current?.send('HOST_WAITING', { on }); }, []);
+  const denyEntry = useCallback(() => { setWaitingPatient(null); clientRef.current?.send('DENY'); }, []);
+
+  const startPractice = useCallback((voice = true) => {
+    setMinutes(null);
+    setAssist(EMPTY_ASSIST);
+    clientRef.current?.send('PRACTICE_START', { voice });
+  }, []);
+  const stopPractice = useCallback(() => {
+    clientRef.current?.send('PRACTICE_STOP');
+    setPractice(false);
+    setPracticeVoice(null);
+    setAiState('off');
+  }, []);
+
+  // Practice with your voice: record the doctor's microphone (as the "patient" side, so one person can test).
+  useEffect(() => {
+    if (!practiceVoice || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
+    let rec: ChunkRecorder | null = null;
+    let mic: MediaStream | null = null;
+    let cancelled = false;
+    navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS, video: false })
+      .then((stream) => {
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        mic = stream;
+        rec = new ChunkRecorder(stream, practiceVoice.sessionId, setNotice, 'patient');
+        rec.start();
+      })
+      .catch(() => setNotice('Microphone permission is needed to practise with your voice.'));
+    return () => { cancelled = true; rec?.stop(); mic?.getTracks().forEach((t) => t.stop()); };
+  }, [practiceVoice]);
+
   const dismissAlert = useCallback((id: string) => setAssist((a) => ({ ...a, alerts: a.alerts.filter((x) => x.id !== id) })), []);
   const dismissSuggestion = useCallback((id: string) => setAssist((a) => ({ ...a, suggestions: a.suggestions.filter((x) => x.id !== id) })), []);
 
   return {
     role, peerName, connection, roomEncounterId, peerPresent, callState, incoming, endReason, withVideo, callStartedAt, localStream, remoteStream, remoteHasVideo,
-    micOff, camOff, aiState, aiDetail, aiOn, quality: callState === 'in_call' ? quality : null, recordingSession, consentRequest, notice, speechAvailable, minutes, assist, dismissAlert, dismissSuggestion,
-    startCall, acceptCall, declineCall, endCall, toggleMic, toggleCam, toggleAi, respondConsent, withdrawConsent,
+    micOff, camOff, aiState, aiDetail, aiOn, practice, practiceVoice: !!practiceVoice, waitingPatient, knockState, knock, cancelKnock, setHostWaiting, denyEntry, quality: callState === 'in_call' ? quality : null, recordingSession, consentRequest, notice, speechAvailable, minutes, assist, dismissAlert, dismissSuggestion,
+    startCall, acceptCall, declineCall, endCall, toggleMic, toggleCam, toggleAi, startPractice, stopPractice, respondConsent, withdrawConsent,
   };
 }

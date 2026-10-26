@@ -38,10 +38,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal, get_db
 from app.models.models import AuditEvent, Encounter, PatientProfile, Practitioner, VisitSummary
 from app.services import call_minutes as cm
-from app.services.asr import ASRError, asr, asr_info
+from app.services.asr import ASRError, asr, asr_info, demo_asr
 from app.services.auth_dependencies import decode_access_token, get_current_user, require_patient
 from app.services.deidentify import deidentifier_for
+from app.services.serializers import as_aware
 from app.services import live_assistant as la
+from app.services import consult_agent as agent
 from app.services.connection_manager import ws_manager
 
 router = APIRouter(prefix="/calls", tags=["calls"])
@@ -61,6 +63,10 @@ class Room:
     patient_id: Optional[str] = None
     # Set while a call is ringing: {"from": role, "video": bool, "caller_name": str}
     ringing: Optional[Dict[str, Any]] = None
+    # Waiting room: the patient asked to join {"video": bool, "since": ts}; the doctor admits them.
+    waiting: Optional[Dict[str, Any]] = None
+    # The doctor joined the meeting and is waiting for the patient (patients are then let in straight away).
+    host_waiting: bool = False
 
 
 _rooms: Dict[str, Room] = {}
@@ -119,13 +125,18 @@ async def _assist(encounter_id: str, session: cm.CallSession, new_lines) -> None
     send = _doctor_sender(encounter_id)
     for alert in la.safety_alerts(session, new_lines):
         await send({"type": "AI_ALERT", **alert})
-    if new_lines:
+    if new_lines and la.SUGGESTION_CARDS:
         la.schedule_suggestions(session, send)
+    if new_lines:
+        # CHIBI listens quietly: batches with memory; what it notices reaches the notepad as quiet hints.
+        async def refreshed(_update: Dict[str, Any]) -> None:
+            await _push_minutes(encounter_id, session)
+        agent.schedule(session, refreshed)
 
 
 async def _offer_summary(session: cm.CallSession, patient_id: Optional[str]) -> None:
     """After the call: offer the patient a masked summary. Kept in memory until they answer."""
-    if not patient_id or not session.lines:
+    if not patient_id or not session.lines or session.practice:
         return
     async with AsyncSessionLocal() as db:
         profile = await db.get(PatientProfile, patient_id)
@@ -133,6 +144,35 @@ async def _offer_summary(session: cm.CallSession, patient_id: Optional[str]) -> 
     summary = await la.build_patient_summary(session, language)
     sid = la.offer_summary(patient_id, session.encounter_id, summary)
     await ws_manager.send_to([patient_id], {"type": "SUMMARY_OFFER", "summary_id": sid, "encounter_id": session.encounter_id})
+
+
+PRACTICE_STEP_S = 4.0
+
+
+async def _run_practice(encounter_id: str, session: cm.CallSession) -> None:
+    """Play the demo conversation through the live pipeline, a line every few seconds, for the doctor only."""
+    send = _doctor_sender(encounter_id)
+    offset = 0
+    try:
+        for _ in range(8):
+            for speaker in ("doctor", "patient"):
+                room = _rooms.get(encounter_id)
+                if not room or room.session_id != session.id:
+                    return                       # stopped, or a real call took over
+                segments = await demo_asr.transcribe(session.id, speaker, b"", "", offset, 4000)
+                offset += 4000
+                lines = cm.add_segments(session, segments)
+                if lines:
+                    await _push_minutes(encounter_id, session)
+                    await _assist(encounter_id, session, lines)
+                await asyncio.sleep(PRACTICE_STEP_S)
+        await send({"type": "AI_STATUS", "state": "off", "practice": False, "detail": "Practice finished."})
+    finally:
+        demo_asr.forget(session.id)
+        room = _rooms.get(encounter_id)
+        if room and room.session_id == session.id:
+            room.session_id = None
+        cm.end_session(session.id)
 
 
 async def _push_minutes(encounter_id: str, session: cm.CallSession) -> None:
@@ -228,6 +268,7 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
         # A call that started ringing before this side joined (e.g. the doctor opened it from the lobby).
         "ringing": room.ringing if room.ringing and room.ringing["from"] != role else None,
         "recording": bool(session and session.consent_at), "session_id": room.session_id if session else None,
+        "waiting": room.waiting if role == "doctor" else None,
     })
     await _send(other(), {"type": "PEER_JOINED", "role": role})
     if role == "patient" and session and not session.consent_at and not session.ending:
@@ -238,9 +279,34 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
             msg = await websocket.receive_json()
             kind = msg.get("type") if isinstance(msg, dict) else None
 
-            if kind == "SIGNAL":
+            if kind == "KNOCK" and role == "patient":
+                # Waiting room: "Ask to join".
+                room.waiting = {"video": bool(msg.get("video", True)), "since": time.time(), "patient_name": patient_name}
+                await _send(websocket, {"type": "WAITING", "host_present": room.doctor is not None and room.host_waiting})
+                await _send(room.doctor, {"type": "KNOCK", "patient_name": patient_name, "video": room.waiting["video"],
+                                          "auto_admit": room.host_waiting})
+                if room.doctor is None or not room.host_waiting:
+                    await _notify_lobby(room.practitioner_id, {"type": "PATIENT_WAITING", "encounter_id": encounter_id,
+                                                               "patient_id": room.patient_id, "patient_name": patient_name})
+                    await ws_manager.send_to([room.practitioner_id] if room.practitioner_id else [], {
+                        "type": "patient_waiting", "encounter_id": encounter_id, "patient_id": room.patient_id,
+                        "patient_name": patient_name})
+                await _audit(actor, "MEETING_ASKED_TO_JOIN", encounter_id)
+            elif kind == "KNOCK_CANCEL" and role == "patient":
+                room.waiting = None
+                await _send(room.doctor, {"type": "KNOCK_CANCELLED"})
+            elif kind == "HOST_WAITING" and role == "doctor":
+                room.host_waiting = bool(msg.get("on", True))
+            elif kind == "DENY" and role == "doctor":
+                room.waiting = None
+                await _send(room.patient, {"type": "DENIED"})
+                await _audit(actor, "MEETING_ENTRY_DENIED", encounter_id, "DENIED")
+            elif kind == "SIGNAL":
                 await _send(other(), {"type": "SIGNAL", "data": msg.get("data")})
             elif kind == "CALL_START":
+                if role == "doctor" and room.waiting:
+                    room.waiting = None
+                    await _audit(actor, "MEETING_PATIENT_ADMITTED", encounter_id)
                 caller_name = doctor_name if role == "doctor" else (patient_name or "Your patient")
                 room.ringing = {"from": role, "video": bool(msg.get("video", True)), "caller_name": caller_name}
                 incoming = {"type": "INCOMING_CALL", "from": role, "caller_name": caller_name,
@@ -302,6 +368,43 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
                     await _send(room.patient, {"type": "RECORDING", "active": False, "reason": "The doctor turned off AI minutes."})
                     await _audit(actor, "AI_MINUTES_DISABLED", encounter_id)
 
+            elif kind == "PRACTICE_START" and role == "doctor":
+                existing = cm.get_session(room.session_id) if room.session_id else None
+                if existing and existing.consent_at and not existing.practice:
+                    await _send(websocket, {"type": "AI_STATUS", "state": "recording", "detail": "AI minutes are already on for this call."})
+                    continue
+                if existing:
+                    _stop_recording(room)
+                # The demo patient "agrees" by design; no real patient is involved and no audio is recorded.
+                s = cm.create_session(encounter_id, deidentifier_for("Ramesh Gowda", doctor_name, ["Hassan"]))
+                s.known_allergies = [a for a in (enc.allergies_json or []) if isinstance(a, str)]
+                s.consent_at = time.time()
+                s.practice = True
+                room.session_id = s.id
+                # With your own speech server online, practice listens to the doctor's microphone (everything said
+                # is treated as the patient, so one person can test it alone); otherwise it plays the demo script.
+                live_speech = False
+                if msg.get("voice"):
+                    if hasattr(asr, "choose"):
+                        live_speech = await asr.choose(s.id) == "live"
+                    elif asr is not None and getattr(asr, "name", "") == "http":
+                        live_speech = await asr.health()
+                s.patient_recorded_by_doctor = live_speech
+                await _send(websocket, {"type": "AI_STATUS", "state": "recording", "practice": True, "session_id": s.id,
+                                        "practice_voice": live_speech,
+                                        "detail": None if live_speech or not msg.get("voice") else
+                                        "Your speech server is offline, so practice plays the demo conversation."})
+                await _send(websocket, {"type": "AI_MODE", "speech": "live" if live_speech else "demo",
+                                        "model": "live" if await la.model_online() else "demo"})
+                await _audit(actor, "AI_PRACTICE_STARTED", encounter_id)
+                if not live_speech:
+                    asyncio.create_task(_run_practice(encounter_id, s))
+            elif kind == "PRACTICE_STOP" and role == "doctor":
+                s = cm.get_session(room.session_id) if room.session_id else None
+                if s and s.practice:
+                    _stop_recording(room)
+                await _send(websocket, {"type": "AI_STATUS", "state": "off", "practice": False, "detail": "Practice stopped."})
+
             elif kind == "CONSENT_RESPONSE" and role == "patient":
                 s = cm.get_session(msg.get("session_id", "")) if msg.get("session_id") == room.session_id else None
                 if not s:
@@ -343,6 +446,11 @@ async def call_ws(websocket: WebSocket, encounter_id: str):
     finally:
         if getattr(room, role) is websocket:
             setattr(room, role, None)
+            if role == "patient" and room.waiting:
+                room.waiting = None
+                await _send(room.doctor, {"type": "KNOCK_CANCELLED"})
+            if role == "doctor":
+                room.host_waiting = False
             if room.ringing and room.ringing["from"] == role:      # the caller left while it was ringing
                 room.ringing = None
                 if role == "patient":
@@ -485,6 +593,40 @@ async def my_summaries(current_patient: Dict[str, Any] = Depends(require_patient
     rows = (await db.execute(select(VisitSummary).where(VisitSummary.patient_id == current_patient["user_id"])
                              .order_by(_desc(VisitSummary.created_at)).limit(20))).scalars().all()
     return [_summary_out(r) for r in rows]
+
+
+@router.get("/meetings/{code}")
+async def meeting_info(code: str, current_patient: Dict[str, Any] = Depends(require_patient),
+                       db: AsyncSession = Depends(get_db)):
+    """A meeting by its code (from a link or typed in): who, when, and whether it can be joined now."""
+    from app.models.models import Appointment
+    from app.services.meetings import window
+    apt = (await db.execute(select(Appointment).where(Appointment.meeting_code == code.strip().lower()))).scalars().first()
+    if not apt or apt.patient_id != current_patient["user_id"]:
+        raise HTTPException(status_code=404, detail="No meeting with this code for your account.")
+    doctor = await db.get(Practitioner, apt.practitioner_id) if apt.practitioner_id else None
+    w = window(apt)
+    return {"meeting_code": apt.meeting_code, "appointment_id": apt.appointment_id, "doctor_name": doctor.display_name if doctor else apt.doctor_name,
+            "scheduled_at": as_aware(apt.scheduled_at),
+            "duration_minutes": apt.duration_minutes or 20, "agenda": apt.agenda or "", **w}
+
+
+@router.post("/meetings/{code}/join")
+async def join_meeting(code: str, current_patient: Dict[str, Any] = Depends(require_patient),
+                       db: AsyncSession = Depends(get_db)):
+    """Open the meeting's call room for the patient (inside the join window), so they can ask to join."""
+    from app.models.models import Appointment
+    from app.services.meetings import ensure_encounter, window
+    apt = (await db.execute(select(Appointment).where(Appointment.meeting_code == code.strip().lower()))).scalars().first()
+    if not apt or apt.patient_id != current_patient["user_id"]:
+        raise HTTPException(status_code=404, detail="No meeting with this code for your account.")
+    w = window(apt)
+    if w["state"] != "open":
+        raise HTTPException(status_code=409, detail={"state": w["state"], "opens_at": str(w["opens_at"]), "closes_at": str(w["closes_at"])})
+    enc, _ = await ensure_encounter(db, apt, apt.practitioner_id)
+    await db.commit()
+    doctor = await db.get(Practitioner, enc.practitioner_id) if enc.practitioner_id else None
+    return {"encounter_id": enc.encounter_id, "doctor_name": doctor.display_name if doctor else "Your doctor", **w}
 
 
 @router.get("/active-encounter")

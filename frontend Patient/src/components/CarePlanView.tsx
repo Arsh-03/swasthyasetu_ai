@@ -256,7 +256,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
       const info = resolveMedicationInfo(m, lang);
       return `${info.shortName}, ${info.purposePatient}. ${info.doseAmount}, ${info.timingLabel}.`;
     });
-    const adviceText = localized(plan?.latest_note?.plan?.advice, lang);
+    const adviceText = plan?.latest_visit?.advice.join('. ') || localized(plan?.latest_note?.plan?.advice, lang);
     const advice = adviceText ? ` ${adviceText}.` : '';
     return `${t('audioIntro')} ${lines.join(' ')}${advice}`;
   };
@@ -323,6 +323,41 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
       />
 
       <SavedSummaries refreshKey={summariesKey} />
+
+      {/* The last consultation, from the doctor's own note: nothing was typed twice. */}
+      {plan?.latest_visit && (plan.latest_visit.diagnosis.length > 0 || plan.latest_visit.advice.length > 0 || plan.latest_visit.follow_up.text) && (
+        <View style={styles.section}>
+          <SectionHeader title={t('lastVisit')} />
+          <Card style={styles.visitCard}>
+            {plan.latest_visit.diagnosis.length > 0 && (
+              <View style={styles.visitRow}>
+                <AppText variant="footnote" color="inkMuted">{t('visitFound')}</AppText>
+                <AppText variant="body" weight={600}>{plan.latest_visit.diagnosis.join('; ')}</AppText>
+              </View>
+            )}
+            {plan.latest_visit.advice.length > 0 && (
+              <View style={styles.visitRow}>
+                <AppText variant="footnote" color="inkMuted">{t('visitAdvice')}</AppText>
+                {plan.latest_visit.advice.map((a, i) => <AppText key={i} variant="body">• {a}</AppText>)}
+              </View>
+            )}
+            {plan.latest_visit.investigations.length > 0 && (
+              <View style={styles.visitRow}>
+                <AppText variant="footnote" color="inkMuted">{t('visitTests')}</AppText>
+                <AppText variant="body">{plan.latest_visit.investigations.join('; ')}</AppText>
+              </View>
+            )}
+            {(plan.latest_visit.follow_up.in_days || plan.latest_visit.follow_up.text) && (
+              <View style={styles.visitRow}>
+                <AppText variant="footnote" color="inkMuted">{t('visitFollowUp')}</AppText>
+                <AppText variant="body" weight={600}>
+                  {plan.latest_visit.follow_up.in_days ? t('visitFollowUpIn', { n: plan.latest_visit.follow_up.in_days }) : plan.latest_visit.follow_up.text}
+                </AppText>
+              </View>
+            )}
+          </Card>
+        </View>
+      )}
 
       {/* Voice instructions */}
       <AudioListenButton
@@ -635,6 +670,8 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
+  visitCard: { gap: spacing.md },
+  visitRow: { gap: 2 },
   flex: {
     flex: 1,
   },

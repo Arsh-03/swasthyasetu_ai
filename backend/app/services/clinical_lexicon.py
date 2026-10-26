@@ -353,6 +353,8 @@ PUNCTUATION_RULES: List[Dict[str, str]] = [
 # Note section headings -> clinical context
 # ---------------------------------------------------------------------------
 SECTION_HEADINGS: List[Dict[str, str]] = [
+    {"pattern": r"^\s*(?:allerg(?:y|ies)|drug allerg(?:y|ies)|current (?:medications?|meds)|drug history|family history|social history)\b[^:\n]{0,30}:", "section": "history"},
+    {"pattern": r"^\s*(?:follow[- ]?up|next visit)\b[^:\n]{0,30}:", "section": "plan"},
     {"pattern": r"^\s*(?:chief complaints?|c/c|presenting complaints?|hpi|history of present illness)\b[^:\n]{0,30}:", "section": "complaints"},
     {"pattern": r"^\s*(?:past (?:medical )?history|pmh|history|medical history)\b[^:\n]{0,30}:", "section": "history"},
     {"pattern": r"^\s*(?:vitals?|examination|o/e|findings|clinical findings)\b[^:\n]{0,30}:", "section": "exam"},
@@ -361,13 +363,19 @@ SECTION_HEADINGS: List[Dict[str, str]] = [
     {"pattern": r"^\s*(?:plan|rx|medications?|advice|treatment)\b[^:\n]{0,30}:", "section": "plan"},
 ]
 
+# The CareBridge note format (services/note_format.py): fixed headings, parsed into structured data on finish.
 NOTEPAD_TEMPLATE = (
     "Chief Complaints:\n\n"
-    "Past History:\n\n"
-    "Vitals & Examination:\n\n"
-    "Assessment:\n\n"
+    "History:\n\n"
+    "Allergies:\n\n"
+    "Current Medications:\n\n"
+    "Vitals:\n\n"
+    "Examination:\n\n"
+    "Diagnosis:\n\n"
     "Investigations:\n\n"
-    "Plan / Medications:\n"
+    "Rx:\n\n"
+    "Advice:\n\n"
+    "Follow-up:\n"
 )
 
 

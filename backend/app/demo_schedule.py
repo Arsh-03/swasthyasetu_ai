@@ -17,8 +17,8 @@ from sqlalchemy import delete, select
 
 from app.database import AsyncSessionLocal
 from app.models.models import (
-    Appointment, AuditEvent, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, Notification, PatientProfile,
-    Practitioner, User,
+    Appointment, AuditEvent, CareTask, ChatMessage, ClinicalNote, ConsultationNotepad, Encounter, HealthWorker, Notification,
+    PatientProfile, Practitioner, User, VitalReading, WorkerConsent,
 )
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -110,6 +110,9 @@ async def _clear(session) -> None:
     await session.execute(delete(Encounter).where(Encounter.encounter_id.like("enc_demo_%")))
     await session.execute(delete(Notification).where(Notification.notification_id.like("ntf_demo_%")))
     await session.execute(delete(ChatMessage).where(ChatMessage.message_id.like("chat_demo_%")))
+    await session.execute(delete(CareTask).where(CareTask.task_id.like("task_demo_%")))
+    await session.execute(delete(VitalReading).where(VitalReading.reading_id.like("vr_demo_%")))
+    await session.execute(delete(WorkerConsent).where(WorkerConsent.consent_id.like("wc_demo_%")))
     await session.execute(delete(AuditEvent).where(AuditEvent.event_id.like("aud_demo_%")))
     await session.flush()
 
@@ -133,6 +136,21 @@ async def _ensure_extra_patients(session) -> None:
                                "diagnosedDate": "2023"} for i, a in enumerate(allergies)],
             },
         ))
+    await session.flush()
+
+
+ASHA_ID = "usr_asha_lakshmamma"
+
+
+async def _ensure_asha(session) -> None:
+    """Demo ASHA worker (sign in with ASHA-HSN-0142 / password123). Kept across rebuilds."""
+    if await session.get(HealthWorker, ASHA_ID):
+        return
+    session.add(User(user_id=ASHA_ID, role="asha", login_identifier="asha.lakshmamma@nhm.karnataka.gov.in",
+                     phone_number="9845070142", password_hash="password123"))
+    await session.flush()
+    session.add(HealthWorker(worker_id=ASHA_ID, display_name="Lakshmamma K", worker_code="ASHA-HSN-0142",
+                             area="Hassan, Karnataka", facility="Ayushman Arogya Mandir, Arasikere"))
     await session.flush()
 
 
@@ -251,6 +269,24 @@ async def build(session) -> None:
          {"page": "patient", "patient_id": "usr_ramesh_gowda", "tab": "records"}, 180, read=True)
     note(4, "appointment", "info", "Appointment confirmed by Lakshmi Narayan", "Tomorrow's follow-up was confirmed.",
          {"page": "patient", "patient_id": "demo_pat_lakshmi", "tab": "visits"}, 300, read=True)
+    # --- ASHA worker: requests waiting for her, and a week of BP readings she took for Ramesh -----
+    await _ensure_asha(session)
+    tomorrow = (today + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    session.add(CareTask(task_id="task_demo_1", patient_id="usr_ramesh_gowda", practitioner_id=DOCTOR, worker_id=ASHA_ID,
+                         kinds_json=["blood_pressure"], note="Two readings, 1 minute apart, before Thursday's video visit.",
+                         due_at=tomorrow, created_at=now - timedelta(hours=5)))
+    if "pat_kamla_devi" in profiles:
+        session.add(CareTask(task_id="task_demo_2", patient_id="pat_kamla_devi", practitioner_id=DOCTOR, worker_id=ASHA_ID,
+                             kinds_json=["blood_pressure", "blood_sugar", "temperature"], note="Fever follow-up; diabetic.",
+                             due_at=tomorrow + timedelta(days=1), created_at=now - timedelta(hours=3)))
+    session.add(WorkerConsent(consent_id="wc_demo_1", patient_id="usr_ramesh_gowda", worker_id=ASHA_ID, method="thumb",
+                              granted_at=now - timedelta(days=9), expires_at=now + timedelta(days=81)))
+    for i, (sys_, dia) in enumerate([(152, 96), (148, 94), (146, 92), (144, 90)]):
+        at = now - timedelta(days=8 - 2 * i, hours=3)
+        session.add(VitalReading(reading_id=f"vr_demo_{i}", patient_id="usr_ramesh_gowda", kind="blood_pressure",
+                                 value=sys_, value2=dia, unit="mmHg", method="asha_device", details_json={"readings_averaged": 2},
+                                 recorded_by=ASHA_ID, recorded_by_role="asha", recorded_by_name="Lakshmamma K", created_at=at))
+
     # --- A few chat conversations ----------------------------------------------------------------
     chats = [
         ("usr_ramesh_gowda", [
