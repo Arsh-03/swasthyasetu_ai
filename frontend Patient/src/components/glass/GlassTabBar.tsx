@@ -1,22 +1,17 @@
 import React from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '../../utils/haptics';
 import { colors, radii, spacing, touch } from '../../theme/tokens';
 import { Icon, type IconName } from '../ui/Icon';
-import { IconDisc } from '../ui/IconDisc';
 import { AppText } from '../ui/AppText';
 import { GlassSurface } from './GlassSurface';
 
-/** Height of the floating pill itself. */
-export const TAB_BAR_HEIGHT = 68;
-const SIDE_MARGIN = spacing.lg;
+/** Docked bottom tab bar height (compact, no floating waste). */
+export const TAB_BAR_HEIGHT = 54;
 
-/** Distance from the screen bottom to the pill's bottom edge. */
-const floatOffset = (bottomInset: number) => Math.max(bottomInset, spacing.md) + spacing.xs;
-
-/** Space content must leave at the bottom so nothing hides behind the floating tab bar. */
-export const tabBarChromeHeight = (bottomInset: number) => TAB_BAR_HEIGHT + floatOffset(bottomInset) + spacing.sm;
+/** Space content must leave at bottom so content is never hidden behind the tab bar. */
+export const tabBarChromeHeight = (bottomInset: number) => TAB_BAR_HEIGHT + Math.max(bottomInset, 8);
 
 export interface GlassTab<K extends string> {
   key: K;
@@ -31,34 +26,38 @@ interface GlassTabBarProps<K extends string> {
 }
 
 /**
- * Floating glass pill. Active tab = raised disc with a duotone glyph + bold ink label;
- * inactive = regular-weight glyph. Ink text only (it sits on glass).
+ * Docked clean bottom tab bar with subtle glass (fill ~0.85, light blur, hairline top border).
+ * Active tab: solid tinted pill + duotone primary icon + bold label.
  */
 export function GlassTabBar<K extends string>({ tabs, activeKey, onChange }: GlassTabBarProps<K>) {
   const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 6);
+
   return (
-    <View style={[styles.wrap, { bottom: floatOffset(insets.bottom) }]} pointerEvents="box-none">
-      <View style={styles.shadow}>
-        <GlassSurface material="tabBar" blurContent style={styles.surface} accessibilityRole="tablist">
-          <View style={styles.row}>
-            {tabs.map((tab) => (
-              <TabItem
-                key={tab.key}
-                label={tab.label}
-                icon={tab.icon}
-                active={tab.key === activeKey}
-                onPress={() => onChange(tab.key)}
-              />
-            ))}
-          </View>
-        </GlassSurface>
-      </View>
+    <View style={styles.dockWrap} pointerEvents="box-none">
+      <GlassSurface material="tabBar" blurContent style={[styles.surface, { paddingBottom: bottomPad }]} accessibilityRole="tablist">
+        <View style={styles.row}>
+          {tabs.map((tab) => (
+            <TabItem
+              key={tab.key}
+              label={tab.label}
+              icon={tab.icon}
+              active={tab.key === activeKey}
+              onPress={() => onChange(tab.key)}
+            />
+          ))}
+        </View>
+      </GlassSurface>
     </View>
   );
 }
 
-/** One tab: active = raised disc + duotone glyph + bold label; inactive = regular glyph. */
-export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean; onPress: () => void }> = ({ label, icon, active, onPress }) => (
+export const TabItem: React.FC<{
+  label: string;
+  icon: IconName;
+  active: boolean;
+  onPress: () => void;
+}> = ({ label, icon, active, onPress }) => (
   <Pressable
     onPress={() => {
       if (!active) haptic.selection();
@@ -69,56 +68,65 @@ export const TabItem: React.FC<{ label: string; icon: IconName; active: boolean;
     accessibilityState={{ selected: active }}
     accessibilityLabel={label}
   >
-    {active ? (
-      <IconDisc icon={icon} variant="raised" size={38} active />
-    ) : (
-      <View style={styles.iconSlot}>
-        <Icon name={icon} size={24} color={colors.inkMuted} surface={colors.glassTabBar} />
-      </View>
-    )}
-    <AppText variant="caption" weight={active ? 700 : 500} color="ink" numberOfLines={1} compact>
-      {label}
-    </AppText>
+    <View style={[styles.pill, active && styles.activePill]}>
+      <Icon
+        name={icon}
+        size={20}
+        color={active ? colors.primary : colors.inkMuted}
+        active={active}
+      />
+      <AppText
+        variant="caption"
+        weight={active ? 700 : 500}
+        color={active ? 'primary' : 'inkMuted'}
+        numberOfLines={1}
+        compact
+      >
+        {label}
+      </AppText>
+    </View>
   </Pressable>
 );
 
 const styles = StyleSheet.create({
-  wrap: {
+  dockWrap: {
     position: 'absolute',
-    left: SIDE_MARGIN,
-    right: SIDE_MARGIN,
+    left: 0,
+    right: 0,
+    bottom: 0,
     zIndex: 50,
   },
-  shadow: {
-    borderRadius: radii.xl,
-    // Soft coloured shadow under the pill (single layer: it floats over everything)
-    ...(Platform.OS === 'android'
-      ? { elevation: 10, shadowColor: colors.primary }
-      : { shadowColor: colors.primary, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.22, shadowRadius: 20 }),
-  },
   surface: {
-    borderRadius: radii.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.cardBorder,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
   },
   row: {
     height: TAB_BAR_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
   item: {
     flex: 1,
-    minHeight: touch.min,
+    minHeight: touch.compact,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radii.pill,
+  },
+  activePill: {
+    backgroundColor: 'rgba(62, 105, 133, 0.12)', // primary tint pill
   },
   pressed: {
     opacity: 0.6,
-  },
-  iconSlot: {
-    width: 38,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

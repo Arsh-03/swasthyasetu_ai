@@ -1,9 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import { colors, radii, spacing, touch, type ColorRole } from '../../theme/tokens';
+import { ActivityIndicator, Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { colors, elevation, radii, spacing } from '../../theme/tokens';
+import { usePressScale } from '../../hooks/usePressScale';
+import { haptic } from '../../utils/haptics';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
-import { NeuPressable } from './Neu';
 
 export interface ButtonProps {
   label: string;
@@ -11,19 +13,15 @@ export interface ButtonProps {
   icon?: IconName;
   loading?: boolean;
   disabled?: boolean;
-  /** `md` = 52pt main action, `sm` = 40pt inline action (hit area still ≥ 48). */
+  /** `md` = 48-52pt main action, `sm` = 40pt inline action. */
   size?: 'md' | 'sm';
-  /** Outer layout (flex, margins). */
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
   accessibilityHint?: string;
 }
 
-/**
- * Non-critical buttons: STRONG raised neumorphic controls that press to inset. The label
- * colour carries the role. Critical actions (SOS, consent, join / end call) use CriticalButton.
- */
-const NeuButtonBase: React.FC<ButtonProps & { fg: ColorRole; weight?: 600 | 700 }> = ({
+/** Main solid action: solid primary, white text (5.89:1), e1 shadow, pressed darker. */
+export const PrimaryButton: React.FC<ButtonProps> = ({
   label,
   onPress,
   icon,
@@ -33,84 +31,266 @@ const NeuButtonBase: React.FC<ButtonProps & { fg: ColorRole; weight?: 600 | 700 
   style,
   accessibilityLabel,
   accessibilityHint,
-  fg,
-  weight = 600,
 }) => {
+  const press = usePressScale(0.98);
   const isSm = size === 'sm';
   const inactive = disabled || loading;
+
   return (
-    <NeuPressable
-      onPress={onPress}
-      disabled={inactive}
-      radius={isSm ? radii.sm : radii.md}
-      compact={isSm}
-      hitSlop={isSm ? (touch.min - 40) / 2 : undefined}
-      accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityHint={accessibilityHint}
-      accessibilityState={{ busy: loading }}
-      containerStyle={style}
-      style={[styles.base, isSm ? styles.sm : styles.md]}
-    >
-      {(down) => (
-        <>
-          {/* Loading keeps the label visible next to the spinner, so the state is never silent */}
-          {loading ? (
-            <ActivityIndicator color={colors[fg]} />
-          ) : (
-            icon && <Icon name={icon} size={isSm ? 18 : 22} color={colors[fg]} active={!down} />
-          )}
-          <AppText
-            variant={isSm ? 'footnote' : 'callout'}
-            weight={weight}
-            color={fg}
-            numberOfLines={2}
-            align="center"
-            compact
-            style={styles.label}
-          >
-            {label}
-          </AppText>
-        </>
-      )}
-    </NeuPressable>
+    <Animated.View style={[press.style, style]}>
+      <Pressable
+        onPress={() => {
+          haptic.tap();
+          onPress();
+        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        disabled={inactive}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ busy: loading }}
+        style={({ pressed }) => [
+          styles.base,
+          isSm ? styles.sm : styles.md,
+          {
+            backgroundColor: inactive
+              ? colors.primarySoft
+              : pressed
+              ? colors.primaryPressed
+              : colors.primary,
+          },
+          inactive ? styles.disabled : elevation.e1,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.onPrimary} size="small" />
+        ) : (
+          icon && <Icon name={icon} size={isSm ? 18 : 20} color={colors.onPrimary} active />
+        )}
+        <AppText
+          variant={isSm ? 'footnote' : 'callout'}
+          weight={600}
+          color="onPrimary"
+          numberOfLines={1}
+          align="center"
+          compact
+        >
+          {label}
+        </AppText>
+      </Pressable>
+    </Animated.View>
   );
 };
 
-/** Main non-critical action (Sign in, Continue): raised, bold primary label + duotone icon. */
-export const PrimaryButton: React.FC<ButtonProps> = (props) => <NeuButtonBase {...props} fg="primary" weight={700} />;
+/** Secondary tonal action: tonal ice fill, deep primary text (≥ 4.5:1), subtle 1px border. */
+export const SecondaryButton: React.FC<ButtonProps & { tone?: 'neutral' | 'primary' | 'success' }> = ({
+  label,
+  onPress,
+  icon,
+  loading = false,
+  disabled = false,
+  size = 'md',
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+}) => {
+  const press = usePressScale(0.98);
+  const isSm = size === 'sm';
+  const inactive = disabled || loading;
 
-const SECONDARY_FG: Record<'neutral' | 'primary' | 'success', ColorRole> = {
-  neutral: 'ink',
-  primary: 'primary',
-  success: 'successDeep',
+  return (
+    <Animated.View style={[press.style, style]}>
+      <Pressable
+        onPress={() => {
+          haptic.tap();
+          onPress();
+        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        disabled={inactive}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ busy: loading }}
+        style={({ pressed }) => [
+          styles.base,
+          isSm ? styles.sm : styles.md,
+          styles.secondaryBase,
+          {
+            backgroundColor: pressed ? '#C8E2ED' : colors.ice,
+          },
+          inactive && styles.disabled,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.primaryDeep} size="small" />
+        ) : (
+          icon && <Icon name={icon} size={isSm ? 18 : 20} color={colors.primaryDeep} active />
+        )}
+        <AppText
+          variant={isSm ? 'footnote' : 'callout'}
+          weight={600}
+          color="primaryDeep"
+          numberOfLines={1}
+          align="center"
+          compact
+        >
+          {label}
+        </AppText>
+      </Pressable>
+    </Animated.View>
+  );
 };
 
-export const SecondaryButton: React.FC<ButtonProps & { tone?: keyof typeof SECONDARY_FG }> = ({ tone = 'neutral', ...props }) => (
-  <NeuButtonBase {...props} fg={SECONDARY_FG[tone]} />
-);
+/** Tertiary action: transparent background with text. */
+export const TertiaryButton: React.FC<ButtonProps> = ({
+  label,
+  onPress,
+  icon,
+  loading = false,
+  disabled = false,
+  size = 'md',
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+}) => {
+  const isSm = size === 'sm';
+  const inactive = disabled || loading;
 
-/** Non-critical destructive action (Revoke access): raised with a dangerDeep label. */
-export const DestructiveButton: React.FC<ButtonProps> = (props) => <NeuButtonBase {...props} fg="dangerDeep" />;
+  return (
+    <Pressable
+      onPress={() => {
+        haptic.tap();
+        onPress();
+      }}
+      disabled={inactive}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={{ busy: loading }}
+      style={({ pressed }) => [
+        styles.base,
+        isSm ? styles.sm : styles.md,
+        styles.tertiaryBase,
+        pressed && styles.tertiaryPressed,
+        inactive && styles.disabled,
+        style,
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={colors.primary} size="small" />
+      ) : (
+        icon && <Icon name={icon} size={isSm ? 18 : 20} color={colors.primary} active />
+      )}
+      <AppText
+        variant={isSm ? 'footnote' : 'callout'}
+        weight={600}
+        color="primary"
+        numberOfLines={1}
+        align="center"
+        compact
+      >
+        {label}
+      </AppText>
+    </Pressable>
+  );
+};
+
+/** Non-critical destructive action: dangerDeep text with subtle tint or outline. */
+export const DestructiveButton: React.FC<ButtonProps> = ({
+  label,
+  onPress,
+  icon,
+  loading = false,
+  disabled = false,
+  size = 'md',
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+}) => {
+  const press = usePressScale(0.98);
+  const isSm = size === 'sm';
+  const inactive = disabled || loading;
+
+  return (
+    <Animated.View style={[press.style, style]}>
+      <Pressable
+        onPress={() => {
+          haptic.tap();
+          onPress();
+        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
+        disabled={inactive}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ busy: loading }}
+        style={({ pressed }) => [
+          styles.base,
+          isSm ? styles.sm : styles.md,
+          styles.destructiveBase,
+          {
+            backgroundColor: pressed ? '#FADADA' : '#FDF2F2',
+          },
+          inactive && styles.disabled,
+        ]}
+      >
+        {loading ? (
+          <ActivityIndicator color={colors.dangerDeep} size="small" />
+        ) : (
+          icon && <Icon name={icon} size={isSm ? 18 : 20} color={colors.dangerDeep} active />
+        )}
+        <AppText
+          variant={isSm ? 'footnote' : 'callout'}
+          weight={600}
+          color="dangerDeep"
+          numberOfLines={1}
+          align="center"
+          compact
+        >
+          {label}
+        </AppText>
+      </Pressable>
+    </Animated.View>
+  );
+};
 
 const styles = StyleSheet.create({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: radii.md,
     gap: spacing.sm,
   },
   md: {
-    minHeight: touch.min + 4,
-    paddingHorizontal: spacing.xl,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
   sm: {
-    minHeight: 40,
+    minHeight: 38,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     gap: spacing.xs,
   },
-  label: {
-    flexShrink: 1,
+  secondaryBase: {
+    borderWidth: 1,
+    borderColor: 'rgba(62, 105, 133, 0.2)',
+  },
+  tertiaryBase: {
+    backgroundColor: 'transparent',
+  },
+  tertiaryPressed: {
+    opacity: 0.6,
+  },
+  destructiveBase: {
+    borderWidth: 1,
+    borderColor: 'rgba(214, 69, 69, 0.2)',
+  },
+  disabled: {
+    opacity: 0.6,
   },
 });

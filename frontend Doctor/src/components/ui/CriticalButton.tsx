@@ -11,16 +11,13 @@ export interface CriticalButtonProps extends Omit<ButtonHTMLAttributes<HTMLButto
   label: string;
   sublabel?: string;
   loading?: boolean;
-  /** `loading` replaces the label with this text (e.g. "Sending…"); defaults to the label. */
   loadingLabel?: string;
   fullWidth?: boolean;
 }
 
 /**
- * Principle 3, "Consent is sacred": the highest-contrast element on screen. Strong raised shape,
- * SOLID deep fill, white icon + label (≥ 4.5:1 incl. under the sheen), coloured glow.
- * Hover lifts 1px; pressed = inset + darker fill; disabled = flat primarySoft fill, ink label.
- * Min height 44px (critical target). Never icon-only.
+ * Flat solid deep action: always the highest-contrast element on screen (white label ≥ 4.5:1).
+ * Replaces neumorphism: flat solid deep fill, min height 48-56, icon + label, e1 elevation.
  */
 export function CriticalButton({
   tone,
@@ -42,7 +39,8 @@ export function CriticalButton({
       disabled={inactive}
       aria-busy={loading || undefined}
       className={cx(
-        'critical inline-flex min-h-11 items-center justify-center gap-2.5 px-5 py-2 font-bold select-none',
+        'critical inline-flex min-h-12 items-center justify-center gap-2.5 px-6 py-2.5 font-bold select-none cursor-pointer',
+        tone === 'primary' && 'critical-primary',
         tone === 'success' && 'critical-success',
         tone === 'danger' && 'critical-danger',
         fullWidth && 'w-full',
@@ -53,11 +51,11 @@ export function CriticalButton({
       {loading ? (
         <span aria-hidden className="size-4 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" />
       ) : (
-        <Icon name={icon} size={20} weight="duotone" />
+        <Icon name={icon} size={20} tone="onPrimary" weight="duotone" />
       )}
       <span className="flex flex-col items-start text-left leading-tight">
-        <span className="text-sm">{loading ? (loadingLabel ?? label) : label}</span>
-        {sublabel && <span className="text-2xs font-medium">{sublabel}</span>}
+        <span className="text-sm text-white">{loading ? (loadingLabel ?? label) : label}</span>
+        {sublabel && <span className="text-2xs font-medium text-white/90">{sublabel}</span>}
       </span>
     </button>
   );

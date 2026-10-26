@@ -1,8 +1,7 @@
-import React, { useEffect } from 'react';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { colors, neu, radii, spacing, touch, type NeuStrength } from '../../theme/tokens';
+import React from 'react';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
+import { colors, elevation, radii, spacing, touch } from '../../theme/tokens';
 import { timing } from '../../theme/motion';
 import { usePressScale } from '../../hooks/usePressScale';
 import { haptic } from '../../utils/haptics';
@@ -10,201 +9,126 @@ import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { SurfaceContext } from './SurfaceContext';
 
-/*
- * Full depth language (design_system_tokens.md § 5).
- *   RAISED = you can press it.  INSET = it holds, shows or receives something.
- *   STRONG tier for controls; SOFT tier (~58%) for panels, wells, trays and rows.
- *   Max two nesting levels; inside an inset only a raised thumb / knob is allowed.
- *
- * Rendering (no native dependency):
- *   Raised, iOS / web: two stacked shadow layers (dark +8/+8, light −8/−8) under a
- *     top-left → bottom-right highlight gradient.
- *   Raised, Android: the same gradient + a two-tone hairline edge + one tinted elevation
- *     shadow (Android ignores shadow offsets, and two blurred shadows per control are
- *     too costly on low-end phones).
- *   Inset, all platforms: reverse gradient + LinearGradient strips that fake the inner
- *     shadow (dark toward the top-left, white toward the bottom-right) + two-tone edge.
- *   Pressing cross-fades raised → inset (opacity only; shadow properties never animate).
- */
-
-const isAndroid = Platform.OS === 'android';
-
-/**
- * Stacking for every depth primitive. Decorative layers are absolutely positioned; on web,
- * absolute boxes paint above non-positioned siblings (react-native-svg's <svg>, RN-web's
- * <input>) regardless of order, which hid icons and input text. So: containers form a stacking
- * context (zIndex 0) and layers sit at zIndex −1, below all content on web, iOS and Android.
- */
 export const depth = StyleSheet.create({
   layer: { zIndex: -1 },
   stack: { zIndex: 0 },
 });
-const TL = { x: 0, y: 0 };
-const BR = { x: 1, y: 1 };
+
+export type NeuStrength = 'soft' | 'strong';
 
 interface LayerProps {
   strength?: NeuStrength;
   radius: number;
-  /** Halve shadow offsets for small elements (knobs, thumbs, chips, discs < 40). */
   compact?: boolean;
-  /** Solid fill instead of the neutral gradient (audio badge). */
   fill?: string;
 }
 
-/** Raised surface background. Absolutely fills its parent; never intercepts touches. */
-export const RaisedLayer: React.FC<LayerProps> = ({ strength = 'strong', radius, compact = false, fill }) => {
-  const t = neu.raised[strength];
-  const k = compact ? 0.5 : 1;
-  const face = fill ? (
-    <View style={[StyleSheet.absoluteFill, styles.raisedEdge, edge(t), { borderRadius: radius, backgroundColor: fill }]} />
-  ) : (
-    <LinearGradient
-      colors={t.fill}
-      start={TL}
-      end={BR}
-      style={[StyleSheet.absoluteFill, styles.raisedEdge, edge(t), { borderRadius: radius }]}
-    />
-  );
+/** Clean surface layer: white card face with subtle 1px border. */
+export const RaisedLayer: React.FC<LayerProps> = ({ radius, fill }) => (
+  <View
+    pointerEvents="none"
+    style={[
+      StyleSheet.absoluteFill,
+      depth.layer,
+      styles.cardFace,
+      {
+        borderRadius: radius,
+        backgroundColor: fill ?? colors.card,
+        borderColor: colors.cardBorder,
+      },
+      elevation.e1,
+    ]}
+  />
+);
 
-  if (isAndroid) {
-    // Android paints higher-elevation siblings on top regardless of order, so the elevated face
-    // lives inside a non-elevated wrapper; the wrapper (Z 0) then stays behind the content.
-    return (
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, depth.layer]}>
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: radius, backgroundColor: neu.surface, shadowColor: t.dark.color, elevation: Math.round(t.elevation * k) },
-          ]}
-        >
-          {face}
-        </View>
-      </View>
-    );
-  }
-  return (
-    <View
-      pointerEvents="none"
-      style={[
-        StyleSheet.absoluteFill,
-        depth.layer,
-        {
-          borderRadius: radius,
-          backgroundColor: neu.surface,
-          shadowColor: t.dark.color,
-          shadowOffset: { width: t.dark.offset * k, height: t.dark.offset * k },
-          shadowOpacity: 1,
-          shadowRadius: t.dark.radius * k,
-        },
-      ]}
-    >
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            borderRadius: radius,
-            backgroundColor: neu.surface,
-            shadowColor: t.light.color,
-            shadowOffset: { width: t.light.offset * k, height: t.light.offset * k },
-            shadowOpacity: 1,
-            shadowRadius: t.light.radius * k,
-          },
-        ]}
-      >
-        {face}
-      </View>
-    </View>
-  );
-};
-
-const edge = (t: { edgeLight: string; edgeDark: string }) => ({
-  borderTopColor: t.edgeLight,
-  borderLeftColor: t.edgeLight,
-  borderBottomColor: t.edgeDark,
-  borderRightColor: t.edgeDark,
-});
-
-/** Inset (debossed) surface background built from gradient strips. */
-export const InsetLayer: React.FC<LayerProps & { focused?: boolean }> = ({ strength = 'strong', radius, compact = false, fill, focused = false }) => {
-  const t = neu.inset[strength];
-  const strip = compact ? Math.round(t.depth * 0.6) : t.depth;
-  return (
-    <View
-      pointerEvents="none"
-      style={[
-        StyleSheet.absoluteFill,
-        depth.layer,
-        styles.insetFrame,
-        { borderRadius: radius, borderTopColor: t.edgeDark, borderLeftColor: t.edgeDark, borderBottomColor: t.edgeLight, borderRightColor: t.edgeLight },
-      ]}
-    >
-      {fill ? (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: fill }]} />
-      ) : (
-        <LinearGradient colors={t.fill} start={TL} end={BR} style={StyleSheet.absoluteFill} />
-      )}
-      {/* Inner shadow toward the top-left */}
-      <LinearGradient colors={t.dark} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.stripTop, { height: strip }]} />
-      <LinearGradient colors={t.dark} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.stripLeft, { width: strip }]} />
-      {/* Inner highlight toward the bottom-right */}
-      <LinearGradient colors={t.light} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[styles.stripBottom, { height: strip * 0.7 }]} />
-      <LinearGradient colors={t.light} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[styles.stripRight, { width: strip * 0.7 }]} />
-      {focused && <View style={[StyleSheet.absoluteFill, styles.focusRing, { borderRadius: radius }]} />}
-    </View>
-  );
-};
+/** Clean inset/well layer: input border without faux shadow strips. */
+export const InsetLayer: React.FC<LayerProps & { focused?: boolean }> = ({ radius, fill, focused = false }) => (
+  <View
+    pointerEvents="none"
+    style={[
+      StyleSheet.absoluteFill,
+      depth.layer,
+      {
+        borderRadius: radius,
+        backgroundColor: fill ?? colors.card,
+        borderWidth: focused ? 2 : 1,
+        borderColor: focused ? colors.primary : colors.inputBorder,
+      },
+    ]}
+  />
+);
 
 interface SurfaceProps {
   children?: React.ReactNode;
   radius?: number;
   strength?: NeuStrength;
   compact?: boolean;
-  /** Container style (layout and padding); the depth layers sit behind the children. */
   style?: StyleProp<ViewStyle>;
 }
 
-/** Static raised surface. Default STRONG (controls); use NeuPanel for grouped content. */
-export const NeuView: React.FC<SurfaceProps & { fill?: string }> = ({ children, radius = radii.lg, strength = 'strong', compact, fill, style }) => (
-  <SurfaceContext.Provider value="opaque">
-    <View style={[depth.stack, { borderRadius: radius }, style]}>
-      <RaisedLayer radius={radius} strength={strength} compact={compact} fill={fill} />
-      {children}
-    </View>
-  </SurfaceContext.Provider>
-);
-
-/** SOFT raised panel for grouped content (cards, list panels). */
-export const NeuPanel: React.FC<SurfaceProps & { padded?: boolean }> = ({ padded = true, style, strength = 'soft', ...rest }) => (
-  <NeuView strength={strength} style={[padded && styles.panelPad, style]} {...rest} />
-);
-
-/** Inset well: inputs, text wells, list trays, toggle / segmented tracks. Default STRONG. */
-export const NeuInset: React.FC<SurfaceProps & { focused?: boolean; fill?: string }> = ({
+/** Clean Card/Panel container (white, 1px border, e1 shadow). */
+export const NeuView: React.FC<SurfaceProps & { fill?: string }> = ({
   children,
   radius = radii.lg,
-  strength = 'strong',
-  compact,
-  focused,
   fill,
   style,
 }) => (
   <SurfaceContext.Provider value="opaque">
-    <View style={[depth.stack, { borderRadius: radius }, style]}>
-      <InsetLayer radius={radius} strength={strength} compact={compact} focused={focused} fill={fill} />
+    <View
+      style={[
+        styles.cardFace,
+        {
+          borderRadius: radius,
+          backgroundColor: fill ?? colors.card,
+          borderColor: colors.cardBorder,
+        },
+        elevation.e1,
+        style,
+      ]}
+    >
       {children}
     </View>
   </SurfaceContext.Provider>
 );
 
-/** Debossed divider for lists: 1px dark line with a 1px white line right below. */
-export const Groove: React.FC<{ inset?: number }> = ({ inset = 0 }) => (
-  <View style={{ marginLeft: inset }} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-    <View style={styles.grooveDark} />
-    <View style={styles.grooveLight} />
-  </View>
+export const NeuPanel: React.FC<SurfaceProps & { padded?: boolean; fill?: string }> = ({
+  padded = true,
+  style,
+  ...rest
+}) => (
+  <NeuView style={[padded && styles.panelPad, style]} {...rest} />
 );
 
-type HapticKind = 'tap' | 'selection' | 'success' | 'heavy' | 'none';
+/** Well/Container: subtle 1px border. */
+export const NeuInset: React.FC<SurfaceProps & { focused?: boolean; fill?: string }> = ({
+  children,
+  radius = radii.md,
+  focused = false,
+  fill,
+  style,
+}) => (
+  <SurfaceContext.Provider value="opaque">
+    <View
+      style={[
+        styles.wellFace,
+        {
+          borderRadius: radius,
+          backgroundColor: fill ?? colors.card,
+          borderColor: focused ? colors.primary : colors.inputBorder,
+          borderWidth: focused ? 2 : 1,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  </SurfaceContext.Provider>
+);
+
+/** Clean 1px hairline divider. */
+export const Groove: React.FC<{ inset?: number }> = ({ inset = 0 }) => (
+  <View style={[styles.hairlineDivider, { marginLeft: inset }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants" />
+);
 
 export interface NeuPressableProps {
   onPress: () => void;
@@ -212,24 +136,15 @@ export interface NeuPressableProps {
   radius?: number;
   strength?: NeuStrength;
   compact?: boolean;
-  /** Latched pressed state (selected tile, muted mic): stays inset. */
   selected?: boolean;
-  /** Draw a primary accent bar on the leading edge when selected (list rows). */
   accentBar?: boolean;
-  /** Rows: no raised layer at rest (they live inside a panel), inset only while pressed / selected. */
   flatAtRest?: boolean;
   fill?: string;
   disabled?: boolean;
-  haptics?: HapticKind;
+  haptics?: 'tap' | 'selection' | 'success' | 'heavy' | 'none';
   hitSlop?: number;
-  /** Surface style (size, padding, content layout). */
   style?: StyleProp<ViewStyle>;
-  /** Outer layout (flex, margins, alignSelf). */
   containerStyle?: StyleProp<ViewStyle>;
-  /**
-   * Grow to fill the wrapper's height, so tiles stretched by their row end up the same height.
-   * Only for equal-height tile rows (ChoiceTiles, Home quick actions); everything else keeps its intrinsic height.
-   */
   fillHeight?: boolean;
   accessibilityRole?: 'button' | 'checkbox' | 'switch' | 'tab' | 'radio';
   accessibilityLabel?: string;
@@ -237,13 +152,11 @@ export interface NeuPressableProps {
   accessibilityState?: { selected?: boolean; checked?: boolean; disabled?: boolean; busy?: boolean };
 }
 
-/** Raised surface that animates to inset while pressed (and stays inset when `selected`). */
+/** Clean pressable surface: scale 0.98 on press, elevates from e1 to e2. */
 export const NeuPressable: React.FC<NeuPressableProps> = ({
   onPress,
   children,
   radius = radii.md,
-  strength = 'strong',
-  compact,
   selected = false,
   accentBar = false,
   flatAtRest = false,
@@ -259,15 +172,7 @@ export const NeuPressable: React.FC<NeuPressableProps> = ({
   accessibilityHint,
   accessibilityState,
 }) => {
-  const press = usePressScale(0.985);
-  const down = useSharedValue(selected ? 1 : 0);
-
-  useEffect(() => {
-    down.set(withTiming(selected ? 1 : 0, timing.press));
-  }, [selected, down]);
-
-  const raisedStyle = useAnimatedStyle(() => ({ opacity: 1 - down.get() }));
-  const insetStyle = useAnimatedStyle(() => ({ opacity: down.get() }));
+  const press = usePressScale(0.98);
 
   return (
     <Animated.View style={[press.style, disabled && styles.disabled, containerStyle]}>
@@ -276,33 +181,29 @@ export const NeuPressable: React.FC<NeuPressableProps> = ({
           if (haptics !== 'none') haptic[haptics]();
           onPress();
         }}
-        onPressIn={() => {
-          press.onPressIn();
-          down.set(withTiming(1, timing.press));
-        }}
-        onPressOut={() => {
-          press.onPressOut();
-          if (!selected) down.set(withTiming(0, timing.press));
-        }}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         disabled={disabled}
         hitSlop={hitSlop}
         accessibilityRole={accessibilityRole}
         accessibilityLabel={accessibilityLabel}
         accessibilityHint={accessibilityHint}
         accessibilityState={{ disabled, ...(accessibilityRole === 'button' ? { selected } : null), ...accessibilityState }}
-        style={[depth.stack, fillHeight && styles.pressableFill, { borderRadius: radius }, style]}
+        style={({ pressed }) => [
+          styles.cardFace,
+          {
+            borderRadius: radius,
+            backgroundColor: selected ? colors.ice : fill ?? colors.card,
+            borderColor: selected ? colors.primary : colors.cardBorder,
+          },
+          !flatAtRest && (pressed || selected ? elevation.e2 : elevation.e1),
+          fillHeight && styles.pressableFill,
+          style,
+        ]}
       >
         {({ pressed }) => (
           <SurfaceContext.Provider value="opaque">
-            {!flatAtRest && (
-              <Animated.View style={[StyleSheet.absoluteFill, depth.layer, raisedStyle]} pointerEvents="none">
-                <RaisedLayer radius={radius} strength={strength} compact={compact} fill={fill} />
-              </Animated.View>
-            )}
-            <Animated.View style={[StyleSheet.absoluteFill, depth.layer, insetStyle]} pointerEvents="none">
-              <InsetLayer radius={radius} strength={strength} compact={compact} fill={fill} />
-            </Animated.View>
-            {accentBar && selected && <View style={[styles.accentBar, { borderRadius: 2 }]} pointerEvents="none" />}
+            {accentBar && selected && <View style={styles.accentBar} pointerEvents="none" />}
             {typeof children === 'function' ? children(pressed || selected) : children}
           </SurfaceContext.Provider>
         )}
@@ -317,27 +218,32 @@ interface NeuButtonProps {
   onPress: () => void;
   accessibilityLabel?: string;
   selected?: boolean;
-  /** Diameter for icon-only buttons. */
   size?: number;
   style?: StyleProp<ViewStyle>;
 }
 
-/** Tactile control button (strong). Icon-only = round. */
-export const NeuButton: React.FC<NeuButtonProps> = ({ icon, label, onPress, accessibilityLabel, selected = false, size = 56, style }) => {
+export const NeuButton: React.FC<NeuButtonProps> = ({
+  icon,
+  label,
+  onPress,
+  accessibilityLabel,
+  selected = false,
+  size = 48,
+  style,
+}) => {
   const round = !label;
   return (
     <NeuPressable
       onPress={onPress}
       selected={selected}
       radius={round ? size / 2 : radii.md}
-      compact={round && size < 40}
       hitSlop={round ? Math.max(0, (touch.min - size) / 2) : undefined}
       accessibilityLabel={accessibilityLabel ?? label}
       style={[styles.buttonContent, round ? { width: size, height: size } : styles.buttonLabelled, style]}
     >
       {(down) => (
         <>
-          <Icon name={icon} size={round ? Math.round(size * 0.42) : 22} color={down ? colors.primary : colors.ink} active={down} />
+          <Icon name={icon} size={round ? 22 : 20} color={down ? colors.primary : colors.ink} active={down} />
           {label ? (
             <AppText variant="callout" weight={600} color={down ? 'primary' : 'ink'} compact>
               {label}
@@ -349,10 +255,10 @@ export const NeuButton: React.FC<NeuButtonProps> = ({ icon, label, onPress, acce
   );
 };
 
-const TRACK_W = 60;
-const TRACK_H = 34;
-const KNOB = 26;
-const TRAVEL = TRACK_W - KNOB - 8;
+const TRACK_W = 52;
+const TRACK_H = 30;
+const KNOB = 24;
+const TRAVEL = TRACK_W - KNOB - 6;
 
 interface NeuToggleProps {
   value: boolean;
@@ -361,11 +267,17 @@ interface NeuToggleProps {
   disabled?: boolean;
 }
 
-/** Switch: inset track with a raised knob. On = primary ring + check in the knob. */
-export const NeuToggle: React.FC<NeuToggleProps> = ({ value, onValueChange, accessibilityLabel, disabled = false }) => {
+/** Clean standard switch toggle. */
+export const NeuToggle: React.FC<NeuToggleProps> = ({
+  value,
+  onValueChange,
+  accessibilityLabel,
+  disabled = false,
+}) => {
   const knobStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: withTiming(value ? TRAVEL : 0, timing.transition) }],
   }));
+
   return (
     <Pressable
       onPress={() => {
@@ -379,13 +291,13 @@ export const NeuToggle: React.FC<NeuToggleProps> = ({ value, onValueChange, acce
       hitSlop={(touch.min - TRACK_H) / 2}
       style={disabled && styles.disabled}
     >
-      <NeuInset radius={TRACK_H / 2} compact focused={value} style={styles.track}>
+      <View style={[styles.track, { backgroundColor: value ? colors.primary : '#DCE5EA' }]}>
         <Animated.View style={knobStyle}>
-          <NeuView radius={KNOB / 2} compact style={styles.knob}>
-            {value && <Icon name="check" size={16} color={colors.primary} />}
-          </NeuView>
+          <View style={[styles.knob, elevation.e1]}>
+            {value && <Icon name="check" size={14} color={colors.primary} />}
+          </View>
         </Animated.View>
-      </NeuInset>
+      </View>
     </Pressable>
   );
 };
@@ -400,13 +312,20 @@ interface NeuTileProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** Square tactile tile (dose tiles). Selected = inset + duotone primary icon + check badge. */
-export const NeuTile: React.FC<NeuTileProps> = ({ icon, label, sublabel, selected, onPress, accessibilityLabel, style }) => (
+export const NeuTile: React.FC<NeuTileProps> = ({
+  icon,
+  label,
+  sublabel,
+  selected,
+  onPress,
+  accessibilityLabel,
+  style,
+}) => (
   <View style={style}>
     <NeuPressable
       onPress={onPress}
       selected={selected}
-      radius={radii.lg}
+      radius={radii.md}
       haptics={selected ? 'tap' : 'success'}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected }}
@@ -417,10 +336,10 @@ export const NeuTile: React.FC<NeuTileProps> = ({ icon, label, sublabel, selecte
         <>
           {selected && (
             <View style={styles.tileCheck}>
-              <Icon name="check" size={14} color={colors.onPrimary} />
+              <Icon name="check" size={13} color={colors.onPrimary} />
             </View>
           )}
-          <Icon name={icon} size={30} color={down ? colors.primary : colors.ink} active={down} />
+          <Icon name={icon} size={28} color={down ? colors.primary : colors.ink} active={down} />
           <AppText variant="subhead" weight={600} color={down ? 'primary' : 'ink'} align="center" compact>
             {label}
           </AppText>
@@ -435,16 +354,12 @@ export const NeuTile: React.FC<NeuTileProps> = ({ icon, label, sublabel, selecte
   </View>
 );
 
-/**
- * List container: `panel` = soft raised (tappable rows), `tray` = soft inset (read-only rows,
- * e.g. audit ledger). Rows are separated by grooves; only the container carries a shadow.
- */
-export const NeuList: React.FC<{ variant?: 'panel' | 'tray'; children: React.ReactNode; grooveInset?: number; style?: StyleProp<ViewStyle> }> = ({
-  variant = 'panel',
-  children,
-  grooveInset = 0,
-  style,
-}) => {
+export const NeuList: React.FC<{
+  variant?: 'panel' | 'tray';
+  children: React.ReactNode;
+  grooveInset?: number;
+  style?: StyleProp<ViewStyle>;
+}> = ({ children, grooveInset = 0, style }) => {
   const items = React.Children.toArray(children).filter(Boolean);
   const body = items.map((child, i) => (
     <React.Fragment key={i}>
@@ -452,54 +367,46 @@ export const NeuList: React.FC<{ variant?: 'panel' | 'tray'; children: React.Rea
       {child}
     </React.Fragment>
   ));
-  return variant === 'tray' ? (
-    <NeuInset strength="soft" style={[styles.list, style]}>
+  return (
+    <View style={[styles.list, elevation.e1, style]}>
       {body}
-    </NeuInset>
-  ) : (
-    <NeuPanel padded={false} style={[styles.list, style]}>
-      {body}
-    </NeuPanel>
+    </View>
   );
 };
 
+/* Neutral component re-exports */
+export const Panel = NeuPanel;
+export const Tile = NeuTile;
+export const Toggle = NeuToggle;
+
 const styles = StyleSheet.create({
+  cardFace: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+  },
+  wellFace: {
+    borderWidth: 1,
+  },
+  hairlineDivider: {
+    height: 1,
+    backgroundColor: colors.separator,
+  },
+  panelPad: {
+    padding: spacing.md,
+  },
   pressableFill: {
     flexGrow: 1,
   },
-  raisedEdge: {
-    borderWidth: StyleSheet.hairlineWidth * 2,
-  },
-  insetFrame: {
-    overflow: 'hidden',
-    borderWidth: 1,
-  },
-  stripTop: { position: 'absolute', top: 0, left: 0, right: 0 },
-  stripLeft: { position: 'absolute', top: 0, left: 0, bottom: 0 },
-  stripBottom: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  stripRight: { position: 'absolute', top: 0, right: 0, bottom: 0 },
-  focusRing: {
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  panelPad: {
-    padding: spacing.lg,
-  },
-  grooveDark: {
-    height: 1,
-    backgroundColor: neu.groove.dark,
-  },
-  grooveLight: {
-    height: 1,
-    backgroundColor: neu.groove.light,
-  },
   accentBar: {
     position: 'absolute',
-    left: 4,
-    top: 10,
-    bottom: 10,
-    width: 4,
-    backgroundColor: neu.accent,
+    left: 0,
+    top: 6,
+    bottom: 6,
+    width: 3,
+    backgroundColor: colors.primary,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   buttonContent: {
     alignItems: 'center',
@@ -508,23 +415,28 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   buttonLabelled: {
-    minHeight: touch.min + 4,
-    paddingHorizontal: spacing.xl,
+    minHeight: touch.min,
+    paddingHorizontal: spacing.lg,
   },
   track: {
     width: TRACK_W,
     height: TRACK_H,
+    borderRadius: TRACK_H / 2,
     justifyContent: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 3,
   },
   knob: {
     width: KNOB,
     height: KNOB,
+    borderRadius: KNOB / 2,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
   },
   tile: {
-    minHeight: 112,
+    minHeight: 96,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
@@ -534,15 +446,19 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.sm,
     right: spacing.sm,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   list: {
-    overflow: 'visible',
+    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    overflow: 'hidden',
   },
   disabled: {
     opacity: 0.5,

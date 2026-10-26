@@ -1,90 +1,114 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { radii, spacing, type Tone } from '../../theme/tokens';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { colors, spacing, type Domain, type Tone } from '../../theme/tokens';
 import { AppText } from './AppText';
-import { IconDisc } from './IconDisc';
+import { IconTile } from './IconTile';
 import type { IconName } from './Icon';
-import { NeuPressable } from './Neu';
 
 interface ListRowProps {
   title: string;
   subtitle?: string;
   icon?: IconName;
   iconTone?: Tone;
+  domain?: Domain;
   /** Badges / meta rendered under the subtitle. */
   children?: React.ReactNode;
   /** Right side (button, badge, chevron). */
   trailing?: React.ReactNode;
   onPress?: () => void;
-  /** Selected row: inset + primary accent bar. */
+  /** Selected row: ice tint + 3px primary accent bar. */
   selected?: boolean;
   accessibilityLabel?: string;
 }
 
 /**
- * Row inside a NeuList (panel or tray). Rows carry no shadow of their own (Android perf);
- * grooves separate them. A tappable row presses to inset; selected = inset + accent bar.
- * Leading icon = inset IconDisc (informational).
+ * Mobile list row (min 56px height).
+ * Hairline dividers separate rows. Selected row = ice tint + 3px primary accent bar.
  */
 export const ListRow: React.FC<ListRowProps> = ({
   title,
   subtitle,
   icon,
   iconTone = 'primary',
+  domain,
   children,
   trailing,
   onPress,
   selected = false,
   accessibilityLabel,
 }) => {
-  const body = (
+  const content = (
     <>
-      {icon && <IconDisc icon={icon} tone={iconTone} size={40} />}
+      {icon && <IconTile icon={icon} domain={domain} tone={iconTone} size={38} />}
       <View style={styles.text}>
-        <AppText variant="body" weight={600}>
+        <AppText variant="body" weight={600} color="ink" numberOfLines={2}>
           {title}
         </AppText>
         {subtitle ? (
-          <AppText variant="footnote" color="inkMuted">
+          <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
             {subtitle}
           </AppText>
         ) : null}
         {children}
       </View>
-      {/* Trailing control keeps its own height, centred, however tall the text column gets */}
       {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
     </>
   );
 
-  if (!onPress) return <View style={styles.row}>{body}</View>;
+  if (!onPress) {
+    return (
+      <View style={[styles.row, selected && styles.selected]}>
+        {selected && <View style={styles.accentBar} />}
+        {content}
+      </View>
+    );
+  }
+
   return (
-    <NeuPressable
+    <Pressable
       onPress={onPress}
-      flatAtRest
-      strength="soft"
-      radius={radii.md}
-      selected={selected}
-      accentBar
-      haptics="selection"
+      accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
-      style={styles.row}
+      style={({ pressed }) => [
+        styles.row,
+        selected && styles.selected,
+        pressed && !selected && styles.pressed,
+      ]}
     >
-      {body}
-    </NeuPressable>
+      {selected && <View style={styles.accentBar} />}
+      {content}
+    </Pressable>
   );
 };
 
-/** Left inset for a Groove that lines up with the row's text column. */
-export const LIST_ROW_TEXT_INSET = spacing.lg + 40 + 14;
+export const LIST_ROW_TEXT_INSET = spacing.md + 38 + 12;
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 64,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: 14,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    gap: 12,
+    position: 'relative',
+    backgroundColor: colors.card,
+  },
+  selected: {
+    backgroundColor: colors.ice,
+  },
+  pressed: {
+    backgroundColor: 'rgba(31, 58, 76, 0.04)',
+  },
+  accentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 4,
+    bottom: 4,
+    width: 3,
+    backgroundColor: colors.primary,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   text: {
     flex: 1,

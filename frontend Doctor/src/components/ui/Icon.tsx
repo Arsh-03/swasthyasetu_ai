@@ -3,13 +3,15 @@ import { REGISTRY, type IconName } from './iconRegistry';
 export type { IconName };
 
 /** Semantic colour of the glyph. Status tones use their *Deep variant (≥ 3:1 on every surface). */
-export type IconTone = 'inherit' | 'ink' | 'muted' | 'primary' | 'success' | 'warning' | 'danger' | 'gold' | 'onPrimary' | 'ice';
+export type IconTone = 'inherit' | 'ink' | 'muted' | 'primary' | 'teal' | 'navy' | 'success' | 'warning' | 'danger' | 'gold' | 'onPrimary' | 'ice';
 
 const ICON_TONE_CLASS: Record<IconTone, string> = {
   inherit: '',
   ink: 'text-ink',
   muted: 'text-ink-muted',
-  primary: 'text-primary',
+  primary: 'text-primary-deep',
+  teal: 'text-teal-deep',
+  navy: 'text-navy-deep',
   success: 'text-success-deep',
   warning: 'text-warning-deep',
   danger: 'text-danger-deep',

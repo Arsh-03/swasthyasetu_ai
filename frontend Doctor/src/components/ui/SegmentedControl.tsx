@@ -4,7 +4,6 @@ import { Icon, type IconName } from './Icon';
 
 export interface SegmentOption<V extends string> {
   value: V;
-  /** Keep it short; labels wrap to two lines rather than truncating. */
   label: string;
   icon?: IconName;
 }
@@ -13,29 +12,41 @@ interface SegmentedControlProps<V extends string> {
   options: SegmentOption<V>[];
   value: V;
   onChange: (value: V) => void;
-  /** Required: names the group for screen readers. */
   label: string;
   size?: 'sm' | 'md';
   className?: string;
 }
 
 /**
- * STRONG inset track + raised thumb (the only raised element allowed inside an inset) + bold ink label.
- * Equal-width segments. Keyboard: radio group, so Tab enters on the selected segment and
- * ←/→ (or ↑/↓) move and select; Home/End jump to the ends.
+ * Segmented control: tonal track, white selected thumb with a subtle border and e1 elevation.
  */
-export function SegmentedControl<V extends string>({ options, value, onChange, label, size = 'md', className }: SegmentedControlProps<V>) {
+export function SegmentedControl<V extends string>({
+  options,
+  value,
+  onChange,
+  label,
+  size = 'md',
+  className,
+}: SegmentedControlProps<V>) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const index = Math.max(0, options.findIndex((o) => o.value === value));
 
   const move = (e: KeyboardEvent, i: number) => {
     const last = options.length - 1;
     const next =
-      e.key === 'ArrowRight' || e.key === 'ArrowDown' ? (i === last ? 0 : i + 1)
-      : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? (i === 0 ? last : i - 1)
-      : e.key === 'Home' ? 0
-      : e.key === 'End' ? last
-      : -1;
+      e.key === 'ArrowRight' || e.key === 'ArrowDown'
+        ? i === last
+          ? 0
+          : i + 1
+        : e.key === 'ArrowLeft' || e.key === 'ArrowUp'
+        ? i === 0
+          ? last
+          : i - 1
+        : e.key === 'Home'
+        ? 0
+        : e.key === 'End'
+        ? last
+        : -1;
     if (next < 0) return;
     e.preventDefault();
     onChange(options[next].value);
@@ -43,11 +54,15 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
   };
 
   return (
-    <div role="radiogroup" aria-label={label} className={cx('neu-inset-sm relative flex rounded-[16px] p-1', className)}>
-      {/* Raised thumb: slides with transform only (250 ms, calm ease) */}
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className={cx('relative flex rounded-[16px] p-1 bg-[#E5ECF0] border border-border', className)}
+    >
+      {/* White selected thumb with e1 shadow */}
       <span
         aria-hidden
-        className="neu-raised-sm pointer-events-none absolute top-1 bottom-1 left-1 rounded-chip transition-transform duration-250 ease-calm"
+        className="pointer-events-none absolute top-1 bottom-1 left-1 rounded-chip bg-card border border-card-border shadow-e1 transition-transform duration-250 ease-calm"
         style={{ width: `calc((100% - 8px) / ${options.length})`, transform: `translateX(${index * 100}%)` }}
       />
       {options.map((opt, i) => {
@@ -65,12 +80,19 @@ export function SegmentedControl<V extends string>({ options, value, onChange, l
             onClick={() => !selected && onChange(opt.value)}
             onKeyDown={(e) => move(e, i)}
             className={cx(
-              'relative z-10 flex flex-1 basis-0 items-center justify-center gap-1.5 rounded-chip px-2 text-center leading-tight',
+              'relative z-10 flex flex-1 basis-0 items-center justify-center gap-1.5 rounded-chip px-2 text-center leading-tight transition-colors cursor-pointer',
               size === 'sm' ? 'min-h-8 text-footnote' : 'min-h-10 text-sm',
               selected ? 'font-bold text-ink' : 'font-medium text-ink-muted hover:text-ink',
             )}
           >
-            {opt.icon && <Icon name={opt.icon} size={16} tone={selected ? 'primary' : 'inherit'} weight={selected ? 'duotone' : 'regular'} />}
+            {opt.icon && (
+              <Icon
+                name={opt.icon}
+                size={16}
+                tone={selected ? 'primary' : 'inherit'}
+                weight={selected ? 'duotone' : 'regular'}
+              />
+            )}
             <span>{opt.label}</span>
           </button>
         );
