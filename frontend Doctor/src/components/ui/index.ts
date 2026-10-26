@@ -1,5 +1,6 @@
 // Harbor Calm UI kit (Doctor portal). Screens import from here, never from Phosphor directly.
 export { AmbientBackground } from './AmbientBackground';
+export { Avatar, type AvatarProps } from './Avatar';
 export { Badge, Chip, StatusChip } from './Badge';
 export { DOMAIN_TO_TONE, TONE_CLASS, type Domain, type Tone } from './tones';
 export { CriticalButton, type CriticalTone } from './CriticalButton';

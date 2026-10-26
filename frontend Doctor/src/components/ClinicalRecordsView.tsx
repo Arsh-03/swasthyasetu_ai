@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api, type PatientSummary, type RecordSummary } from '../services/api';
-import { type SupportedLanguage, t } from '../utils/translations';
-import { Icon } from './ui/Icon';
+import { type SupportedLanguage, t, formatLocalizedName, stripNonLatinParentheses } from '../utils/translations';
+import { Icon, type IconName } from './ui/Icon';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 
 interface ClinicalRecordsViewProps {
-  patient: PatientSummary;
+  patient?: PatientSummary | null;
   onRequestConsent: () => void;
   selectedLanguage?: SupportedLanguage;
   /** Bump to refetch (e.g. after the patient grants consent). */
@@ -18,6 +18,7 @@ interface ClinicalRecord {
   facility: string;
   date: string;
   type: string;
+  consentStatus: string;
   status: string;
   expiresIn: string;
   findings: string;
@@ -55,6 +56,7 @@ const toClinicalRecord = (r: RecordSummary): ClinicalRecord => {
     facility: r.facility || 'ABDM linked facility',
     date: r.date_str,
     type: r.type_label || r.record_type,
+    consentStatus: r.consent_status,
     status: isUnlocked
       ? 'Active Consent Granted'
       : r.consent_status === 'expired'
@@ -76,6 +78,15 @@ const toClinicalRecord = (r: RecordSummary): ClinicalRecord => {
   };
 };
 
+const getRecordTypeIcon = (type: string): IconName => {
+  const t = type.toLowerCase();
+  if (t.includes('imaging') || t.includes('scan') || t.includes('ultrasound') || t.includes('usg') || t.includes('radiology')) return 'imaging';
+  if (t.includes('prescription') || t.includes('medication') || t.includes('rx')) return 'medication';
+  if (t.includes('lab') || t.includes('biochemistry') || t.includes('diagnostic')) return 'records';
+  if (t.includes('discharge') || t.includes('summary')) return 'clinicalNotes';
+  return 'chart';
+};
+
 export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
   patient,
   onRequestConsent,
@@ -89,6 +100,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
+    if (!patient?.patient_id) return;
     let cancelled = false;
     setStatus('loading');
     api
@@ -104,157 +116,146 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [patient.patient_id, refreshKey]);
+  }, [patient?.patient_id, refreshKey]);
+
+  if (!patient) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-card rounded-xl border border-card-border shadow-2xs">
+        <Icon name="records" size={38} tone="muted" weight="duotone" />
+        <h3 className="text-base font-semibold text-ink mt-3">Select a patient from the queue</h3>
+        <p className="text-xs text-ink-muted mt-1 max-w-sm">
+          Choose a patient in the Patient Queue to view their ABDM health records and decrypted clinical vault.
+        </p>
+      </div>
+    );
+  }
 
   const unlockedCount = records.filter((r) => r.isUnlocked).length;
   const lockedCount = records.length - unlockedCount;
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 py-7 flex flex-col gap-6">
-      {/* Header with Title and Consent CTA */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-ink/5">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2.5">
-            <h2 className="text-2xl font-bold text-ink tracking-tight">
-              {t(selectedLanguage, 'vaultTitle')}
-            </h2>
-            <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-semibold bg-primary-tint text-primary">
-              <Icon name="shield" size={13} />
-              <span>FHIR R4 Encrypted</span>
-            </span>
-          </div>
-          <p className="text-xs text-ink-muted flex flex-wrap items-center gap-1.5">
-            <span>{t(selectedLanguage, 'encryptedArtifacts')}</span>
-            <span className="font-semibold text-ink">{patient.full_name}</span>
+    <div className="w-full flex flex-col gap-5">
+      {/* Header: title "Clinical Records" (24px); subtitle shows patient name and ABHA once (13px) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-card-border">
+        <div className="flex flex-col">
+          <h1 className="text-2xl font-bold font-serif text-ink tracking-tight">
+            Clinical Records
+          </h1>
+          <p className="text-[13px] text-ink-muted flex flex-wrap items-center gap-1.5 font-sans mt-0.5">
+            <span className="font-semibold text-ink">{formatLocalizedName(patient.full_name, selectedLanguage)}</span>
+            <span>•</span>
             <span className="font-mono text-primary bg-primary-tint px-1.5 py-0.5 rounded text-2xs">
               {patient.abha_address}
             </span>
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <div className="hidden md:flex items-center gap-2 text-xs text-ink-muted bg-base px-3 py-1.5 rounded-xl">
-            <span className="inline-block w-2 h-2 rounded-full bg-success" />
-            <span>{unlockedCount} {t(selectedLanguage, 'decrypted')}</span>
-            <span>•</span>
-            <span className="inline-block w-2 h-2 rounded-full bg-warning" />
-            <span>{lockedCount} Locked</span>
-          </div>
+        <div className="flex items-center gap-3">
+          {lockedCount > 0 && (
+            <span className="text-xs text-ink-muted font-medium">
+              {lockedCount} locked
+            </span>
+          )}
 
           <button
+            type="button"
             onClick={onRequestConsent}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-primary-deep active:scale-95 text-white text-xs font-semibold transition-all shadow-sm"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary-deep active:scale-95 text-white text-xs font-semibold transition-all shadow-xs cursor-pointer"
           >
-            <Icon name="unlock" size={16} />
+            <Icon name="unlock" size={15} />
             <span>{t(selectedLanguage, 'requestConsentToken')}</span>
           </button>
         </div>
       </div>
 
-      {/* 3-Column Card Grid with Generous Padding & Zero Overflow */}
+      {/* Empty State */}
       {records.length === 0 && (
-        <div className="py-12 text-center text-xs text-ink-muted">
+        <div className="py-12 text-center text-xs text-ink-muted bg-card rounded-xl border border-card-border p-8">
           {status === 'loading' && 'Loading records from the ABDM vault…'}
           {status === 'error' && 'Could not load records. Check that the backend is running.'}
           {status === 'ready' && 'No ABDM records are linked for this patient yet.'}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {records.map((rec) => {
-          return (
+      {/* Compact list rows: record type (~180px with icon) | title | facility (wraps) · date | status chip | action */}
+      {records.length > 0 && (
+        <div className="bg-card rounded-xl border border-card-border shadow-2xs divide-y divide-card-border overflow-hidden">
+          {records.map((rec) => (
             <div
               key={rec.id}
-              className={`rounded-2xl p-5 sm:p-6 shadow-sm border flex flex-col justify-between transition-all hover:shadow-md ${
-                rec.isUnlocked
-                  ? 'bg-card border-success/30 ring-1 ring-success/15'
-                  : 'bg-sand border-ink/10'
-              }`}
+              className="min-h-[56px] px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-fog/30 transition-colors"
             >
-              {/* Card Top & Body Content */}
-              <div className="flex flex-col gap-3">
-                {/* Eyebrow & Status Badge */}
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-2xs font-semibold text-ink-muted uppercase tracking-wider">
-                    {rec.type}
-                  </span>
-                  {rec.isUnlocked ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-semibold bg-success-tint text-success-deep shrink-0">
-                      <Icon name="verified" size={14} />
-                      <span>{t(selectedLanguage, 'decrypted')}</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-semibold bg-warning-tint text-warning-deep shrink-0">
-                      <Icon name="lock" size={14} />
-                      <span>{t(selectedLanguage, 'consentGated')}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Title */}
-                <h3 className="text-base font-bold text-ink tracking-tight leading-snug">
-                  {rec.title}
-                </h3>
-
-                {/* Facility & Date */}
-                <div className="text-xs text-ink-muted flex items-center gap-1.5 flex-wrap">
-                  <Icon name="building" size={14} tone="muted" weight="duotone" />
-                  <span className="font-medium text-ink">{rec.facility}</span>
-                  <span className="text-ink-muted">•</span>
-                  <span className="text-ink-muted">{rec.date}</span>
-                </div>
-
-                {/* Clinical Findings Well */}
-                <div
-                  className={`mt-1 p-3.5 rounded-xl text-xs leading-relaxed border ${
-                    rec.isUnlocked
-                      ? 'bg-base text-ink border-ink/5'
-                      : 'bg-base/70 text-ink-muted border-ink/5 italic'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5 mb-1 text-3xs font-bold uppercase tracking-wider text-ink-muted">
-                    <Icon name={rec.isUnlocked ? 'clinicalNotes' : 'key'} size={13} />
-                    <span>{rec.isUnlocked ? t(selectedLanguage, 'clinicalFindings') : t(selectedLanguage, 'dpdpNote')}</span>
-                  </div>
-                  {rec.findings}
-                </div>
+              {/* Record Type: 12px, uppercase with domain icon, ~180px, wraps to 2 lines without ellipsis */}
+              <div className="w-[180px] shrink-0 flex items-center gap-2">
+                <span className="w-6 h-6 rounded-md bg-fog flex items-center justify-center text-ink-muted shrink-0 border border-card-border">
+                  <Icon name={getRecordTypeIcon(rec.type)} size={13} tone="muted" />
+                </span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted leading-tight line-clamp-2">
+                  {rec.type}
+                </span>
               </div>
 
-              {/* Card Footer with Generous Spacing and Wrap Protection */}
-              <div className="pt-4 mt-5 border-t border-ink/5 flex items-center justify-between gap-2 flex-wrap">
-                <span
-                  className={`inline-flex items-center gap-1 text-2xs font-semibold px-2.5 py-1 rounded-full shrink-0 ${
-                    rec.isUnlocked
-                      ? 'bg-success-tint text-success-deep'
-                      : 'bg-warning-tint text-warning-deep'
-                  }`}
-                >
-                  <Icon name={rec.isUnlocked ? 'clock' : 'shield'} size={13} />
-                  <span>{rec.expiresIn}</span>
+              {/* Title + optional expired line */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <span className="text-sm font-semibold text-ink leading-snug break-words">
+                  {stripNonLatinParentheses(rec.title)}
                 </span>
+                {rec.consentStatus === 'expired' && (
+                  <span className="text-2xs text-ink-muted mt-0.5">
+                    Consent expired, request new consent
+                  </span>
+                )}
+              </div>
 
+              {/* Facility (wraps instead of truncating) · Date */}
+              <div className="hidden md:flex flex-col text-xs text-ink-muted shrink-0 w-44 lg:w-52 leading-tight">
+                <span className="font-medium text-ink break-words leading-tight">
+                  {stripNonLatinParentheses(rec.facility)}
+                </span>
+                <span className="text-2xs text-ink-muted font-mono mt-0.5">{rec.date}</span>
+              </div>
+
+              {/* One Status Chip: Locked / Unlocked */}
+              <div className="shrink-0">
+                {rec.isUnlocked ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-semibold bg-success-tint text-success-deep">
+                    <Icon name="verified" size={13} />
+                    <span>Unlocked</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-2xs font-semibold bg-fog text-ink-muted border border-card-border">
+                    <Icon name="lock" size={13} />
+                    <span>Locked</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Action Button: View Scan or Authorize (tonal navy, not red) */}
+              <div className="shrink-0 w-24 flex justify-end">
                 {rec.isUnlocked ? (
                   <button
+                    type="button"
                     onClick={() => setSelectedScan(rec)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary-tint hover:bg-primary/10 text-primary text-xs font-semibold transition-all active:scale-95 shrink-0"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary-tint hover:bg-primary/20 text-primary text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                   >
-                    <Icon name="view" size={15} />
+                    <Icon name="view" size={14} />
                     <span>{t(selectedLanguage, 'viewScan')}</span>
                   </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={onRequestConsent}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-danger-tint hover:bg-danger/10 text-danger-deep text-xs font-semibold transition-all active:scale-95 shrink-0"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-navy-tint hover:bg-navy/20 text-navy-deep border border-navy/20 text-xs font-semibold transition-all active:scale-95 cursor-pointer"
                   >
-                    <Icon name="key" size={15} />
+                    <Icon name="key" size={14} />
                     <span>{t(selectedLanguage, 'authorize')}</span>
                   </button>
                 )}
               </div>
             </div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Interactive Scan / Diagnostic Viewer Modal */}
       {selectedScan && (
@@ -273,10 +274,10 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                 </div>
                 <div>
                   <h3 id="scan-viewer-title" className="text-base font-bold text-ink tracking-tight">
-                    {selectedScan.title}
+                    {stripNonLatinParentheses(selectedScan.title)}
                   </h3>
                   <p className="text-2xs text-ink-muted">
-                    {selectedScan.facility} • {selectedScan.date}
+                    {stripNonLatinParentheses(selectedScan.facility)} • {selectedScan.date}
                   </p>
                 </div>
               </div>
@@ -385,7 +386,7 @@ export const ClinicalRecordsView: React.FC<ClinicalRecordsViewProps> = ({
                   Diagnostic Impression & Conclusion
                 </span>
                 <p className="text-xs text-ink leading-relaxed">
-                  {selectedScan.findings}
+                  {stripNonLatinParentheses(selectedScan.findings)}
                 </p>
               </div>
             </div>

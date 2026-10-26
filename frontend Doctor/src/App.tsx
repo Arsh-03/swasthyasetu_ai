@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { DoctorHeader } from './components/DoctorHeader';
+import { DoctorSidebar } from './components/DoctorSidebar';
 import { PatientQueueView } from './components/PatientQueueView';
 import { PatientMedicalChartView } from './components/PatientMedicalChartView';
 import { ConsultationWorkspace } from './components/ConsultationWorkspace';
@@ -9,7 +10,7 @@ import { AuditLedgerView } from './components/AuditLedgerView';
 import { DoctorLoginView } from './components/DoctorLoginView';
 import type { PatientSummary, DoctorProfile } from './services/api';
 import { api, WS_BASE_URL } from './services/api';
-import { type SupportedLanguage, t } from './utils/translations';
+import { type SupportedLanguage, t, formatLocalizedName, getInitialDoctorLanguage, saveDoctorLanguage } from './utils/translations';
 import type { SignalMessage } from './services/callSession';
 import type { CallSignaling } from './components/ConsultationWorkspace';
 import type { UpcomingAppointment } from './data/patientRecords';
@@ -27,7 +28,7 @@ export function App() {
   // Bumped whenever consent/record state changes so record views refetch
   const [recordsVersion, setRecordsVersion] = useState(0);
   const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'kn' | 'hi'>('kn');
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>(getInitialDoctorLanguage);
   // <html lang> drives per-script typography (base.css) and screen-reader pronunciation
   useEffect(() => {
     document.documentElement.lang = selectedLanguage;
@@ -174,7 +175,7 @@ export function App() {
     setSelectedPatient(patient);
     setCallState('calling');
     setActiveTab('active-consultation');
-    setNotification(`Calling ${patient.full_name}... Ringing.`);
+    setNotification(`Calling ${formatLocalizedName(patient.full_name, selectedLanguage)}… Ringing.`);
 
     const callId = `call_${Date.now()}`;
     setActiveCall({ callId, patientId: patient.patient_id });
@@ -223,6 +224,7 @@ export function App() {
 
   const handleLanguageChange = (lang: SupportedLanguage) => {
     setSelectedLanguage(lang);
+    saveDoctorLanguage(lang);
     const msg = t(lang, 'languageNotification');
     setNotification(msg);
     setTimeout(() => {
@@ -243,7 +245,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-base flex flex-col font-sans antialiased text-ink">
+    <div className="h-screen h-[100dvh] bg-base flex flex-col font-sans antialiased text-ink overflow-hidden">
       {/* Top Clinical Header without Live Call in Navigation */}
       <DoctorHeader
         activeTab={activeTab}
@@ -253,7 +255,7 @@ export function App() {
         setSelectedLanguage={handleLanguageChange}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        selectedPatientName={selectedPatient?.full_name}
+        selectedPatientName={selectedPatient ? formatLocalizedName(selectedPatient.full_name, selectedLanguage) : undefined}
         isCallActive={callState === 'calling' || callState === 'connected'}
         onReturnToCall={() => setActiveTab('active-consultation')}
         onLogout={logout}
@@ -261,95 +263,121 @@ export function App() {
 
       {/* Real-time Dynamic Toast Banner (macOS Notification Style) */}
       {notification && (
-        <div className="fixed top-20 right-6 z-50 glass text-ink border border-ink/10 p-3 px-4 rounded-2xl shadow-lg flex items-center gap-2.5 animate-bounce">
+        <div className="fixed top-16 right-6 z-50 glass text-ink border border-card-border p-3 px-4 rounded-xl shadow-lg flex items-center gap-2.5 animate-bounce">
           <span className="w-2 h-2 rounded-full bg-primary animate-ping"></span>
           <Icon name="notification" size={18} tone="primary" weight="duotone" />
           <span className="text-xs font-semibold">{notification}</span>
         </div>
       )}
 
-      {/* Main Content Surfaces */}
-      <main className="w-full pt-[84px] flex-1 flex flex-col pb-16">
-        {activeTab !== 'audit-trail' && !selectedPatient && (
-          <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 py-16 flex flex-col items-center gap-3 text-center">
-            <Icon
-              name={queueStatus === 'error' ? 'offline' : queueStatus === 'loading' ? 'hourglass' : 'inbox'}
-              size={40}
-              tone="muted"
-              weight="duotone"
+      {/* App Shell: Left Sidebar (232px / 64px) + Internally Scrolling Main Area */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        <DoctorSidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          selectedLanguage={selectedLanguage}
+        />
+
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto p-4 sm:p-5 bg-base">
+          {activeTab === 'patient-queue' && !selectedPatient && (
+            <div className="w-full flex-1 flex flex-col items-center justify-center p-12 text-center">
+              <Icon
+                name={queueStatus === 'error' ? 'offline' : queueStatus === 'loading' ? 'hourglass' : 'inbox'}
+                size={40}
+                tone="muted"
+                weight="duotone"
+              />
+              <p className="text-sm font-semibold text-ink mt-3">
+                {queueStatus === 'error'
+                  ? 'Could not load the patient queue. Is the backend running?'
+                  : queueStatus === 'loading'
+                  ? 'Loading patient queue…'
+                  : 'No patients are waiting right now.'}
+              </p>
+              {queueStatus === 'error' && (
+                <button
+                  onClick={loadQueue}
+                  className="mt-3 px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'patient-queue' && selectedPatient && (
+            <PatientQueueView
+              patients={patients}
+              selectedPatient={selectedPatient}
+              onSelectPatient={setSelectedPatient}
+              onOpenPatientChart={(p) => {
+                setSelectedPatient(p);
+                setActiveTab('patient-chart');
+              }}
+              onStartConsultation={handleStartConsultation}
+              searchQuery={searchQuery}
+              selectedLanguage={selectedLanguage}
             />
-            <p className="text-sm font-semibold text-ink">
-              {queueStatus === 'error'
-                ? 'Could not load the patient queue. Is the backend running?'
-                : queueStatus === 'loading'
-                ? 'Loading patient queue…'
-                : 'No patients are waiting right now.'}
-            </p>
-            {queueStatus === 'error' && (
-              <button
-                onClick={loadQueue}
-                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold"
-              >
-                Retry
-              </button>
-            )}
-          </div>
-        )}
+          )}
 
-        {activeTab === 'patient-queue' && selectedPatient && (
-          <PatientQueueView
-            patients={patients}
-            selectedPatient={selectedPatient}
-            onSelectPatient={setSelectedPatient}
-            onOpenPatientChart={(p) => {
-              setSelectedPatient(p);
-              setActiveTab('patient-chart');
-            }}
-            onStartConsultation={handleStartConsultation}
-            searchQuery={searchQuery}
-            selectedLanguage={selectedLanguage}
-          />
-        )}
+          {/* Bigger Dedicated Page: Full Patient Medical Chart & Detailed History */}
+          {activeTab === 'patient-chart' && selectedPatient && (
+            <PatientMedicalChartView
+              patient={selectedPatient}
+              onBackToQueue={() => setActiveTab('patient-queue')}
+              onStartConsultation={handleStartConsultation}
+              onRequestConsent={() => setIsConsentModalOpen(true)}
+              onViewClinicalRecords={() => setActiveTab('clinical-records')}
+              selectedLanguage={selectedLanguage}
+              onRescheduleAppointment={handleRescheduleAppointment}
+            />
+          )}
 
-        {/* Bigger Dedicated Page: Full Patient Medical Chart & Detailed History */}
-        {activeTab === 'patient-chart' && selectedPatient && (
-          <PatientMedicalChartView
-            patient={selectedPatient}
-            onBackToQueue={() => setActiveTab('patient-queue')}
-            onStartConsultation={handleStartConsultation}
-            onRequestConsent={() => setIsConsentModalOpen(true)}
-            onViewClinicalRecords={() => setActiveTab('clinical-records')}
-            selectedLanguage={selectedLanguage}
-            onRescheduleAppointment={handleRescheduleAppointment}
-          />
-        )}
+          {activeTab === 'active-consultation' && selectedPatient && (
+            <ConsultationWorkspace
+              patient={selectedPatient}
+              doctorName={doctor?.display_name || ''}
+              callState={callState}
+              callId={activeCall?.callId ?? null}
+              signaling={signaling}
+              onStartCall={handleStartConsultation}
+              onEndCall={handleEndConsultation}
+              onConsultationSigned={loadQueue}
+              onRequestRecordAccess={() => setIsConsentModalOpen(true)}
+              onGoToQueue={() => setActiveTab('patient-chart')}
+              selectedLanguage={selectedLanguage}
+            />
+          )}
 
-        {activeTab === 'active-consultation' && selectedPatient && (
-          <ConsultationWorkspace
-            patient={selectedPatient}
-            doctorName={doctor?.display_name || ''}
-            callState={callState}
-            callId={activeCall?.callId ?? null}
-            signaling={signaling}
-            onStartCall={handleStartConsultation}
-            onEndCall={handleEndConsultation}
-            onConsultationSigned={loadQueue}
-            onRequestRecordAccess={() => setIsConsentModalOpen(true)}
-            onGoToQueue={() => setActiveTab('patient-chart')}
-          />
-        )}
+          {activeTab === 'clinical-records' && (
+            selectedPatient ? (
+              <ClinicalRecordsView
+                patient={selectedPatient}
+                refreshKey={recordsVersion}
+                onRequestConsent={() => setIsConsentModalOpen(true)}
+                selectedLanguage={selectedLanguage}
+              />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-card rounded-xl border border-card-border shadow-2xs">
+                <Icon name="records" size={38} tone="muted" weight="duotone" />
+                <h3 className="text-base font-semibold text-ink mt-3">Select a patient from the queue</h3>
+                <p className="text-xs text-ink-muted mt-1 max-w-sm">
+                  Choose a patient in the Patient Queue to view their ABDM health records and decrypted clinical vault.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('patient-queue')}
+                  className="mt-4 px-4 py-2 rounded-xl bg-primary text-white text-xs font-semibold cursor-pointer"
+                >
+                  Go to Patient Queue
+                </button>
+              </div>
+            )
+          )}
 
-        {activeTab === 'clinical-records' && selectedPatient && (
-          <ClinicalRecordsView
-            patient={selectedPatient}
-            refreshKey={recordsVersion}
-            onRequestConsent={() => setIsConsentModalOpen(true)}
-            selectedLanguage={selectedLanguage}
-          />
-        )}
-
-        {activeTab === 'audit-trail' && <AuditLedgerView />}
-      </main>
+          {activeTab === 'audit-trail' && <AuditLedgerView selectedLanguage={selectedLanguage} />}
+        </main>
+      </div>
 
       {/* Purpose-Bound Consent Modal */}
       <ConsentRequestModal
@@ -360,22 +388,21 @@ export function App() {
           setNotification('Consent request dispatched to Patient mobile app via WebSocket!');
           setTimeout(() => setNotification(null), 5000);
         }}
+        selectedLanguage={selectedLanguage}
       />
 
-      {/* macOS Minimal Footer Strip */}
-      <footer className="w-full bg-base py-3.5 border-t border-ink/5">
-        <div className="w-full max-w-7xl mx-auto px-5 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-2.5 text-xs text-ink-muted">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-success"></span>
-            <span>Ayushman Bharat Digital Mission (ABDM) Level-3 Tele-Triage Node</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span>DPDP Act 2023 Compliant</span>
-            <span>•</span>
-            <span>FHIR R4 Encrypted</span>
-            <span>•</span>
-            <span className="font-mono text-2xs">v2.4-AppleHIG</span>
-          </div>
+      {/* Slim 28px Fixed Status Bar (Item 2) */}
+      <footer className="w-full h-7 shrink-0 bg-base border-t border-card-border px-4 flex items-center justify-between text-3xs text-ink-muted select-none z-20">
+        <div className="flex items-center gap-1.5 truncate">
+          <span className="w-1.5 h-1.5 rounded-full bg-success shrink-0" />
+          <span className="truncate">Ayushman Bharat Digital Mission (ABDM) Level-3 Tele-Triage Node</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="hidden sm:inline">DPDP Act 2023 Compliant</span>
+          <span className="hidden sm:inline">•</span>
+          <span className="hidden md:inline">FHIR R4 Encrypted</span>
+          <span className="hidden md:inline">•</span>
+          <span className="font-mono text-4xs">v2.4-AppleHIG</span>
         </div>
       </footer>
     </div>

@@ -1,12 +1,13 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cx } from './cx';
 import { Icon, type IconName } from './Icon';
-import { TONE_CLASS, type Tone } from './tones';
+import { DOMAIN_TO_TONE, TONE_CLASS, type Domain, type Tone } from './tones';
 
 interface BadgeProps {
   label?: string;
   children?: ReactNode;
   tone?: Tone;
+  domain?: Domain;
   icon?: IconName;
   /** Small status dot instead of an icon. */
   dot?: boolean;
@@ -17,8 +18,9 @@ interface BadgeProps {
 /**
  * Status pill: tinted pill with deep text (≥ 4.5:1).
  */
-export function Badge({ label, children, tone = 'primary', icon, dot, size = 'sm', className }: BadgeProps) {
-  const t = TONE_CLASS[tone];
+export function Badge({ label, children, tone = 'primary', domain, icon, dot, size = 'sm', className }: BadgeProps) {
+  const resolvedTone = domain ? DOMAIN_TO_TONE[domain] : tone;
+  const t = TONE_CLASS[resolvedTone];
   const content = label ?? children;
   return (
     <span

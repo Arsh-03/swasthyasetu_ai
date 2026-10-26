@@ -32,9 +32,8 @@
     color: var(--color-ink);
   }
 
-  /* Serif only for display-level headings (page titles); h3 and below stay sans. */
-  h1,
-  h2 {
+  /* Fraunces (serif) only for page titles (h1) and patient name; section titles and body stay sans */
+  h1 {
     font-family: var(--font-serif);
   }
 

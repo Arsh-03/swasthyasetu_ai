@@ -14,6 +14,7 @@ interface SectionHeaderProps {
   /** Count pill, e.g. "4 Active" */
   count?: number;
   right?: React.ReactNode;
+  action?: React.ReactNode;
 }
 
 /**
@@ -26,8 +27,10 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   domain,
   count,
   right,
+  action,
 }) => {
   const iconColor = domain ? domains[domain].deep : colors.primary;
+  const trailingAction = action ?? right;
 
   return (
     <View style={styles.row} accessibilityRole="header">
@@ -40,7 +43,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
           <Badge label={String(count)} domain={domain} tone={domain ? undefined : 'primary'} size="sm" />
         )}
       </View>
-      {right}
+      {trailingAction}
     </View>
   );
 };

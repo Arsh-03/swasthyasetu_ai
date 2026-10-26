@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 export interface BreadcrumbItem {
   label: string;
   onClick?: () => void;
+  href?: string;
 }
 
 export interface PageHeaderProps {

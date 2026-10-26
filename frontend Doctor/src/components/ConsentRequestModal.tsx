@@ -3,12 +3,14 @@ import type { PatientSummary, RecordSummary } from '../services/api';
 import { api } from '../services/api';
 import { Icon } from './ui/Icon';
 import { useDialogA11y } from '../hooks/useDialogA11y';
+import { type SupportedLanguage, formatLocalizedName, stripNonLatinParentheses } from '../utils/translations';
 
 interface ConsentRequestModalProps {
   patient: PatientSummary | null;
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  selectedLanguage?: SupportedLanguage;
 }
 
 export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
@@ -16,6 +18,7 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  selectedLanguage = 'en',
 }) => {
   const [records, setRecords] = useState<RecordSummary[]>([]);
   const [recordsStatus, setRecordsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -85,15 +88,15 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-night/40 backdrop-blur-md flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-night/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${uid}-title`}
-        className="w-full max-w-lg bg-card rounded-3xl shadow-lg border border-ink/10 p-6 flex flex-col gap-5"
+        className="w-full max-w-lg bg-card rounded-2xl shadow-lg border border-card-border p-6 flex flex-col gap-5"
       >
-        <div className="flex items-center justify-between pb-3 border-b border-ink/5">
+        <div className="flex items-center justify-between pb-3 border-b border-card-border">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-ink flex items-center justify-center text-white shadow-sm">
               <Icon name="key" size={20} />
@@ -106,7 +109,7 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Close"
-            className="w-7 h-7 rounded-full bg-fog/70 hover:bg-fog text-ink flex items-center justify-center transition-colors ring-1 ring-ink/5 active:scale-95"
+            className="w-7 h-7 rounded-full bg-fog/70 hover:bg-fog text-ink flex items-center justify-center transition-colors ring-1 ring-card-border active:scale-95 cursor-pointer"
           >
             <Icon name="close" size={16} />
           </button>
@@ -119,30 +122,30 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
             </div>
             <h4 className="text-lg font-bold text-ink tracking-tight">Push Notification Dispatched</h4>
             <p className="text-xs text-ink-muted max-w-xs leading-relaxed">
-              A high-priority OTP verification modal has been sent via WebSockets to {patient.full_name}'s mobile device.
+              A high-priority OTP verification modal has been sent via WebSockets to {formatLocalizedName(patient.full_name, selectedLanguage)}'s mobile device.
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
             {/* Target Patient Info */}
-            <div className="p-3 rounded-2xl bg-base flex items-center justify-between border border-ink/5">
+            <div className="p-3 rounded-xl bg-base flex items-center justify-between border border-card-border">
               <div className="flex flex-col">
                 <span className="text-3xs font-semibold text-ink-muted uppercase">Subject Data Principal</span>
-                <span className="text-sm font-semibold text-ink">{patient.full_name}</span>
+                <span className="text-sm font-semibold text-ink">{formatLocalizedName(patient.full_name, selectedLanguage)}</span>
               </div>
               <span className="text-xs font-mono font-semibold text-primary bg-primary-tint px-2.5 py-0.5 rounded-full">
                 {patient.abha_address}
               </span>
             </div>
 
-            {/* Target Health Record */}
+            {/* Target Health Record (white fill, 1px #728A97 border, 2px focus ring) */}
             <div className="flex flex-col gap-1">
               <label htmlFor={`${uid}-record`} className="text-2xs font-semibold text-ink-muted uppercase tracking-wider">Requested Record Artifact</label>
               <select
                 id={`${uid}-record`}
                 value={selectedRecord}
                 onChange={(e) => setSelectedRecord(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl bg-base hover:bg-fog/70 border border-ink/5 text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                className="w-full h-10 px-3 rounded-xl bg-card border border-[#728A97] text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
               >
                 {recordsStatus === 'loading' && <option value="">Loading records…</option>}
                 {recordsStatus === 'error' && <option value="">Could not load records</option>}
@@ -151,13 +154,13 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
                 )}
                 {records.map((r) => (
                   <option key={r.record_id} value={r.record_id}>
-                    {r.title} ({r.date_str}){r.consent_status === 'approved' ? ' — access active' : ''}
+                    {stripNonLatinParentheses(r.title)} ({r.date_str}){r.consent_status === 'approved' ? ' — access active' : ''}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Purpose Specificity */}
+            {/* Purpose Specificity (white fill, 1px #728A97 border, 2px focus ring) */}
             <div className="flex flex-col gap-1">
               <label htmlFor={`${uid}-purpose`} className="text-2xs font-semibold text-ink-muted uppercase tracking-wider">
                 Stated Clinical Purpose (DPDP Compliance)
@@ -167,7 +170,7 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
                 value={clinicalPurpose}
                 onChange={(e) => setClinicalPurpose(e.target.value)}
                 rows={2}
-                className="w-full p-2.5 rounded-xl bg-base hover:bg-fog/70 border border-ink/5 text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                className="w-full p-2.5 rounded-xl bg-card border border-[#728A97] text-xs text-ink focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
                 required
               />
               <span className="text-3xs text-ink-muted">

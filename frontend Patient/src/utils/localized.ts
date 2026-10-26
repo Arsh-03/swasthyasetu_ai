@@ -11,16 +11,50 @@ const FALLBACK_ORDER: SupportedLanguage[] = ['en', 'kn', 'hi'];
 
 const usable = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
+const isIndic = (s: string) => /[\u0C80-\u0CFF\u0900-\u097F]/.test(s);
+const isKannada = (s: string) => /[\u0C80-\u0CFF]/.test(s);
+const isHindi = (s: string) => /[\u0900-\u097F]/.test(s);
+
+/**
+ * In English mode, shows only the English part of bilingual strings like "Fever (ಜ್ವರ / बुखार)".
+ * In Indic modes, extracts the relevant localized script option if present in brackets.
+ */
+export const cleanBilingualString = (text: string, lang: SupportedLanguage): string => {
+  const match = text.match(/^([^()]+)\s*\(([^()]+)\)$/);
+  if (!match) return text;
+
+  const englishPart = match[1].trim();
+  const bracketPart = match[2].trim();
+
+  if (lang === 'en') {
+    if (isIndic(bracketPart)) return englishPart;
+    return text;
+  }
+
+  const options = bracketPart.split('/').map((s) => s.trim());
+  if (lang === 'kn') {
+    const kn = options.find(isKannada);
+    if (kn) return kn;
+    if (isKannada(englishPart)) return englishPart;
+  } else if (lang === 'hi') {
+    const hi = options.find(isHindi);
+    if (hi) return hi;
+    if (isHindi(englishPart)) return englishPart;
+  }
+
+  return englishPart;
+};
+
 /**
  * Text in the active language, else English, else any language that has a value, else ''.
- * A plain string is returned unchanged.
+ * Bilingual annotations (e.g. "Fever (ಜ್ವರ / बुखार)") are cleaned per active language.
  */
 export const localized = (value: LocalizedText | null | undefined, lang: SupportedLanguage): string => {
   if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (usable(value[lang])) return value[lang] as string;
+  if (typeof value === 'string') return cleanBilingualString(value, lang);
+  if (usable(value[lang])) return cleanBilingualString(value[lang] as string, lang);
   for (const l of FALLBACK_ORDER) {
-    if (usable(value[l])) return value[l] as string;
+    if (usable(value[l])) return cleanBilingualString(value[l] as string, lang);
   }
   return '';
 };

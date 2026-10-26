@@ -1,32 +1,14 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { DoctorProfile } from '../services/api';
-import { t, type SupportedLanguage } from '../utils/translations';
+import { t, type SupportedLanguage, stripNonLatinParentheses } from '../utils/translations';
 import { Icon } from './ui/Icon';
+import { Avatar } from './ui/Avatar';
 
-const LANGUAGES: SupportedLanguage[] = ['en', 'kn', 'hi'];
-const LANGUAGE_NAMES: Record<SupportedLanguage, string> = { en: 'English', kn: 'ಕನ್ನಡ', hi: 'हिंदी' };
-
-// Stacks every language's version of a label in one grid cell and shows only
-// the active one, so the element is always as wide as its longest translation
-// and the navbar doesn't shift when the language changes.
-const StableLabel: React.FC<{ lang: SupportedLanguage; text: (l: SupportedLanguage) => string; className?: string }> = ({
-  lang,
-  text,
-  className = '',
-}) => (
-  <span className={`inline-grid ${className}`}>
-    {LANGUAGES.map((l) => (
-      <span
-        key={l}
-        lang={l}
-        aria-hidden={l !== lang}
-        className={`[grid-area:1/1] whitespace-nowrap ${l === lang ? '' : 'invisible'}`}
-      >
-        {text(l)}
-      </span>
-    ))}
-  </span>
-);
+const LANGUAGE_NAMES: Record<SupportedLanguage, string> = {
+  en: 'English',
+  kn: 'ಕನ್ನಡ',
+  hi: 'हिंदी',
+};
 
 interface DoctorHeaderProps {
   activeTab: 'patient-queue' | 'patient-chart' | 'active-consultation' | 'clinical-records' | 'audit-trail';
@@ -55,188 +37,219 @@ export const DoctorHeader: React.FC<DoctorHeaderProps> = ({
   isCallActive,
   onReturnToCall,
 }) => {
-  // e.g. "Dr. Ananya Sharma" -> short "Dr. Ananya", initials "AS"
-  const nameParts = (doctor?.display_name || '').replace(/^Dr\.?\s*/i, '').split(/\s+/).filter(Boolean);
-  const doctorShortName = nameParts.length ? `Dr. ${nameParts[0]}` : '…';
-  const doctorInitials =
-    nameParts.length > 1
-      ? `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase()
-      : (nameParts[0]?.[0] || 'D').toUpperCase();
+  const [isMac] = useState<boolean>(() => {
+    if (typeof navigator === 'undefined') return false;
+    const platform =
+      (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData?.platform ||
+      navigator.platform ||
+      navigator.userAgent ||
+      '';
+    return /(Mac|iPhone|iPod|iPad)/i.test(platform);
+  });
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Global Ctrl+K / Cmd+K shortcut listener to focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Close menu on click outside or Escape
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isMenuOpen]);
+
+  // e.g. "Dr. Ananya Sharma" -> short "Dr. Ananya"
+  const cleanDisplayName = doctor?.display_name
+    ? (selectedLanguage === 'en' ? stripNonLatinParentheses(doctor.display_name) : doctor.display_name)
+    : 'Dr. Doctor';
+  const nameParts = cleanDisplayName.replace(/^Dr\.?\s*/i, '').split(/\s+/).filter(Boolean);
+  const doctorShortName = nameParts.length ? `Dr. ${nameParts[0]}` : cleanDisplayName;
+
+  const shortcutHint = isMac ? '⌘K' : 'Ctrl K';
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 glass-toolbar shadow-sm transition-all duration-200">
-      <div className="h-16 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
-        {/* Brand & macOS Segmented Tab Navigation */}
-        <div className="flex items-center gap-4 lg:gap-6 shrink-0">
+    <header className="w-full h-14 shrink-0 glass-toolbar border-b border-card-border z-30 transition-all duration-200">
+      <div className="h-14 w-full px-4 sm:px-5 flex items-center justify-between gap-2 sm:gap-4">
+        {/* Left: Brand Logo + SwasthyaSetu */}
+        <div className="flex items-center shrink-0">
           <button
             type="button"
-            className="flex items-center gap-2.5 cursor-pointer select-none group text-left rounded-xl"
+            className="flex items-center gap-2 cursor-pointer select-none group text-left rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/40"
             onClick={() => setActiveTab('patient-queue')}
+            title="SwasthyaSetu - Patient Queue"
           >
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-ink flex items-center justify-center shadow-sm ring-1 ring-white/30 group-hover:scale-105 transition-transform">
-              <Icon name="brand" size={20} tone="onPrimary" weight="duotone" />
+            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-ink flex items-center justify-center shadow-xs ring-1 ring-white/30 group-hover:scale-105 transition-transform">
+              <Icon name="brand" size={18} tone="onPrimary" weight="duotone" />
             </span>
             <span className="flex flex-col">
-              <span className="text-subhead font-semibold text-ink tracking-tight leading-none">
+              <span className="text-sm font-bold text-ink tracking-tight leading-tight">
                 SwasthyaSetu
               </span>
-              <span className="text-3xs font-medium text-ink-muted uppercase tracking-wider mt-0.5">
-                <StableLabel lang={selectedLanguage} text={(l) => t(l, 'clinicianStudio')} />
+              <span className="text-4xs font-medium text-ink-muted uppercase tracking-wider leading-none">
+                Clinician
               </span>
             </span>
           </button>
-
-          {/* macOS Style Segmented Control (Localized) */}
-          <nav className="hidden md:flex items-center p-1 rounded-xl bg-fog/40 ring-1 ring-ink/5">
-            <button
-              onClick={() => setActiveTab('patient-queue')}
-              aria-current={activeTab === 'patient-queue' ? 'page' : undefined}
-              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
-                activeTab === 'patient-queue'
-                  ? 'bg-card text-ink shadow-sm font-semibold'
-                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
-              }`}
-            >
-              <StableLabel lang={selectedLanguage} text={(l) => t(l, 'patientQueue')} />
-            </button>
-
-            <button
-              onClick={() => setActiveTab('patient-chart')}
-              aria-current={activeTab === 'patient-chart' ? 'page' : undefined}
-              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all flex items-center gap-1.5 ${
-                activeTab === 'patient-chart'
-                  ? 'bg-card text-ink shadow-sm font-semibold'
-                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
-              }`}
-            >
-              <StableLabel lang={selectedLanguage} text={(l) => t(l, 'patientChart')} />
-              {selectedPatientName && (
-                <span className="text-3xs px-1.5 py-0.5 rounded-full bg-primary-tint text-primary max-w-[90px] truncate">
-                  {selectedPatientName.split(' ')[0]}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab('clinical-records')}
-              aria-current={activeTab === 'clinical-records' ? 'page' : undefined}
-              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
-                activeTab === 'clinical-records'
-                  ? 'bg-card text-ink shadow-sm font-semibold'
-                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
-              }`}
-            >
-              <StableLabel lang={selectedLanguage} text={(l) => t(l, 'clinicalRecords')} />
-            </button>
-
-            <button
-              onClick={() => setActiveTab('audit-trail')}
-              aria-current={activeTab === 'audit-trail' ? 'page' : undefined}
-              className={`px-3 py-1.5 rounded-[9px] text-footnote font-medium transition-all ${
-                activeTab === 'audit-trail'
-                  ? 'bg-card text-ink shadow-sm font-semibold'
-                  : 'text-ink-muted hover:text-ink hover:bg-ink/5'
-              }`}
-            >
-              <StableLabel lang={selectedLanguage} text={(l) => t(l, 'auditTrail')} />
-            </button>
-          </nav>
         </div>
 
-        {/* Global Apple Search Field */}
-        <div className="flex-1 max-w-xs hidden xl:block">
-          <div className="relative flex items-center">
-            <Icon name="search" size={18} tone="muted" weight="duotone" className="absolute left-2.5" />
+        {/* Center: Global Search with Platform Shortcut Hint */}
+        <div className="flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2 sm:mx-4 flex justify-center">
+          <div className="relative w-full flex items-center">
+            <Icon
+              name="search"
+              size={15}
+              tone="muted"
+              weight="duotone"
+              className="absolute left-2.5 pointer-events-none"
+            />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t(selectedLanguage, 'searchPlaceholder')}
               aria-label={t(selectedLanguage, 'searchPlaceholder')}
-              className="w-full h-8 pl-8 pr-8 rounded-lg bg-fog/40 hover:bg-fog/60 focus:bg-card text-ink placeholder:text-ink-muted text-footnote focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary border border-transparent transition-all"
+              className="w-full h-8 pl-8 pr-14 rounded-lg bg-fog/50 hover:bg-fog/80 focus:bg-card text-ink placeholder:text-ink-muted text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary border border-ink/5 transition-all"
             />
-            <kbd aria-hidden className="absolute right-2 px-1.5 py-0.5 rounded text-3xs font-mono text-ink-muted bg-white/70 border border-ink/5 shadow-xs">
-              ⌘K
+            <kbd
+              aria-hidden="true"
+              className="absolute right-2 px-1.5 py-0.5 rounded text-4xs font-mono font-medium text-ink-muted bg-card border border-ink/10 shadow-2xs pointer-events-none select-none"
+            >
+              {shortcutHint}
             </kbd>
           </div>
         </div>
 
-        {/* Right Action Cluster: Active Call return indicator, Language Switcher, Clinician Profile */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Active Call Floating Return Pill (if call in progress while viewing chart/records) */}
+        {/* Right: Call return pill, Language toggle, Doctor info, Menu dropdown */}
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Active Call Floating Return Pill (if call in progress) */}
           {isCallActive && activeTab !== 'active-consultation' && onReturnToCall && (
             <button
+              type="button"
               onClick={onReturnToCall}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-success-deep hover:bg-success-pressed text-white text-xs font-semibold shadow-sm animate-pulse active:scale-95 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-success-deep hover:bg-success-pressed text-white text-xs font-semibold shadow-2xs animate-pulse active:scale-95 transition-all cursor-pointer"
               title="Return to Ongoing Consultation"
             >
-              <Icon name="call" size={15} />
-              <StableLabel lang={selectedLanguage} text={(l) => t(l, 'activeCall')} className="hidden sm:inline-grid" />
+              <Icon name="call" size={13} />
+              <span className="hidden sm:inline text-xs">
+                {selectedPatientName ? `${t(selectedLanguage, 'activeCall')} (${selectedPatientName})` : t(selectedLanguage, 'activeCall')}
+              </span>
             </button>
           )}
 
-          {/* Vernacular Indic / English Switcher Pill */}
+          {/* Language Toggle Pill */}
           <button
-            onClick={() => setSelectedLanguage(selectedLanguage === 'en' ? 'kn' : selectedLanguage === 'kn' ? 'hi' : 'en')}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-fog/70 hover:bg-fog text-ink ring-1 ring-ink/5 transition-all cursor-pointer"
+            type="button"
+            onClick={() =>
+              setSelectedLanguage(
+                selectedLanguage === 'en' ? 'kn' : selectedLanguage === 'kn' ? 'hi' : 'en'
+              )
+            }
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-fog/60 hover:bg-fog text-ink border border-ink/5 transition-all cursor-pointer"
             title="Switch Language"
             aria-label={`Switch language (${LANGUAGE_NAMES[selectedLanguage]})`}
           >
-            <StableLabel lang={selectedLanguage} text={(l) => LANGUAGE_NAMES[l]} className="text-footnote font-medium" />
-            <span className="text-4xs uppercase px-1 py-0.5 rounded bg-card font-mono text-ink-muted">
+            <span className="font-medium text-xs">{LANGUAGE_NAMES[selectedLanguage]}</span>
+            <span className="text-4xs uppercase px-1 py-0.5 rounded bg-card font-mono text-ink-muted border border-ink/5">
               {selectedLanguage}
             </span>
           </button>
 
-          {/* Clinician Monogram Pill with Duty Tag */}
-          <div className="flex items-center gap-2 pl-2 border-l border-ink/10">
-            {/* Below 1536px only the initials avatar shows (the name stays available to screen readers) so the header fits from 1280px in every language */}
-            <div
-              className="flex items-center gap-2.5 py-1 px-2.5 max-2xl:px-1 rounded-full bg-white/90 border border-ink/5 shadow-sm"
-              title={doctor ? `${doctor.display_name} · ${doctor.registration_number}` : undefined}
-            >
-              <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-primary to-ink text-white text-2xs font-semibold flex items-center justify-center ring-1 ring-ink/10 shrink-0 shadow-xs">
-                {doctorInitials}
-              </div>
-              <div className="flex flex-col text-left max-2xl:sr-only">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-ink leading-none">
-                    {doctorShortName}
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-4xs font-medium ${
-                      isCallActive
-                        ? 'bg-primary-tint text-primary'
-                        : 'bg-success-tint text-success-deep'
-                    }`}
-                  >
-                    <span
-                      className={`w-1 h-1 rounded-full ${
-                        isCallActive ? 'bg-primary animate-ping' : 'bg-success'
-                      }`}
-                    ></span>
-                    <StableLabel
-                      lang={selectedLanguage}
-                      text={(l) => (isCallActive ? t(l, 'inCall') : t(l, 'available'))}
-                    />
-                  </span>
-                </div>
-                <span className="text-3xs text-ink-muted leading-none mt-0.5 font-mono">
-                  {doctor?.registration_number || ''}
-                </span>
-              </div>
-            </div>
+          {/* Doctor Monogram & Name Pill */}
+          <div
+            className="flex items-center gap-2 py-0.5 px-2 rounded-full bg-card/80 border border-ink/5 shadow-2xs"
+            title={doctor ? `${cleanDisplayName} · ${doctor.registration_number}` : undefined}
+          >
+            <Avatar name={cleanDisplayName} size={26} domain="privacy" />
+            <span className="text-xs font-semibold text-ink leading-tight hidden lg:inline truncate max-w-[120px]">
+              {doctorShortName}
+            </span>
+          </div>
 
-            {/* Logout Action Button */}
-            {onLogout && (
-              <button
-                onClick={onLogout}
-                className="w-7 h-7 rounded-full bg-fog/70 hover:bg-danger-tint text-ink-muted hover:text-danger-deep flex items-center justify-center transition-colors ring-1 ring-ink/5 active:scale-95 cursor-pointer"
-                title={t(selectedLanguage, 'signOut')}
-                aria-label={t(selectedLanguage, 'signOut')}
-              >
-                <Icon name="signOut" size={15} />
-              </button>
+          {/* Dropdown Menu (Kebab) */}
+          <div className="relative" ref={menuRef}>
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen((prev) => !prev)}
+              aria-expanded={isMenuOpen}
+              aria-haspopup="true"
+              className="w-8 h-8 rounded-lg bg-fog/60 hover:bg-fog text-ink-muted hover:text-ink flex items-center justify-center border border-ink/5 transition-colors cursor-pointer"
+              title="More options"
+              aria-label="More options"
+            >
+              <Icon name="menu" size={17} />
+            </button>
+
+            {isMenuOpen && (
+              <div className="absolute right-0 mt-1.5 w-56 rounded-xl bg-card border border-ink/10 shadow-lg p-1.5 z-50">
+                <div className="px-3 py-2 border-b border-ink/5">
+                  <p className="text-xs font-bold text-ink leading-tight truncate">
+                    {cleanDisplayName}
+                  </p>
+                  <p className="text-3xs text-ink-muted font-mono mt-0.5">
+                    {doctor?.registration_number || 'KMC-84920'}
+                  </p>
+                  <div className="flex items-center gap-1 mt-1 text-4xs font-medium text-success-deep">
+                    <span className="w-1.5 h-1.5 rounded-full bg-success"></span>
+                    <span>{t(selectedLanguage, 'available')}</span>
+                  </div>
+                </div>
+
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('audit-trail');
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-ink hover:bg-base rounded-lg transition-colors text-left cursor-pointer"
+                  >
+                    <Icon name="shieldCheck" size={15} tone="navy" />
+                    <span>{t(selectedLanguage, 'auditTrail')}</span>
+                  </button>
+                </div>
+
+                {onLogout && (
+                  <div className="pt-1 border-t border-ink/5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-danger-deep hover:bg-danger-tint rounded-lg transition-colors text-left cursor-pointer"
+                    >
+                      <Icon name="signOut" size={15} tone="danger" />
+                      <span>{t(selectedLanguage, 'signOut')}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

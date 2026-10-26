@@ -2,7 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import type { PatientSummary } from '../services/api';
 import { api } from '../services/api';
 import { Icon } from './ui/Icon';
+import { Avatar } from './ui/Avatar';
 import { buildIceServers, CallSession, type CallConnection, type SignalMessage } from '../services/callSession';
+import {
+  type SupportedLanguage,
+  formatLocalizedName,
+  formatLocalizedComplaint,
+  stripNonLatinParentheses,
+} from '../utils/translations';
 
 /** Sends frames over the portal's telehealth socket and lets the call listen for `webrtc` frames. */
 export interface CallSignaling {
@@ -40,6 +47,7 @@ interface ConsultationWorkspaceProps {
   onRequestRecordAccess: () => void;
   onPatientAccept?: () => void;
   onGoToQueue: () => void;
+  selectedLanguage?: SupportedLanguage;
 }
 
 export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
@@ -54,7 +62,9 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   onRequestRecordAccess,
   onPatientAccept,
   onGoToQueue,
+  selectedLanguage = 'en',
 }) => {
+  const patientDisplayName = patient ? formatLocalizedName(patient.full_name, selectedLanguage) : '';
   // Timer state - starts from 0 on connected call
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [callingSeconds, setCallingSeconds] = useState(0);
@@ -369,15 +379,15 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   // 1. STATE: IDLE (No Active Call)
   if (callState === 'idle' || !patient) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-full bg-card rounded-3xl p-8 sm:p-12 shadow-md border border-ink/5 flex flex-col items-center text-center gap-6">
-          <div className="w-20 h-20 rounded-3xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
-            <Icon name="video" size={36} />
+      <div className="w-full flex-1 flex flex-col items-center justify-center p-6 sm:p-10 min-h-[60vh]">
+        <div className="w-full max-w-xl bg-card rounded-2xl p-8 sm:p-10 shadow-md border border-card-border flex flex-col items-center text-center gap-5">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
+            <Icon name="video" size={32} />
           </div>
 
-          <div className="flex flex-col gap-2 max-w-md">
-            <h2 className="text-2xl font-bold text-ink tracking-tight">No Active Consultation</h2>
-            <p className="text-sm text-ink-muted leading-relaxed">
+          <div className="flex flex-col gap-1.5 max-w-md">
+            <h2 className="text-xl font-bold text-ink tracking-tight">No Active Consultation</h2>
+            <p className="text-xs text-ink-muted leading-relaxed">
               Consultations do not connect automatically. Select a triage patient from the queue to start an outgoing call.
             </p>
           </div>
@@ -385,25 +395,28 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           {patient ? (
             <div className="flex flex-col sm:flex-row items-center gap-3 mt-2">
               <button
+                type="button"
                 onClick={() => onStartCall(patient)}
-                className="px-6 py-3 rounded-2xl bg-primary hover:bg-primary-deep text-white font-semibold text-sm flex items-center gap-2.5 shadow-sm transition-all active:scale-95 cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-deep text-white font-semibold text-xs flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer"
               >
-                <Icon name="call" size={20} />
-                <span>Call {patient.full_name}</span>
+                <Icon name="call" size={16} />
+                <span>Call {patientDisplayName}</span>
               </button>
               <button
+                type="button"
                 onClick={onGoToQueue}
-                className="px-6 py-3 rounded-2xl bg-fog/80 hover:bg-fog text-ink font-medium text-sm transition-all cursor-pointer"
+                className="px-5 py-2.5 rounded-xl bg-fog hover:bg-fog/80 text-ink font-medium text-xs transition-all cursor-pointer border border-card-border"
               >
                 Return to Patient Queue
               </button>
             </div>
           ) : (
             <button
+              type="button"
               onClick={onGoToQueue}
-              className="px-6 py-3 rounded-2xl bg-primary hover:bg-primary-deep text-white font-semibold text-sm flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer mt-2"
+              className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-deep text-white font-semibold text-xs flex items-center gap-2 shadow-sm transition-all active:scale-95 cursor-pointer mt-2"
             >
-              <Icon name="people" size={20} />
+              <Icon name="people" size={16} />
               <span>Go to Patient Queue</span>
             </button>
           )}
@@ -412,31 +425,28 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
     );
   }
 
-  // 2. STATE: CALLING / OUTGOING RINGING (Apple FaceTime Calling Screen)
+  // 2. STATE: CALLING / OUTGOING RINGING (Fills main content area, 16px radius, no halo glow, avatar 96px)
   if (callState === 'calling') {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col items-center justify-center min-h-[70vh]">
-        <div className="w-full bg-night rounded-3xl p-8 sm:p-14 shadow-lg border border-white/10 flex flex-col items-center text-center gap-8 text-white relative overflow-hidden">
-          {/* Subtle Ambient Glow */}
-          <div className="absolute inset-0 bg-radial from-primary/20 via-transparent to-transparent opacity-60 pointer-events-none" />
-
-          {/* Patient Avatar with Animated Calling Rings */}
-          <div className="relative my-4">
-            <span className="absolute -inset-4 rounded-full bg-primary/20 animate-ping opacity-75" />
-            <span className="absolute -inset-8 rounded-full bg-primary/10 animate-pulse" />
-            <img
-              src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-              alt={patient.full_name}
-              className="relative w-28 h-28 rounded-full object-cover ring-4 ring-white/30 shadow-2xl"
+      <div className="w-full h-full flex-1 flex flex-col min-h-0">
+        <div className="w-full h-full flex-1 bg-night rounded-2xl p-8 sm:p-12 shadow-lg border border-white/10 flex flex-col items-center justify-center text-center gap-6 text-white relative overflow-hidden">
+          {/* Patient Avatar (No radial halo/glow rings; avatar 96px) */}
+          <div className="relative my-2">
+            <Avatar
+              src={patient.avatar_url}
+              name={patientDisplayName}
+              size={96}
+              domain="emergency"
+              className="relative shadow-xl"
             />
           </div>
 
-          <div className="flex flex-col gap-1.5 z-10">
+          <div className="flex flex-col gap-1 z-10">
             <span className="text-xs uppercase tracking-widest text-success font-bold">
               Outgoing Telehealth Video Call
             </span>
-            <h2 className="text-3xl font-bold tracking-tight text-white">{patient.full_name}</h2>
-            <span className="text-sm text-white/60 font-mono mt-1">{patient.abha_address}</span>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">{patientDisplayName}</h2>
+            <span className="text-sm text-white/60 font-mono mt-0.5">{patient.abha_address}</span>
             <div className="inline-flex items-center justify-center gap-2 mt-3 px-3.5 py-1 rounded-full bg-white/10 backdrop-blur-md self-center text-xs font-medium text-white/90">
               <span className="w-2 h-2 rounded-full bg-success animate-ping" />
               <span>Ringing patient's app... ({formatTimer(callingSeconds)})</span>
@@ -444,23 +454,25 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
           </div>
 
           {/* Action Row */}
-          <div className="flex flex-col items-center gap-4 z-10 mt-4">
-            {/* Cancel Call Button */}
+          <div className="flex flex-col items-center gap-3 z-10 mt-2">
+            {/* Cancel Call Button (flat red button) */}
             <button
+              type="button"
               onClick={handleEndCall}
-              className="w-16 h-16 rounded-full bg-danger-deep hover:bg-danger-pressed text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+              className="w-14 h-14 rounded-full bg-danger-deep hover:bg-danger-pressed text-white flex items-center justify-center shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer"
               title="Cancel Call"
               aria-label="Cancel call"
             >
-              <Icon name="callEnd" size={30} />
+              <Icon name="callEnd" size={26} />
             </button>
             <span className="text-xs text-white/70 font-medium">Cancel Call</span>
 
             {/* Demo Simulation Button */}
             {onPatientAccept && (
               <button
+                type="button"
                 onClick={onPatientAccept}
-                className="mt-4 px-4 py-2 rounded-full bg-white/15 hover:bg-white/25 text-xs text-white/90 font-medium border border-white/20 transition-all cursor-pointer backdrop-blur-md"
+                className="mt-2 px-4 py-1.5 rounded-full bg-white/15 hover:bg-white/25 text-xs text-white/90 font-medium border border-white/20 transition-all cursor-pointer backdrop-blur-md"
               >
                 <Icon name="mobile" size={14} className="inline-block align-[-2px]" /> Simulate Patient Answering Call (Demo)
               </button>
@@ -474,27 +486,29 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
   // 3. STATE: DECLINED
   if (callState === 'declined') {
     return (
-      <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12 flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="w-full bg-card rounded-3xl p-8 sm:p-12 shadow-md border border-ink/5 flex flex-col items-center text-center gap-5">
-          <div className="w-16 h-16 rounded-full bg-danger/10 text-danger-deep flex items-center justify-center">
-            <Icon name="callDeclined" size={30} />
+      <div className="w-full flex-1 flex flex-col items-center justify-center p-6 sm:p-10 min-h-[60vh]">
+        <div className="w-full max-w-xl bg-card rounded-2xl p-8 sm:p-10 shadow-md border border-card-border flex flex-col items-center text-center gap-5">
+          <div className="w-14 h-14 rounded-full bg-danger/10 text-danger-deep flex items-center justify-center">
+            <Icon name="callDeclined" size={28} />
           </div>
           <div className="flex flex-col gap-1">
-            <h2 className="text-2xl font-bold text-ink">Call Declined by Patient</h2>
-            <p className="text-sm text-ink-muted">
-              {patient.full_name} declined or was unavailable for the consultation.
+            <h2 className="text-xl font-bold text-ink">Call Declined by Patient</h2>
+            <p className="text-xs text-ink-muted">
+              {patientDisplayName} declined or was unavailable for the consultation.
             </p>
           </div>
-          <div className="flex items-center gap-3 mt-3">
+          <div className="flex items-center gap-3 mt-2">
             <button
+              type="button"
               onClick={() => onStartCall(patient)}
               className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-deep text-white font-semibold text-xs transition-all cursor-pointer"
             >
               Retry Call
             </button>
             <button
+              type="button"
               onClick={onGoToQueue}
-              className="px-5 py-2.5 rounded-xl bg-fog text-ink font-medium text-xs transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-fog text-ink font-medium text-xs transition-all cursor-pointer border border-card-border"
             >
               Return to Queue
             </button>
@@ -506,21 +520,23 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
 
   // 4. STATE: CONNECTED (Active Consultation Workspace)
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col gap-4">
+    <div className="w-full flex flex-col gap-4">
       {/* Top Active Patient Status Bar */}
-      <div className="w-full bg-card rounded-2xl p-3 px-5 shadow-sm border border-ink/5 flex items-center justify-between gap-4">
+      <div className="w-full bg-card rounded-2xl p-3 px-5 shadow-sm border border-card-border flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="relative shrink-0">
-            <img
-              src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-              alt={patient.full_name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-ink/5"
+            <Avatar
+              src={patient.avatar_url}
+              name={patientDisplayName}
+              size={40}
+              domain="emergency"
+              className="ring-2 ring-ink/5"
             />
             <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-success ring-2 ring-white"></span>
           </div>
           <div className="flex items-center gap-2 truncate">
             <span className="text-base font-bold text-ink tracking-tight truncate">
-              {patient.full_name}, {patient.demographics.age || 54} yrs
+              {patientDisplayName}, {patient.demographics.age || 54} yrs
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-success-tint text-success-deep text-2xs font-semibold shrink-0">
               <Icon name="verified" size={14} />
@@ -572,32 +588,34 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
       {/* Main 3-Column Consultation Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* 1. Left Column: Patient Clinical Summary (3 cols) */}
-        <aside className="lg:col-span-3 bg-card rounded-2xl p-4 shadow-sm border border-ink/5 flex flex-col gap-3.5">
-          <div className="flex flex-col items-center text-center pb-2 border-b border-ink/5">
+        <aside className="lg:col-span-3 bg-card rounded-2xl p-4 shadow-sm border border-card-border flex flex-col gap-3.5">
+          <div className="flex flex-col items-center text-center pb-2 border-b border-card-border">
             <div className="relative w-16 h-16 mb-2">
-              <img
-                src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                alt={patient.full_name}
-                className="w-16 h-16 rounded-full object-cover shadow-sm ring-1 ring-ink/10"
+              <Avatar
+                src={patient.avatar_url}
+                name={patientDisplayName}
+                size={64}
+                domain="emergency"
+                className="shadow-sm ring-1 ring-ink/10"
               />
               <span className="absolute -bottom-1 right-0 bg-primary text-white p-1 rounded-full shadow-sm flex items-center justify-center">
                 <Icon name="person" size={13} />
               </span>
             </div>
-            <h2 className="text-lg font-bold text-ink tracking-tight leading-tight">{patient.full_name}</h2>
+            <h2 className="text-lg font-bold text-ink tracking-tight leading-tight">{patientDisplayName}</h2>
             <span className="text-2xs font-mono text-ink-muted mt-0.5">{patient.abha_address}</span>
           </div>
 
           {/* Metric Badges Stack */}
           <div className="flex flex-col gap-2">
             {/* Complaint */}
-            <div className="p-2.5 rounded-xl bg-base flex items-center gap-2.5 border border-ink/5">
+            <div className="p-2.5 rounded-xl bg-base flex items-center gap-2.5 border border-card-border">
               <span className="w-8 h-8 rounded-lg bg-card flex items-center justify-center text-primary shrink-0 shadow-2xs">
                 <Icon name="symptom" size={18} />
               </span>
               <div className="flex flex-col min-w-0">
                 <span className="text-4xs font-semibold text-ink-muted uppercase tracking-wider">Chief Complaint</span>
-                <span className="text-xs font-semibold text-ink truncate">{patient.complaint || 'Not recorded'}</span>
+                <span className="text-xs font-semibold text-ink truncate">{formatLocalizedComplaint(patient.complaint, selectedLanguage) || 'Not recorded'}</span>
               </div>
             </div>
 
@@ -609,7 +627,7 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 </span>
                 <div className="flex flex-col min-w-0">
                   <span className="text-4xs font-semibold uppercase tracking-wider">Documented Allergy</span>
-                  <span className="text-xs font-semibold truncate">{patient.allergies.join(', ')}</span>
+                  <span className="text-xs font-semibold truncate">{stripNonLatinParentheses(patient.allergies.join(', '))}</span>
                 </div>
               </div>
             )}
@@ -679,12 +697,14 @@ export const ConsultationWorkspace: React.FC<ConsultationWorkspaceProps> = ({
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center gap-3 text-white px-6 text-center">
-                  <img
-                    src={patient.avatar_url || 'https://lh3.googleusercontent.com/aida-public/AB6AXuBQT6aO4C_m4NbriR87bXfRSNMmR-rpf-JWoKt4ZFzWNtNKGEO_emcIywgRVu5wpWiGBmhJ2tsMCKVdWy_wNtRlGlU29KXuJLJkgl3EaJoZ_OpalP9oj00UIVWgmwVMAn7fweec4XpDLfRUrV8PVV7hU6D00rfgD14OYCAurD1_RzwSwopbfNjsiqEnC8c_Q9KV8uIJXW_cY0zblJRpxmUEP51ehbZrISqXIbtk1KKAbWVzidj3oIQEMg'}
-                    alt={patient.full_name}
-                    className="w-20 h-20 rounded-full object-cover ring-2 ring-white/30"
+                  <Avatar
+                    src={patient.avatar_url}
+                    name={patientDisplayName}
+                    size={80}
+                    domain="emergency"
+                    className="ring-2 ring-white/30"
                   />
-                  <span className="text-sm font-semibold">{patient.full_name}</span>
+                  <span className="text-sm font-semibold">{patientDisplayName}</span>
                   <span className="text-xs text-ice" aria-live="polite">{patientStatus}</span>
                 </div>
               )

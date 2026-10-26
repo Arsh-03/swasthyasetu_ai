@@ -4,12 +4,22 @@ import { cx } from './cx';
 type BoxProps = HTMLAttributes<HTMLElement> & {
   as?: ElementType;
   compact?: boolean;
+  interactive?: boolean;
   children?: ReactNode;
 };
 
 /** Card / Panel: pure white (#FFFFFF), 1px border (#DCE5EA), e1 elevation. */
-export function NeuPanel({ as: Tag = 'section', className, ...rest }: BoxProps) {
-  return <Tag className={cx('surface-card rounded-panel p-4', className)} {...rest} />;
+export function NeuPanel({ as: Tag = 'section', interactive, className, ...rest }: BoxProps) {
+  return (
+    <Tag
+      className={cx(
+        interactive ? 'surface-interactive' : 'surface-card',
+        'rounded-panel p-4',
+        className,
+      )}
+      {...rest}
+    />
+  );
 }
 
 export function NeuRaised({ as: Tag = 'div', className, ...rest }: BoxProps) {
