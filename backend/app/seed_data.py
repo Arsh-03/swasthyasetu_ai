@@ -73,6 +73,7 @@ async def backfill_appointment_times():
 
 
 async def seed_database():
+    from app.care_network import ensure_care_network
     from app.demo_schedule import ensure_demo_schedule
     from app.services.migrations import add_missing_columns
 
@@ -90,6 +91,7 @@ async def seed_database():
     async with AsyncSessionLocal() as session:
         if await ensure_codes(session):
             await session.commit()
+    await ensure_care_network()  # OPD doctors in every department + the demo patient's care team
 
 
 async def _seed_base_data():

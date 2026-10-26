@@ -5,6 +5,8 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { EmptyAppointments } from './illustrations';
 import { parseDateLabel, parseTimeLabel, relativeDay, formatLongDate, daysAgoKey, inDaysKey } from '../utils/dates';
 import { localized, type LocalizedText } from '../utils/localized';
+import { departmentName } from '../utils/departments';
+import { DepartmentBadge, DoctorAvatar } from './doctors/DoctorParts';
 import { AppText, AudioListenButton, Badge, CriticalButton, ExpandableText, Groove, Icon, IconDisc, type IconName, NeuInset, NeuPanel } from './ui';
 
 export interface PatientAppointmentInfo {
@@ -18,6 +20,10 @@ export interface PatientAppointmentInfo {
   agenda?: LocalizedText;
   isRescheduled?: boolean;
   meetingCode?: string | null;
+  /** Which of the patient's doctors, their OPD department and video / in-person. */
+  practitionerId?: string | null;
+  department?: string;
+  mode?: string;
 }
 
 export type AppointmentStatus = 'loading' | 'ready' | 'error';
@@ -41,6 +47,7 @@ const DOCTOR_PHOTO_URL =
 export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoinCall, appointment, status }) => {
   const { lang, t } = useLanguage();
   const join = <CriticalButton tone="primary" label={t('joinConsultationCall')} icon="video" onPress={onJoinCall} />;
+  const inPersonVisit = !!appointment?.mode && !appointment.mode.toLowerCase().includes('video');
 
   if (!appointment) {
     return (
@@ -82,10 +89,12 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
   // Parsed calendar date → full localised date; unparsable labels are shown as sent
   const calendar = parseDateLabel(appointment.date);
   const dateText = calendar ? formatLongDate(calendar, lang) : appointment.date || '—';
-  const clinic = [localized(appointment.facility, lang), localized(appointment.specialty, lang)].filter(Boolean).join(' • ');
+  const dept = departmentName(appointment.department, lang);
+  const inPerson = !!appointment.mode && !appointment.mode.toLowerCase().includes('video');
+  const clinic = localized(appointment.facility, lang) || localized(appointment.specialty, lang);
   const agenda = localized(appointment.agenda, lang);
   const spoken = () =>
-    [t('appointmentSpoken', { time: appointment.time, date: dateText, doctor }), clinic, agenda]
+    [t('appointmentSpoken', { time: appointment.time, date: dateText, doctor }), dept, clinic, agenda]
       .filter(Boolean)
       .join('. ');
 
@@ -100,7 +109,8 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
 
       {/* Time + doctor */}
       <View style={styles.header}>
-        <DoctorPortrait />
+        {/* The demo portrait belongs to Dr. Ananya; every other doctor gets their initials */}
+        {/ananya/i.test(doctor) ? <DoctorPortrait /> : <DoctorAvatar name={doctor} department={appointment.department} size={72} />}
         <View style={styles.headerText}>
           <AppointmentTime label={appointment.time} />
           <AppText variant="callout" numberOfLines={2}>
@@ -117,6 +127,8 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
       {/* Status at a glance: when (computed on device), plus reschedule if flagged */}
       <View style={styles.badges}>
         <RelativeBadge date={appointment.date} time={appointment.time} fallback={localized(appointment.relativeTime, lang)} />
+        {appointment.department ? <DepartmentBadge department={appointment.department} size="md" /> : null}
+        {inPerson ? <Badge label={t('visitInPerson')} tone="teal" icon="hospital" size="md" /> : null}
         {appointment.isRescheduled ? (
           <>
             <Badge label={t('rescheduledByClinician')} tone="primary" icon="rescheduled" size="md" />
@@ -136,7 +148,16 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
         ) : null}
       </View>
 
-      {join}
+      {inPersonVisit ? (
+        <View style={styles.inline}>
+          <Icon name="mapPin" size={18} color={colors.inkMuted} />
+          <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
+            {t('inPersonAt', { place: localized(appointment.facility, lang) || t('theClinic') })}
+          </AppText>
+        </View>
+      ) : (
+        join
+      )}
     </NeuPanel>
   );
 };

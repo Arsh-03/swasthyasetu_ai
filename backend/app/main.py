@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.seed_data import seed_database
-from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls, doctor, chat, vitals, asha, privacy, lab, partner
+from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls, doctor, chat, vitals, asha, privacy, lab, partner, care
 from app.services.connection_manager import ws_manager
 from app.services.auth_dependencies import decode_access_token
 from app.services.llm_completion import completion_service
@@ -59,6 +59,7 @@ app.include_router(asha.router, prefix=settings.API_V1_STR)
 app.include_router(privacy.router, prefix=settings.API_V1_STR)
 app.include_router(lab.router, prefix=settings.API_V1_STR)
 app.include_router(partner.router, prefix=settings.API_V1_STR)
+app.include_router(care.router, prefix=settings.API_V1_STR)
 app.include_router(calls.ws_router)
 app.include_router(intellisense.ws_router)
 

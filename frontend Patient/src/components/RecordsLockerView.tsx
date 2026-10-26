@@ -17,12 +17,14 @@ import {
   ListRow,
   NavBar,
   NeuList,
+  PrimaryButton,
   ScreenScroll,
   ScreenHeader,
   SecondaryButton,
   SectionHeader,
   SegmentedControl,
 } from './ui';
+import { UploadReportModal } from './UploadReportModal';
 
 interface LockerRecord {
   id: string;
@@ -81,6 +83,7 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
   const [records, setRecords] = useState<LockerRecord[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [reloadKey, setReloadKey] = useState(0);
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,7 +150,18 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
       />
 
       <View style={styles.section}>
-        <SectionHeader title={t('clinicalDocuments')} count={status === 'ready' ? filteredRecords.length : undefined} />
+        <SectionHeader
+          title={t('clinicalDocuments')}
+          count={status === 'ready' ? filteredRecords.length : undefined}
+          right={
+            <PrimaryButton
+              label={t('uploadReport')}
+              icon="upload"
+              size="sm"
+              onPress={() => setUploadModalVisible(true)}
+            />
+          }
+        />
 
         {filteredRecords.length === 0 ? (
           // Empty / loading / error: raised panel so the retry button never sits inside an inset
@@ -172,9 +186,17 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
                   <SecondaryButton label={t('retry')} tone="primary" size="sm" onPress={retry} />
                 </>
               ) : (
-                <AppText variant="headline" align="center">
-                  {records.length === 0 ? t('noRecordsYet') : t('noRecordsInCategory')}
-                </AppText>
+                <>
+                  <AppText variant="headline" align="center">
+                    {records.length === 0 ? t('noRecordsYet') : t('noRecordsInCategory')}
+                  </AppText>
+                  <PrimaryButton
+                    label={t('uploadReport')}
+                    icon="upload"
+                    size="sm"
+                    onPress={() => setUploadModalVisible(true)}
+                  />
+                </>
               )}
             </View>
           </Card>
@@ -236,6 +258,15 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
           </AppText>
         </View>
       </Card>
+
+      <UploadReportModal
+        visible={uploadModalVisible}
+        patientId={patientId}
+        onClose={() => setUploadModalVisible(false)}
+        onUploadSuccess={(newRec) => {
+          setRecords((prev) => [toLockerRecord(newRec), ...prev]);
+        }}
+      />
     </ScreenScroll>
   );
 };

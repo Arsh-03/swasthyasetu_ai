@@ -180,6 +180,27 @@ function OverviewTab({ detail, onOpenVisits, onChanged }: { detail: PatientDetai
             {detail.upcoming[0] ? <AppointmentRow apt={detail.upcoming[0]} showDate hidePatient /> : <p className="px-3 pb-2 text-sm text-ink-muted">{t('notBooked')}</p>}
           </div>
         </Card>
+        {detail.care_team && detail.care_team.length > 0 && (
+          <Card>
+            <CardHeader icon="people" title={t('otherDoctors')} subtitle={t('otherDoctorsHint')} />
+            <ul className="px-5 pb-5 flex flex-col gap-3">
+              {detail.care_team.map((d) => (
+                <li key={d.practitioner_id} className="flex items-start gap-3">
+                  <Icon name="doctor" size={18} className="mt-0.5 text-ink-muted" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-ink truncate">{d.name}</p>
+                    <p className="text-xs text-ink-muted">
+                      {[d.department_name, d.reason].filter(Boolean).join(' · ')}
+                    </p>
+                    {d.next_appointment_at && (
+                      <p className="text-2xs text-ink-muted">{t('otherDoctorNext', { date: fmt.date(d.next_appointment_at) })}</p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
         <ReadingsCard patientId={p.patient_id} readings={detail.readings} requests={detail.requests} onChanged={onChanged} />
         <Card>
           <CardHeader icon="symptom" title={t('activeConditions')} />

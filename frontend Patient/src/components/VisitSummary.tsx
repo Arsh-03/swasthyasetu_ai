@@ -44,7 +44,12 @@ export const SummaryOfferSheet: React.FC<{ summaryId: string | null; onDone: (sa
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<VisitSummaryData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { setSaved(null); setError(null); }, [summaryId]);
+  const [prevSummaryId, setPrevSummaryId] = useState(summaryId);
+  if (prevSummaryId !== summaryId) {
+    setPrevSummaryId(summaryId);
+    setSaved(null);
+    setError(null);
+  }
 
   const accept = async () => {
     if (!summaryId) return;

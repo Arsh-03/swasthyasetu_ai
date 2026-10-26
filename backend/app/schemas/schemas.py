@@ -23,6 +23,7 @@ class PatientRegisterRequest(BaseModel):
     age: int = 54
     gender: str = "male"
     district: str = "Hassan, Karnataka"
+    initial_record: Optional[Dict[str, Any]] = None
 
 class CreateAbhaRequest(BaseModel):
     full_name: str
@@ -67,6 +68,7 @@ class DoctorRegisterRequest(BaseModel):
     password: str
     specialty: str = "General Medicine"
     qualification: str = "MBBS, MD"
+    department: Optional[str] = None  # OPD department id (app/care_catalog.py); worked out from specialty if empty
 
 class AuthResponse(BaseModel):
     success: bool
@@ -274,3 +276,4 @@ class SymptomIntakeIn(BaseModel):
     symptoms: List[str] = []
     notes: Optional[str] = None
     is_representative: bool = False
+    practitioner_id: Optional[str] = None  # which of the patient's doctors this visit is for (None = triage)

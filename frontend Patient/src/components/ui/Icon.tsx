@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Icon as PhosphorIcon } from 'phosphor-react-native';
-// Per-icon imports (package "exports": ./src/icons/*) so only these glyphs are bundled.
+import { BellIcon } from 'phosphor-react-native/src/icons/Bell';
 import { BoneIcon } from 'phosphor-react-native/src/icons/Bone';
 import { ChatCircleTextIcon } from 'phosphor-react-native/src/icons/ChatCircleText';
 import { PaperPlaneRightIcon } from 'phosphor-react-native/src/icons/PaperPlaneRight';
@@ -66,6 +66,22 @@ import { WarningIcon } from 'phosphor-react-native/src/icons/Warning';
 import { WarningCircleIcon } from 'phosphor-react-native/src/icons/WarningCircle';
 import { WindIcon } from 'phosphor-react-native/src/icons/Wind';
 import { XIcon } from 'phosphor-react-native/src/icons/X';
+import { UploadSimpleIcon } from 'phosphor-react-native/src/icons/UploadSimple';
+import { HeartIcon } from 'phosphor-react-native/src/icons/Heart';
+import { EyeIcon } from 'phosphor-react-native/src/icons/Eye';
+import { EarIcon } from 'phosphor-react-native/src/icons/Ear';
+import { ToothIcon } from 'phosphor-react-native/src/icons/Tooth';
+import { BabyIcon } from 'phosphor-react-native/src/icons/Baby';
+import { DropIcon } from 'phosphor-react-native/src/icons/Drop';
+import { GenderFemaleIcon } from 'phosphor-react-native/src/icons/GenderFemale';
+import { HandIcon } from 'phosphor-react-native/src/icons/Hand';
+import { HospitalIcon } from 'phosphor-react-native/src/icons/Hospital';
+import { CalendarPlusIcon } from 'phosphor-react-native/src/icons/CalendarPlus';
+import { CalendarCheckIcon } from 'phosphor-react-native/src/icons/CalendarCheck';
+import { CalendarXIcon } from 'phosphor-react-native/src/icons/CalendarX';
+import { MapPinIcon } from 'phosphor-react-native/src/icons/MapPin';
+import { UserMinusIcon } from 'phosphor-react-native/src/icons/UserMinus';
+import { PlusIcon } from 'phosphor-react-native/src/icons/Plus';
 import { colors } from '../../theme/tokens';
 import { checkIconContrast } from '../../utils/devChecks';
 
@@ -85,6 +101,7 @@ const REGISTRY = {
   translate: TranslateIcon,
   signIn: SignInIcon,
   signOut: SignOutIcon,
+  upload: UploadSimpleIcon,
 
   // Trust & consent
   shield: ShieldIcon,
@@ -105,7 +122,8 @@ const REGISTRY = {
   emergency: SirenIcon,
   help: LifebuoyIcon,
 
-  // Time
+  // Time & reminders
+  bell: BellIcon,
   calendar: CalendarBlankIcon,
   rescheduled: ClockCounterClockwiseIcon,
   clock: ClockIcon,
@@ -152,6 +170,23 @@ const REGISTRY = {
   joint: BoneIcon,
   headache: BrainIcon,
   nausea: SmileySadIcon,
+
+  // OPD departments & booking (My Doctors)
+  heart: HeartIcon,
+  eye: EyeIcon,
+  ear: EarIcon,
+  tooth: ToothIcon,
+  baby: BabyIcon,
+  drop: DropIcon,
+  female: GenderFemaleIcon,
+  hand: HandIcon,
+  hospital: HospitalIcon,
+  calendarPlus: CalendarPlusIcon,
+  calendarCheck: CalendarCheckIcon,
+  calendarX: CalendarXIcon,
+  mapPin: MapPinIcon,
+  personRemove: UserMinusIcon,
+  plus: PlusIcon,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof REGISTRY;

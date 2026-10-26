@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { spacing } from '../theme/tokens';
-import type { PatientUser } from '../services/api';
+import type { NextAppointment, PatientUser } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatLongDate, localCalendarDate } from '../utils/dates';
 import { HeroAppointmentCard, type AppointmentStatus, type PatientAppointmentInfo } from './HeroAppointmentCard';
 import { TactileGrid } from './TactileGrid';
-import { AppText, Badge, ScreenScroll } from './ui';
+import { AppointmentRow } from './doctors/DoctorParts';
+import { AppText, Badge, Card, Groove, ScreenScroll, SectionHeader, TertiaryButton } from './ui';
 
 interface HomeViewProps {
   user: PatientUser;
@@ -16,14 +17,17 @@ interface HomeViewProps {
   onOpenDoctors: () => void;
   onOpenRecords: () => void;
   onOpenMedicines: () => void;
-  onOpenFollowUp: () => void;
+  onOpenPrivacy: () => void;
   onOpenHeartRate: () => void;
   onOpenChat: () => void;
   onTriggerEmergency: () => void;
+  /** Upcoming appointments with the patient's other doctors (after the one on the card). */
+  otherUpcoming: NextAppointment[];
+  onOpenSchedule: () => void;
 }
 
 /** "Today" tab: greeting, next appointment, quick actions, SOS and trust badges. */
-export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointmentStatus, onJoinCall, ...gridActions }) => {
+export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointmentStatus, onJoinCall, otherUpcoming, onOpenSchedule, ...gridActions }) => {
   const { lang, t } = useLanguage();
   const firstName = user.full_name?.split(' ')[0] || '';
   // Full localised weekday + month (tables, not device Intl: Hermes ICU data varies on Android)
@@ -41,6 +45,25 @@ export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointme
       </View>
 
       <HeroAppointmentCard onJoinCall={onJoinCall} appointment={appointment} status={appointmentStatus} />
+
+      {otherUpcoming.length > 0 && (
+        <View style={styles.others}>
+          <SectionHeader
+            title={t('otherUpcoming')}
+            icon="calendar"
+            count={otherUpcoming.length}
+            action={<TertiaryButton label={t('seeAll')} size="sm" onPress={onOpenSchedule} />}
+          />
+          <Card padded={false}>
+            {otherUpcoming.slice(0, 3).map((apt, i) => (
+              <React.Fragment key={apt.appointmentId}>
+                {i > 0 && <Groove inset={spacing.md} />}
+                <AppointmentRow apt={apt} />
+              </React.Fragment>
+            ))}
+          </Card>
+        </View>
+      )}
 
       <TactileGrid {...gridActions} />
 
@@ -62,6 +85,9 @@ const styles = StyleSheet.create({
   },
   greeting: {
     gap: 2,
+  },
+  others: {
+    gap: spacing.sm,
   },
   footer: {
     flexDirection: 'row',

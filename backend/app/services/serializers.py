@@ -78,4 +78,9 @@ def appointment_to_dict(apt: Appointment) -> Dict[str, Any]:
         "meetingCode": apt.meeting_code,
         "scheduledAt": as_aware(apt.scheduled_at).isoformat() if apt.scheduled_at else None,
         "durationMinutes": apt.duration_minutes or 20,
+        # Several doctors per patient: which doctor, which department
+        "practitionerId": apt.practitioner_id,
+        "department": apt.department or "",
+        "visitStatus": apt.visit_status or "scheduled",
+        "encounterId": apt.encounter_id,
     }

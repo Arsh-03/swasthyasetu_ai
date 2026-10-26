@@ -630,15 +630,18 @@ async def join_meeting(code: str, current_patient: Dict[str, Any] = Depends(requ
 
 
 @router.get("/active-encounter")
-async def active_encounter(current_patient: Dict[str, Any] = Depends(require_patient),
+async def active_encounter(doctor_id: Optional[str] = None,
+                           current_patient: Dict[str, Any] = Depends(require_patient),
                            db: AsyncSession = Depends(get_db)):
-    """The patient's current consultation, so their app can join the doctor's call."""
-    enc = (await db.execute(
-        select(Encounter).where(Encounter.patient_id == current_patient["user_id"],
+    """The patient's current consultation, so their app can join the doctor's call.
+    With `doctor_id`: the open consultation with that doctor (a patient can have several doctors)."""
+    q = select(Encounter).where(Encounter.patient_id == current_patient["user_id"],
                                 Encounter.status.in_(["in_progress", "queued"]))
-        .order_by(Encounter.start_time)   # the same consultation the doctor's queue shows (oldest open)
-    )).scalars().first()
+    if doctor_id:
+        q = q.where(Encounter.practitioner_id == doctor_id)
+    enc = (await db.execute(q.order_by(Encounter.start_time))).scalars().first()  # oldest open, as the queue shows
     if not enc:
         return {"encounter_id": None}
     practitioner = await db.get(Practitioner, enc.practitioner_id) if enc.practitioner_id else None
-    return {"encounter_id": enc.encounter_id, "doctor_name": practitioner.display_name if practitioner else "Your doctor"}
+    return {"encounter_id": enc.encounter_id, "practitioner_id": enc.practitioner_id,
+            "doctor_name": practitioner.display_name if practitioner else "Your doctor"}

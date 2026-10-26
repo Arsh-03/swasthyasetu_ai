@@ -42,6 +42,17 @@ async def get_my_care_plan(
         raise HTTPException(status_code=404, detail="Patient profile not found")
 
     chart = profile.chart_json or {}
+    # Match each prescription to the doctor who wrote it (a patient can have several doctors)
+    from app.routers.care import department_of, prescriber_key
+    doctors_by_key = {prescriber_key(d.display_name): d
+                      for d in (await db.execute(select(Practitioner))).scalars().all()}
+
+    def prescriber(name):
+        doc = doctors_by_key.get(prescriber_key(name)) if name else None
+        if not doc:
+            return {"practitioner_id": None, "name": name or "", "department": ""}
+        return {"practitioner_id": doc.practitioner_id, "name": doc.display_name, "department": department_of(doc)}
+
     medications = [
         {
             "id": rx.get("id"),
@@ -53,6 +64,7 @@ async def get_my_care_plan(
             "purpose": rx.get("purpose"),
             "schedule": rx.get("schedule") or {},
             "prescribedBy": rx.get("prescribedBy"),
+            "prescriber": prescriber(rx.get("prescribedBy")),
         }
         for rx in chart.get("prescriptions", [])
         if rx.get("status", "Active") == "Active"

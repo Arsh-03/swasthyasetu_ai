@@ -21,8 +21,10 @@ export interface CalendarDate {
   day: number;
 }
 
-/** "Tomorrow, 23 Oct 2026" / "Monday, 26 October 2026" → { 2026, 9, 23 }; null if not parsable. */
+/** "Tomorrow, 23 Oct 2026" / "Monday, 26 October 2026" / "2026-10-23" → { 2026, 9, 23 }; null if not parsable. */
 export const parseDateLabel = (label: string | undefined): CalendarDate | null => {
+  const iso = label?.match(/^\s*(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]) - 1, day: Number(iso[3]) };
   const m = label?.match(/(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})/);
   if (!m) return null;
   const month = MONTH_INDEX[m[2].slice(0, m[2].toLowerCase().startsWith('sept') ? 4 : 3).toLowerCase()];

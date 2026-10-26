@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import Appointment, AuditEvent, Encounter, PatientProfile
@@ -64,8 +64,11 @@ async def ensure_encounter(db: AsyncSession, apt: Appointment, practitioner_id: 
     enc = await db.get(Encounter, apt.encounter_id) if apt.encounter_id else None
     created = False
     if not enc or enc.status not in OPEN_ENCOUNTER:
-        enc = (await db.execute(select(Encounter).where(
-            Encounter.patient_id == apt.patient_id, Encounter.status.in_(OPEN_ENCOUNTER)).order_by(Encounter.start_time))).scalars().first()
+        doc = practitioner_id or apt.practitioner_id
+        q = select(Encounter).where(Encounter.patient_id == apt.patient_id, Encounter.status.in_(OPEN_ENCOUNTER))
+        if doc:  # several doctors per patient: only this doctor's (or an unassigned) consultation
+            q = q.where(or_(Encounter.practitioner_id == doc, Encounter.practitioner_id.is_(None)))
+        enc = (await db.execute(q.order_by(Encounter.start_time))).scalars().first()
     if not enc:
         profile = await db.get(PatientProfile, apt.patient_id)
         chart = (profile.chart_json if profile else None) or {}

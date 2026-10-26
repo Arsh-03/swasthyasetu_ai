@@ -20,6 +20,8 @@ interface SymptomIntakeModalProps {
   visible: boolean;
   onClose: () => void;
   onSubmit: (symptoms: string[], isRep: boolean, notes: string) => void;
+  /** The doctor this visit request goes to (one of the patient's doctors); none = the triage queue. */
+  doctorName?: string | null;
 }
 
 // `value` is what the backend receives (unchanged); `label` is what the patient sees
@@ -32,7 +34,7 @@ const SYMPTOMS: { value: string; label: TranslationKey; icon: IconName }[] = [
   { value: 'Nausea (ವಾಕರಿಕೆ)', label: 'symptomNausea', icon: 'nausea' },
 ];
 
-export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible, onClose, onSubmit }) => {
+export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible, onClose, onSubmit, doctorName }) => {
   const { t } = useLanguage();
   const [isRepresentative, setIsRepresentative] = useState(false);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([SYMPTOMS[0].value]);
@@ -55,7 +57,12 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
 
   return (
     <GlassSheet visible={visible} onClose={onClose} closeOnBackdrop>
-      <SheetHeader icon="clipboard" title={t('symptomIntake')} subtitle={t('symptomIntakeSubtitle')} onClose={onClose} />
+      <SheetHeader
+        icon="clipboard"
+        title={t('symptomIntake')}
+        subtitle={doctorName ? t('visitRequestFor', { name: doctorName }) : t('symptomIntakeSubtitle')}
+        onClose={onClose}
+      />
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Who is consulting */}

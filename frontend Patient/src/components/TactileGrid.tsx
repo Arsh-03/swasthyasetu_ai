@@ -8,7 +8,7 @@ interface TactileGridProps {
   onOpenDoctors: () => void;
   onOpenRecords: () => void;
   onOpenMedicines: () => void;
-  onOpenFollowUp: () => void;
+  onOpenPrivacy: () => void;
   onOpenHeartRate: () => void;
   onOpenChat: () => void;
   onTriggerEmergency: () => void;
@@ -19,7 +19,7 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
   onOpenDoctors,
   onOpenRecords,
   onOpenMedicines,
-  onOpenFollowUp,
+  onOpenPrivacy,
   onOpenHeartRate,
   onOpenChat,
   onTriggerEmergency,
@@ -70,11 +70,11 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           layout="stacked"
           compact
           equalHeight
-          label={t('followUpCaption')}
-          value={t('followUp')}
-          icon="calendar"
-          tone="warning"
-          onPress={onOpenFollowUp}
+          label={t('privacyCaption')}
+          value={t('tabPrivacy')}
+          icon="shieldCheck"
+          tone="navy"
+          onPress={onOpenPrivacy}
           style={styles.tile}
         />
       </View>

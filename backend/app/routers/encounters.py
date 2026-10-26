@@ -35,11 +35,17 @@ async def submit_symptom_intake(
     if req.is_representative:
         complaint = f"[Reported by representative] {complaint}"
 
-    enc = (await db.execute(
-        select(Encounter)
-        .where(Encounter.patient_id == patient_id, Encounter.status.in_(["queued", "in_progress"]))
-        .order_by(Encounter.start_time)
-    )).scalars().first()
+    doctor = None
+    if req.practitioner_id:
+        doctor = await db.get(Practitioner, req.practitioner_id)
+        if not doctor:
+            raise HTTPException(status_code=404, detail="Doctor not found")
+
+    # The open consultation with this doctor (or, for a triage request, one no doctor has taken yet)
+    open_q = select(Encounter).where(Encounter.patient_id == patient_id, Encounter.status.in_(["queued", "in_progress"]))
+    if doctor:
+        open_q = open_q.where(Encounter.practitioner_id == doctor.practitioner_id)
+    enc = (await db.execute(open_q.order_by(Encounter.start_time))).scalars().first()
 
     if enc:
         enc.symptoms_text = complaint or enc.symptoms_text
@@ -48,6 +54,7 @@ async def submit_symptom_intake(
         enc = Encounter(
             encounter_id=f"enc_{uuid.uuid4().hex[:8]}",
             patient_id=patient_id,
+            practitioner_id=doctor.practitioner_id if doctor else None,
             mode="video",
             status="queued",
             urgency="routine",
@@ -70,11 +77,16 @@ async def submit_symptom_intake(
     ))
     await db.commit()
 
-    await notify(kind="appointment", severity="info", patient_id=patient_id,
+    target = [doctor.practitioner_id] if doctor else None   # None: the patient's doctors (see notify)
+    await notify(kind="appointment", severity="info", patient_id=patient_id, practitioner_ids=target,
                  title=f"New consultation request from {profile.full_name}",
                  body=(complaint or "Symptoms submitted from the patient app.")[:300],
                  link={"page": "patient", "patient_id": patient_id})
-    await ws_manager.send_to_role("doctor", {"type": "queue_updated", "patient_id": patient_id, "encounter_id": enc.encounter_id})
+    queue_event = {"type": "queue_updated", "patient_id": patient_id, "encounter_id": enc.encounter_id}
+    if doctor:
+        await ws_manager.send_to([doctor.practitioner_id], queue_event)
+    else:
+        await ws_manager.send_to_role("doctor", queue_event)
     return {"encounter_id": enc.encounter_id, "status": enc.status, "complaint": enc.symptoms_text}
 
 

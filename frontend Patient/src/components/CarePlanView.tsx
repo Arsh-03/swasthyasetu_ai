@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { colors, spacing, touch, type Tone } from '../theme/tokens';
+import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
+import { colors, radii, spacing, touch, type Tone } from '../theme/tokens';
 import { patientApi, type CarePlan, type CarePlanMedication, type DoseSlot } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import type { SupportedLanguage, TranslationKey } from '../utils/translations';
 import { haptic } from '../utils/haptics';
 import { localized } from '../utils/localized';
+import { playBirthdayPopperSound, playMedicationAlertSound } from '../utils/soundEffects';
+import { triggerBirthdayPopper } from '../utils/confetti';
 import { EmptyMedications } from './illustrations';
 import { SavedSummaries } from './VisitSummary';
+import { DepartmentBadge } from './doctors/DoctorParts';
+import { doctorShortName } from '../utils/departments';
 import {
   AppText,
   AudioListenButton,
@@ -21,6 +25,9 @@ import {
   ListRow,
   NavBar,
   NeuPressable,
+  PopBurstEffect,
+  FullScreenBirthdayPopper,
+  PrimaryButton,
   ScreenScroll,
   ScreenHeader,
   SecondaryButton,
@@ -68,6 +75,13 @@ const buildDoseRows = (meds: CarePlanMedication[]): DoseRow[] => {
   return rows;
 };
 
+const getCurrentTimeSlot = (): DoseSlot => {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 18) return 'afternoon';
+  return 'night';
+};
+
 export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey = 0 }) => {
   const { lang, t } = useLanguage();
   const [plan, setPlan] = useState<CarePlan | null>(null);
@@ -76,6 +90,9 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
   const [loggedDoses, setLoggedDoses] = useState<Record<string, boolean>>({});
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [isSnoozed, setIsSnoozed] = useState(false);
+  const [noticeText, setNoticeText] = useState<string | null>(null);
+  const [showCelebrationPopper, setShowCelebrationPopper] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +113,95 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
     };
   }, [reloadKey]);
 
+  const doseRows = buildDoseRows(plan?.medications || []);
+  const currentSlot = getCurrentTimeSlot();
+  const dueSlotDoses = doseRows.filter((r) => r.slot === currentSlot && !loggedDoses[r.key]);
+
+  // Trigger scheduled medication chime & browser notification when doses are due for current time slot
+  useEffect(() => {
+    if (status !== 'ready' || dueSlotDoses.length === 0 || isSnoozed) return;
+
+    const sessionKey = `swasthya_med_alert_${currentSlot}_${new Date().toDateString()}`;
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (sessionStorage.getItem(sessionKey)) return;
+      sessionStorage.setItem(sessionKey, '1');
+    }
+
+    playMedicationAlertSound();
+
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        const slotName = t(SLOT_STYLE[currentSlot].time);
+        const medNames = dueSlotDoses.map((d) => d.med.name).join(', ');
+        new Notification(t('medicationReminderTitle', { slot: slotName }), {
+          body: t('medicationReminderBody', {
+            name: medNames,
+            dosage: localized(dueSlotDoses[0]?.med.dosage, lang) || '',
+          }),
+        });
+      }
+    }
+  }, [status, dueSlotDoses, currentSlot, isSnoozed, lang, t]);
+
+  const requestNotificationPermissionAndTest = () => {
+    playMedicationAlertSound();
+    haptic.tap();
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'granted') {
+        const slotName = t(SLOT_STYLE[currentSlot].time);
+        const medNames = dueSlotDoses.length > 0
+          ? dueSlotDoses.map((d) => d.med.name).join(', ')
+          : (doseRows[0]?.med.name || 'Prescribed medicines');
+        new Notification(t('medicationReminderTitle', { slot: slotName }), {
+          body: t('medicationReminderBody', {
+            name: medNames,
+            dosage: localized(doseRows[0]?.med.dosage, lang) || 'Scheduled',
+          }),
+        });
+        setNoticeText(t('remindersActive'));
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then((perm) => {
+          if (perm === 'granted') {
+            new Notification(t('medicationReminders'), {
+              body: t('notificationPermissionGranted'),
+            });
+            setNoticeText(t('notificationPermissionGranted'));
+          }
+        });
+      } else {
+        setNoticeText(t('remindersActive'));
+      }
+    } else {
+      setNoticeText(t('remindersActive'));
+    }
+  };
+
+  const takeAllDueInSlot = async () => {
+    setShowCelebrationPopper(false);
+    setTimeout(() => setShowCelebrationPopper(true), 15);
+    playBirthdayPopperSound();
+    triggerBirthdayPopper();
+    haptic.success();
+    const updated = { ...loggedDoses };
+    dueSlotDoses.forEach((d) => {
+      updated[d.key] = true;
+    });
+    setLoggedDoses(updated);
+    setNoticeText(t('doseTakenPop'));
+    try {
+      await Promise.all(dueSlotDoses.map((d) => patientApi.logDose(d.med.id, d.slot, true)));
+    } catch {
+      setSaveError(t('doseSaveError'));
+    }
+  };
+
+  const handleSnooze = () => {
+    setIsSnoozed(true);
+    setTimeout(() => {
+      setIsSnoozed(false);
+    }, 15 * 60 * 1000);
+  };
+
   const buildAudioText = () => {
     const meds = plan?.medications || [];
     if (meds.length === 0) return `${t('audioIntro')} ${t('audioNoMeds')}`;
@@ -110,8 +216,16 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
   // Optimistic toggle; rolled back if the save fails
   const toggleDose = async (row: DoseRow) => {
     const taken = !loggedDoses[row.key];
-    if (taken) haptic.success();
-    else haptic.tap();
+    if (taken) {
+      setShowCelebrationPopper(false);
+      setTimeout(() => setShowCelebrationPopper(true), 15);
+      playBirthdayPopperSound();
+      triggerBirthdayPopper();
+      haptic.success();
+      setNoticeText(t('doseTakenPop'));
+    } else {
+      haptic.tap();
+    }
     setLoggedDoses((prev) => ({ ...prev, [row.key]: taken }));
     setSaveError(null);
     try {
@@ -135,12 +249,24 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
     }
   };
 
-  const doseRows = buildDoseRows(plan?.medications || []);
-  const subtitle = [plan?.doctor_name, localized(plan?.facility, lang)].filter(Boolean).join(' • ');
+  // Medicines can come from several doctors (one per health issue)
+  const prescribers = new Set((plan?.medications || []).map((m) => m.prescriber?.name || m.prescribedBy).filter(Boolean));
+  const subtitle =
+    prescribers.size > 1
+      ? t('medsFromDoctors', { n: prescribers.size })
+      : [plan?.doctor_name, localized(plan?.facility, lang)].filter(Boolean).join(' • ');
 
   return (
-    <ScreenScroll contentContainerStyle={styles.content}>
-      <NavBar backLabel={t('home')} onBack={onBack} />
+    <View style={styles.container}>
+      <FullScreenBirthdayPopper
+        active={showCelebrationPopper}
+        onComplete={() => setShowCelebrationPopper(false)}
+        message={t('doseTakenPop')}
+        subMessage={t('checkinSub')}
+      />
+
+      <ScreenScroll contentContainerStyle={styles.content}>
+        <NavBar backLabel={t('home')} onBack={onBack} />
 
       <ScreenHeader
         icon="medication"
@@ -194,9 +320,76 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
         subtitle={t('audioMeta', { count: plan?.medications.length || 0 })}
       />
 
-      {/* Doses: one row per medicine per time slot (the Listen card counts medicines) */}
+      {/* Active Scheduled Medication Reminder Card (Shown when medicines are due) */}
+      {status === 'ready' && dueSlotDoses.length > 0 && !isSnoozed && (
+        <Card style={styles.reminderCard}>
+          <View style={styles.reminderHeader}>
+            <View style={styles.reminderBellDisc}>
+              <Icon name="bell" size={24} color={colors.goldDeep} active />
+            </View>
+            <View style={styles.reminderHeaderText}>
+              <AppText variant="headline" color="ink">
+                {t('medicationReminderTitle', { slot: t(SLOT_STYLE[currentSlot].time) })}
+              </AppText>
+              <AppText variant="footnote" color="inkMuted">
+                {dueSlotDoses
+                  .map((d) => `${d.med.name} (${localized(d.med.dosage, lang) || localized(d.med.timing, lang) || ''})`)
+                  .join(' • ')}
+              </AppText>
+            </View>
+          </View>
+          <View style={styles.reminderActions}>
+            <PrimaryButton
+              label={t('takeNow')}
+              icon="check"
+              size="sm"
+              onPress={takeAllDueInSlot}
+              style={styles.reminderBtn}
+            />
+            <SecondaryButton
+              label={t('snooze')}
+              tone="neutral"
+              size="sm"
+              onPress={handleSnooze}
+              style={styles.reminderBtn}
+            />
+          </View>
+        </Card>
+      )}
+
+      {/* Celebratory Birthday Popper / Reassurance banner */}
+      {noticeText && (
+        <View style={noticeText.includes('🎉') ? styles.celebrationBanner : styles.noticeBanner}>
+          <Icon name="checkCircle" size={noticeText.includes('🎉') ? 22 : 16} color={colors.successDeep} active />
+          <AppText
+            variant={noticeText.includes('🎉') ? 'subhead' : 'footnote'}
+            weight={700}
+            color="successDeep"
+            style={styles.shrink}
+          >
+            {noticeText}
+          </AppText>
+        </View>
+      )}
+
+      {/* Doses: one row per medicine per time slot */}
       <View style={styles.section}>
-        <SectionHeader title={t('dosesSection')} count={doseRows.length} />
+        <View style={styles.headerWithAction}>
+          <SectionHeader title={t('dosesSection')} count={doseRows.length} />
+          <NeuPressable
+            onPress={requestNotificationPermissionAndTest}
+            accessibilityRole="button"
+            accessibilityLabel={t('testReminder')}
+            containerStyle={styles.testBtnWrap}
+            style={styles.testBtn}
+          >
+            <Icon name="bell" size={15} color={colors.primary} />
+            <AppText variant="footnote" weight={600} color="primary" compact>
+              {t('testReminder')}
+            </AppText>
+          </NeuPressable>
+        </View>
+
         <Card padded={false}>
           {doseRows.length === 0 && (
             <View style={styles.empty} accessibilityLiveRegion="polite">
@@ -256,7 +449,15 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
                       {nameLocal}
                     </AppText>
                   ) : null}
-                  <Badge label={t(look.time)} tone={look.tone} icon="clock" style={styles.slotBadge} />
+                  <View style={styles.medBadges}>
+                    <Badge label={t(look.time)} tone={look.tone} icon="clock" />
+                    {row.med.prescriber?.department ? <DepartmentBadge department={row.med.prescriber.department} /> : null}
+                  </View>
+                  {row.med.prescriber?.name || row.med.prescribedBy ? (
+                    <AppText variant="caption" color="inkMuted" numberOfLines={1}>
+                      {t('prescribedBy', { name: doctorShortName(row.med.prescriber?.name || row.med.prescribedBy || '') })}
+                    </AppText>
+                  ) : null}
                 </ListRow>
               </React.Fragment>
             );
@@ -297,35 +498,61 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
         </Card>
       </View>
     </ScreenScroll>
-  );
+  </View>
+);
 };
 
-/** Raised "Take" control; once taken it stays pressed in with a tick. Compact: never stretched to the row. */
+/** Raised "Take" control with celebratory spring pop burst and audio feedback. */
 export const DoseButton: React.FC<{
   taken: boolean;
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   lang?: SupportedLanguage;
-}> = ({ taken, label, accessibilityLabel, onPress, lang }) => (
-  <NeuPressable
-    onPress={onPress}
-    selected={taken}
-    haptics="none"
-    accessibilityRole="checkbox"
-    accessibilityState={{ checked: taken }}
-    accessibilityLabel={accessibilityLabel}
-    containerStyle={styles.doseBtnWrap}
-    style={styles.doseBtn}
-  >
-    {taken && <Icon name="check" size={18} color={colors.successDeep} />}
-    <AppText variant="footnote" weight={700} color={taken ? 'ink' : 'primary'} lang={lang} compact>
-      {label}
-    </AppText>
-  </NeuPressable>
-);
+}> = ({ taken, label, accessibilityLabel, onPress, lang }) => {
+  const [showBurst, setShowBurst] = useState(false);
+  const [scaleAnim] = useState(() => new Animated.Value(1));
+
+  const handlePress = () => {
+    if (!taken) {
+      setShowBurst(true);
+      Animated.sequence([
+        Animated.spring(scaleAnim, { toValue: 1.25, friction: 3, tension: 150, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+      ]).start();
+    }
+    onPress();
+  };
+
+  return (
+    <View style={styles.doseBtnContainer}>
+      <PopBurstEffect active={showBurst} onComplete={() => setShowBurst(false)} />
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        <NeuPressable
+          onPress={handlePress}
+          selected={taken}
+          haptics="none"
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: taken }}
+          accessibilityLabel={accessibilityLabel}
+          containerStyle={styles.doseBtnWrap}
+          style={styles.doseBtn}
+        >
+          {taken && <Icon name="check" size={18} color={colors.successDeep} />}
+          <AppText variant="footnote" weight={700} color={taken ? 'ink' : 'primary'} lang={lang} compact>
+            {label}
+          </AppText>
+        </NeuPressable>
+      </Animated.View>
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    position: 'relative',
+  },
   visitCard: { gap: spacing.md },
   visitRow: { gap: 2 },
   flex: {
@@ -343,6 +570,21 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.md,
   },
+  headerWithAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  testBtnWrap: {
+    borderRadius: radii.sm,
+  },
+  testBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
   empty: {
     alignItems: 'center',
     gap: spacing.sm,
@@ -353,9 +595,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  slotBadge: {
+  medBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
     marginTop: spacing.xs,
-    alignSelf: 'flex-start',
+  },
+  doseBtnContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   // Compact control: centred in the row at its own height (never stretched to the row)
   doseBtnWrap: {
@@ -369,6 +618,64 @@ const styles = StyleSheet.create({
     minHeight: touch.min,
     minWidth: 84,
     paddingHorizontal: spacing.md,
+  },
+  reminderCard: {
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+    backgroundColor: colors.card,
+  },
+  reminderHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  reminderBellDisc: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reminderHeaderText: {
+    flex: 1,
+    gap: 2,
+  },
+  reminderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  reminderBtn: {
+    flex: 1,
+  },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#ECFDF5',
+    borderRadius: radii.sm,
+  },
+  celebrationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#34D399',
+    borderRadius: radii.md,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 3,
   },
   checkinCard: {
     gap: spacing.sm,
@@ -384,3 +691,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
 });
+

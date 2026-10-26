@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { colors, radii, spacing, tints, touch } from '../theme/tokens';
 import { patientApi, type ChatMessage, type ChatThread, type ChatThreadSummary } from '../services/api';
@@ -16,17 +16,20 @@ interface ChatViewProps {
   /** Chat is closed: start a new consultation request instead. */
   onRequestVisit: () => void;
   onUnreadChanged: () => void;
+  /** Open this doctor's conversation directly (from My Doctors); back then returns there. */
+  initialDoctorId?: string | null;
+  backLabel?: string;
 }
 
 /**
  * Chat with the doctor. Open from booking until a few days after a visit (the doctor's setting).
  * Always shows "Emergency? Call 108": chat is never the emergency channel.
  */
-export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergency, onRequestVisit, onUnreadChanged }) => {
+export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergency, onRequestVisit, onUnreadChanged, initialDoctorId, backLabel }) => {
   const { lang, t } = useLanguage();
   const insets = useChromeInsets();
   const [threads, setThreads] = useState<ChatThreadSummary[] | null>(null);
-  const [doctorId, setDoctorId] = useState<string | null>(null);
+  const [doctorId, setDoctorId] = useState<string | null>(initialDoctorId ?? null);
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -45,23 +48,27 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
       .catch(() => setError(t('chatLoadError')));
   }, [chatEvent, t]);
 
-  const load = useCallback(async (id: string) => {
-    try {
-      const th = await patientApi.getChatThread(id);
-      setThread(th);
-      setError(null);
-      if (th.messages.some((m) => m.sender === 'doctor' && !m.read)) {
-        await patientApi.markChatRead(id).catch(() => undefined);
-        onUnreadChanged();
-      }
-    } catch {
-      setError(t('chatLoadError'));
-    }
-  }, [onUnreadChanged, t]);
-
   useEffect(() => {
-    if (doctorId) void load(doctorId);
-  }, [doctorId, chatEvent, load]);
+    if (!doctorId) return;
+    let cancelled = false;
+    patientApi
+      .getChatThread(doctorId)
+      .then((th) => {
+        if (cancelled) return;
+        setThread(th);
+        setError(null);
+        if (th.messages.some((m) => m.sender === 'doctor' && !m.read)) {
+          patientApi.markChatRead(doctorId).catch(() => undefined);
+          onUnreadChanged();
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError(t('chatLoadError'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, chatEvent, onUnreadChanged, t]);
 
   const send = async () => {
     const body = draft.trim();
@@ -99,7 +106,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
   if (!doctorId) {
     return (
       <ScrollView contentContainerStyle={[styles.listContent, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
-        <NavBar backLabel={t('home')} onBack={onBack} />
+        <NavBar backLabel={backLabel ?? t('home')} onBack={onBack} />
         <AppText variant="largeTitle" accessibilityRole="header">{t('tabChat')}</AppText>
         {emergencyStrip}
         {!threads && !error && <ActivityIndicator color={colors.primary} />}
@@ -131,7 +138,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
-        <NavBar backLabel={threads && threads.length > 1 ? t('tabChat') : t('home')} onBack={() => (threads && threads.length > 1 ? setDoctorId(null) : onBack())} />
+        <NavBar
+          backLabel={initialDoctorId ? backLabel ?? t('home') : threads && threads.length > 1 ? t('tabChat') : backLabel ?? t('home')}
+          onBack={() => (!initialDoctorId && threads && threads.length > 1 ? setDoctorId(null) : onBack())}
+        />
         <View style={styles.doctorRow}>
           <Icon name="doctor" size={26} color={colors.primary} />
           <View style={styles.flex}>

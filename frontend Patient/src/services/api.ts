@@ -93,6 +93,100 @@ export interface NextAppointment {
   meetingCode?: string | null;
   scheduledAt?: string | null;
   durationMinutes?: number;
+  /** A patient can have several doctors: which one, their OPD department and the real start time. */
+  practitionerId?: string | null;
+  department?: string;
+  visitStatus?: 'scheduled' | 'completed' | 'cancelled' | 'no_show';
+  encounterId?: string | null;
+}
+
+// ---- My Doctors (backend/app/routers/care.py) ----
+
+export interface HealthIssue {
+  id: string;
+  department: string;
+  label: Record<string, string>;
+}
+
+export interface DepartmentSummary {
+  id: string;
+  name: Record<string, string>;
+  about: Record<string, string>;
+  doctor_count: number;
+}
+
+export interface FreeSlot {
+  /** ISO start time (UTC) */
+  start: string;
+  /** "9:00 AM" in the clinic's time */
+  time: string;
+}
+
+export interface DoctorCard {
+  practitioner_id: string;
+  name: string;
+  specialty: string;
+  department: string;
+  facility: string;
+  experience_years: number | null;
+  languages: string[];
+  registration_number: string;
+}
+
+export interface DirectoryDoctor extends DoctorCard {
+  next_free: (FreeSlot & { date: string }) | null;
+  in_my_doctors: boolean;
+}
+
+export interface MyDoctor extends DoctorCard {
+  reason: string;
+  issue_id: string | null;
+  added_at: string | null;
+  next_appointment: NextAppointment | null;
+  upcoming_count: number;
+  last_visit_at: string | null;
+  visit_count: number;
+  medicines_count: number;
+  unread_messages: number;
+}
+
+export interface DoctorVisit {
+  encounter_id: string;
+  date: string;
+  mode: string;
+  complaint: string;
+  diagnosis: string;
+  medicine: string;
+  advice: string;
+  follow_up: string;
+}
+
+export interface DoctorMedicine {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  timing: string;
+  duration: string;
+  purpose: string;
+  prescribedDate: string;
+}
+
+export interface MyDoctorDetail {
+  doctor: DoctorCard & { reason: string; issue_id: string | null };
+  upcoming: NextAppointment[];
+  visits: DoctorVisit[];
+  cancelled: NextAppointment[];
+  medicines: DoctorMedicine[];
+  next_free: (FreeSlot & { date: string }) | null;
+}
+
+export interface BookAppointmentInput {
+  practitioner_id: string;
+  scheduled_at: string;
+  mode: 'video' | 'in_person';
+  issue_id?: string | null;
+  reason?: string;
 }
 
 export interface MeetingInfo {
@@ -123,6 +217,8 @@ export interface CarePlanMedication {
   purpose: LocalizedText;
   schedule: { morning?: boolean; afternoon?: boolean; night?: boolean };
   prescribedBy?: string;
+  /** The doctor who prescribed it, matched to the patient's doctors (department empty if not found). */
+  prescriber?: { practitioner_id: string | null; name: string; department: string };
 }
 
 export interface CarePlan {
@@ -196,6 +292,13 @@ export interface AshaVisit {
   my_readings: (VitalReading & { display: string; level: string })[];
 }
 
+export interface UploadDocumentInput {
+  uri: string;
+  name: string;
+  type: string;
+  fileObj?: any;
+}
+
 export interface VisitSummaryData {
   summary_id: string;
   encounter_id: string | null;
@@ -262,6 +365,7 @@ export interface PatientRegisterRequest {
   age: number;
   gender: string;
   district: string;
+  initial_record?: any;
 }
 
 /** An error response from the backend, keeping the HTTP status so screens can pick a message. */
@@ -461,8 +565,9 @@ class PatientApiService {
   }
 
   /** The patient's open consultation (where the doctor's call room is). */
-  async getActiveEncounter(): Promise<{ encounter_id: string | null; doctor_name?: string }> {
-    return this.request('/calls/active-encounter');
+  /** The open consultation to join; with `doctorId`, the one with that doctor. */
+  async getActiveEncounter(doctorId?: string | null): Promise<{ encounter_id: string | null; doctor_name?: string; practitioner_id?: string | null }> {
+    return this.request(`/calls/active-encounter${doctorId ? `?doctor_id=${encodeURIComponent(doctorId)}` : ''}`);
   }
 
   async declineConsent(consentId: string) {
@@ -488,6 +593,80 @@ class PatientApiService {
     return this.request<HealthRecord[]>(`/records/patient/${patientId}`);
   }
 
+  /** Uploads a health report (PDF or image) to be processed with Paddle OCR and saved in the patient's records. */
+  async uploadHealthRecord(
+    file: UploadDocumentInput,
+    patientId?: string,
+    customTitle?: string
+  ): Promise<HealthRecord> {
+    const formData = new FormData();
+    if (Platform.OS === 'web' && file.fileObj) {
+      formData.append('file', file.fileObj, file.name);
+    } else if (Platform.OS === 'web' && file.uri.startsWith('blob:')) {
+      const resp = await fetch(file.uri);
+      const blob = await resp.blob();
+      formData.append('file', blob, file.name);
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type || 'application/pdf',
+      } as any);
+    }
+    if (patientId) {
+      formData.append('patient_id', patientId);
+    }
+    if (customTitle) {
+      formData.append('custom_title', customTitle);
+    }
+
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const res = await fetch(`${API_BASE_URL}/records/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error((data && data.detail) || `Document upload failed (${res.status})`);
+    }
+    return data as HealthRecord;
+  }
+
+  /** Runs Paddle OCR on an uploaded report during onboarding to preview findings before saving. */
+  async uploadInitialReport(
+    file: UploadDocumentInput
+  ): Promise<{ success: boolean; filename: string; record: any }> {
+    const formData = new FormData();
+    if (Platform.OS === 'web' && file.fileObj) {
+      formData.append('file', file.fileObj, file.name);
+    } else if (Platform.OS === 'web' && file.uri.startsWith('blob:')) {
+      const resp = await fetch(file.uri);
+      const blob = await resp.blob();
+      formData.append('file', blob, file.name);
+    } else {
+      formData.append('file', {
+        uri: file.uri,
+        name: file.name,
+        type: file.type || 'application/pdf',
+      } as any);
+    }
+
+    const res = await fetch(`${API_BASE_URL}/auth/upload-initial-report`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.success) {
+      throw new Error((data && data.detail) || `Report analysis failed (${res.status})`);
+    }
+    return data;
+  }
+
   async getNextAppointment(): Promise<NextAppointment | null> {
     return this.request<NextAppointment | null>('/appointments/next');
   }
@@ -510,11 +689,49 @@ class PatientApiService {
     });
   }
 
-  async submitIntake(symptoms: string[], notes: string, isRepresentative = false) {
+  /** `practitionerId`: which of the patient's doctors the visit is for (none = general triage queue). */
+  async submitIntake(symptoms: string[], notes: string, isRepresentative = false, practitionerId?: string | null) {
     return this.request('/encounters/intake', {
       method: 'POST',
-      body: JSON.stringify({ symptoms, notes, is_representative: isRepresentative }),
+      body: JSON.stringify({ symptoms, notes, is_representative: isRepresentative, practitioner_id: practitionerId || null }),
     });
+  }
+
+  // ---- My Doctors: several doctors, one per health issue (backend/app/routers/care.py) ----
+  async getCareCatalog(): Promise<{ departments: DepartmentSummary[]; issues: HealthIssue[] }> {
+    return this.request('/care/departments');
+  }
+
+  async getDoctors(department: string): Promise<DirectoryDoctor[]> {
+    return this.request(`/care/doctors?department=${encodeURIComponent(department)}`);
+  }
+
+  async getDoctorSlots(practitionerId: string, days = 7): Promise<{ doctor: DoctorCard; days: { date: string; slots: FreeSlot[] }[] }> {
+    return this.request(`/care/doctors/${encodeURIComponent(practitionerId)}/slots?days=${days}`);
+  }
+
+  async bookAppointment(input: BookAppointmentInput): Promise<{ appointment: NextAppointment; new_doctor: boolean }> {
+    return this.request('/care/appointments', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  async getMyAppointments(): Promise<{ upcoming: NextAppointment[]; past: NextAppointment[] }> {
+    return this.request('/care/appointments');
+  }
+
+  async cancelAppointment(appointmentId: string): Promise<NextAppointment> {
+    return this.request(`/care/appointments/${encodeURIComponent(appointmentId)}/cancel`, { method: 'POST' });
+  }
+
+  async getMyDoctors(): Promise<MyDoctor[]> {
+    return this.request('/care/my-doctors');
+  }
+
+  async getMyDoctor(practitionerId: string): Promise<MyDoctorDetail> {
+    return this.request(`/care/my-doctors/${encodeURIComponent(practitionerId)}`);
+  }
+
+  async removeDoctor(practitionerId: string): Promise<{ ok: boolean }> {
+    return this.request(`/care/my-doctors/${encodeURIComponent(practitionerId)}/remove`, { method: 'POST' });
   }
 
   async getEncounter(encounterId = 'enc_9481') {

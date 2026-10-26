@@ -501,6 +501,9 @@ const en = {
   engineDemo: 'demo',
   engineLiveHint: 'Running on your own AI server (e.g. the Colab GPU).',
   engineDemoHint: 'Your AI server is offline, so the built-in demo engine is running.',
+  otherDoctors: 'Other doctors',
+  otherDoctorsHint: 'Who else this patient sees. Their notes need the patient’s consent.',
+  otherDoctorNext: 'Next visit {date}',
 };
 
 export type StringKey = keyof typeof en;
@@ -983,6 +986,9 @@ const kn: Record<StringKey, string> = {
   engineDemo: 'ಡೆಮೊ',
   engineLiveHint: 'ನಿಮ್ಮದೇ AI ಸರ್ವರ್‌ನಲ್ಲಿ ಚಲಿಸುತ್ತಿದೆ (ಉದಾ. Colab GPU).',
   engineDemoHint: 'ನಿಮ್ಮ AI ಸರ್ವರ್ ಆಫ್‌ಲೈನ್ ಇದೆ, ಆದ್ದರಿಂದ ಒಳಗಿನ ಡೆಮೊ ಎಂಜಿನ್ ಚಲಿಸುತ್ತಿದೆ.',
+  otherDoctors: 'ಇತರ ವೈದ್ಯರು',
+  otherDoctorsHint: 'ಈ ರೋಗಿ ನೋಡುವ ಇತರ ವೈದ್ಯರು. ಅವರ ಟಿಪ್ಪಣಿಗಳಿಗೆ ರೋಗಿಯ ಸಮ್ಮತಿ ಬೇಕು.',
+  otherDoctorNext: 'ಮುಂದಿನ ಭೇಟಿ {date}',
 };
 
 const hi: Record<StringKey, string> = {
@@ -1463,6 +1469,9 @@ const hi: Record<StringKey, string> = {
   engineDemo: 'डेमो',
   engineLiveHint: 'आपके अपने AI सर्वर पर चल रहा है (जैसे Colab GPU)।',
   engineDemoHint: 'आपका AI सर्वर ऑफ़लाइन है, इसलिए अंदर का डेमो इंजन चल रहा है।',
+  otherDoctors: 'अन्य डॉक्टर',
+  otherDoctorsHint: 'यह मरीज़ और किन डॉक्टरों को दिखाता है। उनके नोट्स के लिए मरीज़ की सहमति चाहिए।',
+  otherDoctorNext: 'अगली मुलाकात {date}',
 };
 
 const STRINGS: Record<Lang, Record<StringKey, string>> = { en, kn, hi };
