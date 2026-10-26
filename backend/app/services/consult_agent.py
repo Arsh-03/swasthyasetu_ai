@@ -47,6 +47,7 @@ You get MEMORY (your summary of the consultation so far), NEW LINES (speech sinc
 - memory: the updated running summary of the WHOLE consultation (old memory + new lines), at most {MEMORY_WORDS} words,
   clinical style. Keep every symptom, duration, history item, allergy, medicine and plan mentioned.
 - facts: only NEW information from NEW LINES, as short note lines in clinical style ("Fever x 3 days, worse at night").
+  Do not repeat facts already in MEMORY or NOTE; one finding per line ("Sore throat", "Cough x 2 days"), not a list.
   key is one of: {", ".join(KEYS)}. Use "medications" for medicines the patient already takes, "rx" only for
   medicines the doctor prescribes now.
 - missed: important things said (now or earlier) that are NOT in NOTE yet. At most 3. Skip trivia.
@@ -55,9 +56,13 @@ You get MEMORY (your summary of the consultation so far), NEW LINES (speech sinc
 
 FINAL_PROMPT = """You are CHIBI. The consultation has ended. From MEMORY, FACTS and NOTE (de-identified; keep placeholders),
 write JSON only:
-{"summary": "4-6 sentence clinical summary of the consultation",
- "key_points": ["..."], "considerations": ["possible things for the doctor to consider (not diagnoses)"],
- "follow_up": ["..."], "gaps": ["important items said but missing from the note"]}
+{"summary": "...", "key_points": ["..."], "considerations": ["..."], "follow_up": ["..."], "gaps": ["..."]}
+- summary: 2-3 plain sentences a busy doctor reads in 10 seconds. Only what was said; no filler such as
+  "X was not mentioned".
+- key_points: at most 6, each 2-6 words ("Fever x 4 days", "Difficulty swallowing"). No repeats.
+- considerations: at most 4 things for the doctor to consider (not diagnoses), each under 12 words.
+- follow_up: at most 4 concrete next steps, each under 14 words.
+- gaps: at most 3 important items said in the consultation but missing from NOTE, each a few words. [] if none.
 Never invent facts, numbers or doses. Never state a diagnosis as fact."""
 
 
@@ -92,6 +97,16 @@ def _show(shield: pg.Shield, text: str) -> str:
     out = re.sub(r"\[PATIENT\]('s)?", lambda m: "the patient" + (m.group(1) or ""), out)
     out = re.sub(r"\[DOCTOR\]('s)?", lambda m: "the doctor" + (m.group(1) or ""), out)
     out = re.sub(r"(^|[.!?]\s+)the (patient|doctor)", lambda m: m.group(1) + "The " + m.group(2), out)
+    return out
+
+
+def _tidy(items: List[str]) -> List[str]:
+    """Trim, drop empties and near-repeats, and start each item with a capital."""
+    out: List[str] = []
+    for x in items:
+        x = re.sub(r"\s+", " ", x).strip(" -•.;")
+        if x and not any(_covered(x, o.lower()) and _covered(o, x.lower()) for o in out):
+            out.append(x[0].upper() + x[1:])
     return out
 
 
@@ -132,9 +147,27 @@ def _add_fact(st: AgentState, key: str, text: str, source: str, shield: pg.Shiel
     if fid in st.seen:
         return None
     st.seen.add(fid)
+    # One line per finding, updated in place: the AI tends to restate the whole complaint each batch
+    # ("Fever x 4 days" -> "Fever x 4 days, chills at night" -> ...).
+    new_words = cm._content_words(shown)
+    replaces: List[str] = []
+    for old in [f for f in st.facts if f["key"] == key]:
+        old_words = cm._content_words(old["text"])
+        if not new_words or not old_words:
+            continue
+        if len(new_words & old_words) / len(new_words) >= 0.9:
+            return None                                   # says nothing the existing line doesn't
+        if len(new_words & old_words) / len(old_words) >= 0.8:
+            replaces.append(old["id"])                    # a fuller version of an existing line
+    if replaces:
+        first = next(i for i, f in enumerate(st.facts) if f["id"] in replaces)
+        st.facts = [f for f in st.facts if f["id"] not in replaces]
     fact = {"id": fid, "key": key, "heading": HEADING[key], "section": section_for(key), "text": shown,
-            "source": source, "at": time.time()}
-    st.facts.append(fact)
+            "source": source, "at": time.time(), "replaces": replaces}
+    if replaces:
+        st.facts.insert(min(first, len(st.facts)), fact)
+    else:
+        st.facts.append(fact)
     return fact
 
 
@@ -302,8 +335,10 @@ async def finish(session: cm.CallSession) -> Dict[str, Any]:
             shield.release("consult_summary", messages)
             data = await ai.chat_json(messages, max_tokens=900, timeout=60.0, important=True)
             if data.get("summary"):
-                final = {k: (_show(shield, v) if isinstance(v, str) else [_show(shield, str(x)) for x in v])
-                         for k, v in data.items() if k in ("summary", "key_points", "considerations", "follow_up", "gaps")}
+                limits = {"key_points": 6, "considerations": 4, "follow_up": 4, "gaps": 3}
+                final = {k: (_show(shield, v) if isinstance(v, str)
+                             else _tidy([_show(shield, str(x)) for x in v])[:limits[k]])
+                         for k, v in data.items() if k in ("summary", *limits) and isinstance(v, (str, list))}
                 engine = "ai"
         except (pg.OutboundBlocked, AIUnavailable, ValueError, asyncio.TimeoutError, OSError):
             final = {}

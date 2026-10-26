@@ -4,14 +4,14 @@
 // consultation summary and the structured note exactly as a real visit would save it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClinicalNotepad } from '../../components/ClinicalNotepad';
-import { Icon } from '../../components/ui/Icon';
+import { Icon, type IconName } from '../../components/ui/Icon';
 import { cx } from '../../components/ui/cx';
 import { authFetch } from '../../services/backend';
 import { ChunkRecorder } from '../../services/call/audioRecorder';
 import type { CallFinding, CallMinutes } from '../../services/call/callTypes';
 import { Button, Card, PageHeader, Pill, Segmented, SelectInput } from '../ui';
 
-interface LabFact { id: string; key: string; heading: string; section: string; text: string; source: string; why?: string | null }
+interface LabFact { id: string; key: string; heading: string; section: string; text: string; source: string; why?: string | null; replaces?: string[] }
 interface LabTurn { at: number; lines: number; engine: string; ms: number; facts: number; suggestions: number }
 interface LabAlert { id: string; title: string; detail: string; quote?: string }
 interface LabMed { name: string; form?: string | null; strength?: string | null; frequency?: string | null; duration?: string | null; timing?: string | null; text: string }
@@ -57,7 +57,7 @@ async function api<T>(path: string, body?: unknown): Promise<T> {
 
 const toFinding = (f: LabFact): CallFinding => ({
   id: f.id, kind: f.key, section: f.section, heading: f.heading, text: f.text, severity: 'routine', source: f.source,
-  speaker: 'conversation', at_ms: null, quote: '', quote_english: '', why: f.why ?? null,
+  speaker: 'conversation', at_ms: null, quote: '', quote_english: '', why: f.why ?? null, replaces: f.replaces ?? [],
 });
 
 export function LabScreen() {
@@ -359,22 +359,62 @@ export function LabScreen() {
 }
 
 function FinalCard({ final, structured }: { final: LabFinal; structured?: Structured }) {
-  const list = (title: string, items?: string[]) => items && items.length > 0 && (
-    <div><h4 className="mt-3 text-xs font-bold uppercase tracking-wide text-ink-muted">{title}</h4>
-      <ul className="list-disc pl-5 text-sm">{items.map((x, i) => <li key={i}>{x}</li>)}</ul></div>
+  const [copied, setCopied] = useState(false);
+  const block = (title: string, items?: string[]) => items?.length ? `\n\n${title}:\n${items.map(x => `- ${x}`).join('\n')}` : '';
+  const copy = () => {
+    const text = final.summary + block('Key points', final.key_points) + block('To consider', final.considerations)
+      + block('Follow-up', final.follow_up) + block('Missing from the note', final.gaps);
+    void navigator.clipboard?.writeText(text).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); });
+  };
+  const panel = (title: string, icon: IconName, tone: 'teal' | 'primary', items?: string[]) => items && items.length > 0 && (
+    <section className="rounded-xl border border-hairline p-3">
+      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-ink-muted">
+        <Icon name={icon} size={14} tone={tone} /> {title}
+      </h4>
+      <ul className="flex flex-col gap-1.5 text-sm leading-snug">
+        {items.map((x, i) => (
+          <li key={i} className="flex gap-2"><span className={cx('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', tone === 'teal' ? 'bg-teal' : 'bg-primary')} />{x}</li>
+        ))}
+      </ul>
+    </section>
   );
   return (
-    <Card className="p-4">
-      <h3 className="mb-2 flex items-center gap-2 text-base font-bold"><Icon name="clinicalNotes" size={18} /> Consultation summary
-        <span className="text-xs font-normal text-ink-muted">({final.engine === 'ai' ? 'AI' : 'rules engine'})</span></h3>
-      <p className="text-sm">{final.summary}</p>
-      {list('Key points', final.key_points)}
-      {list('For the doctor to consider', final.considerations)}
-      {list('Follow-up', final.follow_up)}
-      {list('Said but missing from the note', final.gaps)}
+    <Card className="flex flex-col gap-4 p-4">
+      <header className="flex items-center gap-2">
+        <Icon name="clinicalNotes" size={18} tone="primary" />
+        <h3 className="text-base font-bold">Consultation summary</h3>
+        <Pill tone={final.engine === 'ai' ? 'primary' : 'neutral'} label={final.engine === 'ai' ? 'AI' : 'Rules engine'} />
+        <span className="flex-1" />
+        <Button size="sm" variant="ghost" icon={copied ? 'check' : 'checklist'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
+      </header>
+
+      <p className="text-sm leading-relaxed">{final.summary}</p>
+
+      {final.key_points && final.key_points.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" aria-label="Key points">
+          {final.key_points.map((x, i) => (
+            <span key={i} className="rounded-full bg-ink-tint px-2.5 py-1 text-xs font-semibold text-ink">{x}</span>
+          ))}
+        </div>
+      )}
+
+      {(final.considerations?.length || final.follow_up?.length) ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {panel('To consider', 'aiAssist', 'teal', final.considerations)}
+          {panel('Follow-up', 'upcoming', 'primary', final.follow_up)}
+        </div>
+      ) : null}
+
+      {final.gaps && final.gaps.length > 0 && (
+        <div className="flex gap-2 rounded-xl bg-warning-tint p-3 text-sm text-warning-deep">
+          <Icon name="warning" size={16} className="mt-0.5 shrink-0" />
+          <div><b>Missing from your note:</b> {final.gaps.join(' · ')}</div>
+        </div>
+      )}
+
       {structured && (
-        <>
-          <h3 className="mt-5 text-base font-bold">What the visit would save (from your note)</h3>
+        <div className="border-t border-hairline pt-4">
+          <h3 className="text-base font-bold">What the visit would save (from your note)</h3>
           <p className="mb-2 text-xs text-ink-muted">Parsed from the note's headings, so nothing is typed twice. The patient app shows this after the visit.</p>
           {structured.prescription.length > 0 ? (
             <table className="w-full text-left text-sm">
@@ -391,7 +431,7 @@ function FinalCard({ final, structured }: { final: LabFinal; structured?: Struct
           {structured.diagnosis.length > 0 && <p className="text-sm"><b>Diagnosis:</b> {structured.diagnosis.join('; ')}</p>}
           {structured.allergies.length > 0 && <p className="text-sm"><b>Allergies:</b> {structured.allergies.join('; ')}</p>}
           {structured.follow_up.text && <p className="text-sm"><b>Follow-up:</b> {structured.follow_up.text}{structured.follow_up.in_days ? ` (in ${structured.follow_up.in_days} days)` : ''}</p>}
-        </>
+        </div>
       )}
     </Card>
   );

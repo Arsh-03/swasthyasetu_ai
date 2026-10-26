@@ -39,7 +39,6 @@ const WandSparkles = glyph('aiAssist');
 const ListChecks = glyph('checklist');
 const Sparkles = glyph('aiAssist');
 const ShieldAlert = glyph('drugAlert');
-const MessagesSquare = glyph('chat');
 const Plus = glyph('add');
 const ShieldCheck = glyph('shieldCheck');
 
@@ -74,7 +73,6 @@ interface ClinicalNotepadProps {
   quietHints?: boolean;
 }
 
-const fmtTime = (ms: number | null) => (ms === null ? '' : `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`);
 const IDENTIFIER_LABELS: Record<string, string> = {
   PATIENT: 'patient name', DOCTOR: 'doctor name', PERSON: 'other name', PHONE: 'phone number', ABHA: 'ABHA ID',
   ID: 'ID number', EMAIL: 'e-mail', PIN: 'PIN code', PLACE: 'place', DATE: 'date',
@@ -366,6 +364,38 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
       kind: 'call', original: '', name: f.text, codes: [], category: `From the call · ${f.kind}`,
       severity: f.severity === 'urgent' ? 'critical' : 'routine', confidence: 1, alternatives: [], auto: true,
     };
+    // A fuller version of lines CHIBI already wrote: update them in place instead of adding another line.
+    // Lines the doctor has edited since are left alone.
+    const olds = (f.replaces ?? [])
+      .map(id => callAppliedRef.current[id])
+      .filter(p => p?.status === 'added')
+      .map(p => annRef.current.find(a => a.kind === 'call' && a.name === p.finding.text && text.slice(a.start, a.end) === p.finding.text))
+      .filter((a): a is NonNullable<typeof a> => !!a)
+      .sort((a, b) => a.start - b.start);
+    if (olds.length) {
+      let next = text;
+      const caret = taRef.current?.selectionStart ?? text.length;
+      let newCaret = caret;
+      for (const a of [...olds.slice(1)].reverse()) {                  // drop the extra lines (with their line break)
+        const start = next[a.start - 1] === '\n' ? a.start - 1 : a.start;
+        next = next.slice(0, start) + next.slice(a.end);
+        if (newCaret > a.end) newCaret -= a.end - start; else if (newCaret > start) newCaret = start;
+      }
+      const keep = olds[0];
+      next = next.slice(0, keep.start) + f.text + next.slice(keep.end);
+      if (newCaret > keep.end) newCaret += f.text.length - (keep.end - keep.start);
+      annRef.current = annRef.current.filter(a => !olds.includes(a));   // the new line gets its own marker
+      pendingCoded.current = { start: keep.start, end: keep.start + f.text.length, draft };
+      commitText(next);
+      pendingSelection.current = newCaret;
+      setCallApplied(prev => {
+        const out = { ...prev };
+        for (const id of f.replaces ?? []) delete out[id];
+        out[f.id] = { status: 'added', finding: f };
+        return out;
+      });
+      return;
+    }
     if (at !== null) {
       insertSilently(at, `\n${f.text}`, draft, at + 1);
     } else {
@@ -374,18 +404,6 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
     }
     setCallApplied(prev => ({ ...prev, [f.id]: { status: 'added', finding: f } }));
   }, [engine, insertSilently]);
-
-  const removeCallFinding = useCallback((f: CallFinding) => {
-    const ann = annRef.current.find(a => a.kind === 'call' && a.name === f.text);
-    if (ann) {
-      const old = textRef.current;
-      const start = old[ann.start - 1] === '\n' ? ann.start - 1 : ann.start;   // take the line break with it
-      const caret = taRef.current?.selectionStart ?? old.length;
-      commitText(old.slice(0, start) + old.slice(ann.end));
-      pendingSelection.current = caret > ann.end ? caret - (ann.end - start) : Math.min(caret, start);
-    }
-    setCallApplied(prev => ({ ...prev, [f.id]: { status: 'removed', finding: f } }));
-  }, [commitText]);
 
   // "Add to note" from the live assistant.
   useEffect(() => {

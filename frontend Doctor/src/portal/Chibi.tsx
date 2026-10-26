@@ -39,7 +39,7 @@ export function Chibi({ route }: { route: Route }) {
   useEffect(() => setOpen(false), [route]);
 
   const listening = call.aiState === 'recording';
-  const inConsultation = !!consultation && (call.callState === 'connected' || listening || route.page === 'meeting');
+  const inConsultation = !!consultation && (call.callState === 'in_call' || listening || route.page === 'meeting');
   const heard = (call.minutes?.missing ?? []);
   const alerts = call.assist.alerts;
   const mood: ChibiMood = alerts.length ? 'alert' : call.aiState === 'finishing' ? 'thinking'

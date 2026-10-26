@@ -68,6 +68,31 @@ def test_agent_memory_and_masking():
     asyncio.run(run())
 
 
+def test_restated_lines_update_in_place():
+    """The AI restates the complaint with one more symptom each batch: the note keeps one line, updated."""
+    st = agent.AgentState()
+
+    class Same:
+        def restore(self, t):
+            return t
+    sh = Same()
+    seq = ["Fever x 4 days",
+           "Fever x 4 days, chills at night, alternating headaches",
+           "Fever x 4 days, chills at night, alternating headaches, sore throat, cold, cough",
+           "fever x 4 days, chills at night, headaches, sore throat, cold, cough, body pain",
+           "Rash",
+           "Fever x 4 days, chills at night, headaches, sore throat, cold, cough, body pain, severe body pain, difficulty swallowing",
+           "Fever x 4 days, chills at night, headaches, sore throat, cold, cough, body pain, difficulty swallowing"]
+    out = [agent._add_fact(st, "complaints", t, "ai", sh) for t in seq]
+    assert out[1]["replaces"] == [out[0]["id"]], out[1]
+    assert out[4]["replaces"] == [], out[4]
+    assert out[6] is None                                      # adds nothing over the line before
+    texts = [f["text"] for f in st.facts]
+    assert len(texts) == 2 and texts[1] == "Rash" and "difficulty swallowing" in texts[0], texts
+
+
 if __name__ == "__main__":
     test_agent_memory_and_masking()
     print("ok  test_agent_memory_and_masking")
+    test_restated_lines_update_in_place()
+    print("ok  test_restated_lines_update_in_place")

@@ -35,6 +35,8 @@ export interface CallFinding {
   heading?: string;
   /** Why CHIBI thinks it matters (from the AI), shown with the hint. */
   why?: string | null;
+  /** Ids of earlier findings this one is a fuller version of: it takes their place in the note. */
+  replaces?: string[];
 }
 
 /** Live assistant (backend/app/services/live_assistant.py). */

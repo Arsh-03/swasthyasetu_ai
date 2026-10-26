@@ -476,7 +476,8 @@ async def analyze(session: CallSession, note_text: Optional[str] = None) -> Dict
                 known.append(m["text"])
                 missing.append({"id": m["id"], "kind": m["key"], "section": m["section"], "heading": m["heading"],
                                 "text": m["text"], "severity": "routine", "source": "agent", "speaker": "conversation",
-                                "at_ms": None, "quote": "", "quote_english": "", "why": m.get("why")})
+                                "at_ms": None, "quote": "", "quote_english": "", "why": m.get("why"),
+                                "replaces": m.get("replaces") or []})
     return {
         "session_id": session.id,
         "transcript": [_line_view(l) for l in session.lines],
