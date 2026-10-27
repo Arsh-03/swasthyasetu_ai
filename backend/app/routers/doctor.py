@@ -5,12 +5,14 @@ Times are stored in UTC. The portal sends the doctor's local day boundaries / UT
 "day" matters (the server has no time-zone database), so "today" is always the doctor's today.
 """
 import uuid
+import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, or_, select, update
+from sqlalchemy import desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -177,6 +179,31 @@ def _availability_problem(availability: Dict[str, Any], start: datetime, minutes
 # Home dashboard
 # ---------------------------------------------------------------------------
 
+_DASHBOARD_CACHE: Dict[str, tuple[float, Any]] = {}
+_APPOINTMENTS_CACHE: Dict[str, tuple[float, Any]] = {}
+_NOTIFICATIONS_CACHE: Dict[str, tuple[float, Any]] = {}
+_CACHE_TTL = 15.0  # seconds
+
+def _get_cached_dashboard(key: str) -> Optional[Any]:
+    item = _DASHBOARD_CACHE.get(key)
+    if item and time.time() - item[0] < _CACHE_TTL:
+        return item[1]
+    return None
+
+def _set_cached_dashboard(key: str, data: Any):
+    _DASHBOARD_CACHE[key] = (time.time(), data)
+
+def invalidate_doctor_caches(practitioner_id: str):
+    to_del_dash = [k for k in _DASHBOARD_CACHE if k.startswith(practitioner_id)]
+    for k in to_del_dash:
+        _DASHBOARD_CACHE.pop(k, None)
+    to_del_apts = [k for k in _APPOINTMENTS_CACHE if k.startswith(practitioner_id)]
+    for k in to_del_apts:
+        _APPOINTMENTS_CACHE.pop(k, None)
+    _PATIENTS_CACHE.pop(practitioner_id, None)
+    _SETTINGS_CACHE.pop(practitioner_id, None)
+    _NOTIFICATIONS_CACHE.pop(practitioner_id, None)
+
 @router.get("/dashboard")
 async def dashboard(
     day_start: datetime = Query(..., description="Start of the doctor's local today, as an ISO instant"),
@@ -185,6 +212,11 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     me = current_doctor["user_id"]
+    cache_key = f"{me}:{day_start.isoformat()}:{utc_offset_minutes}"
+    cached = _get_cached_dashboard(cache_key)
+    if cached is not None:
+        return cached
+
     now = now_utc()
     day_start = as_aware(day_start)
     day_end = day_start + timedelta(days=1)
@@ -194,6 +226,15 @@ async def dashboard(
     apts = (await db.execute(
         select(Appointment).where(Appointment.practitioner_id == me, Appointment.scheduled_at.is_not(None))
     )).scalars().all()
+    done = (await db.execute(
+        select(Encounter).where(Encounter.practitioner_id == me, Encounter.status == "completed",
+                                Encounter.end_time.is_not(None), Encounter.end_time >= chart_start)
+    )).scalars().all()
+    alerts = (await db.execute(
+        select(Notification).where(Notification.practitioner_id == me, Notification.severity == "critical",
+                                   Notification.read_at.is_(None)).order_by(desc(Notification.created_at)).limit(5)
+    )).scalars().all()
+
     today = sorted([a for a in apts if day_start <= as_aware(a.scheduled_at) < day_end],
                    key=lambda a: as_aware(a.scheduled_at))
     upcoming = sorted(
@@ -201,13 +242,10 @@ async def dashboard(
          and as_aware(a.scheduled_at) + timedelta(minutes=a.duration_minutes or 20) > now],
         key=lambda a: as_aware(a.scheduled_at),
     )
+
     profiles = await _profiles(db, [a.patient_id for a in apts])
     encs = await _encounters(db, [a.encounter_id for a in today + upcoming[:1]])
 
-    done = (await db.execute(
-        select(Encounter).where(Encounter.practitioner_id == me, Encounter.status == "completed",
-                                Encounter.end_time.is_not(None), Encounter.end_time >= chart_start)
-    )).scalars().all()
     offset = timedelta(minutes=utc_offset_minutes)
     per_day: Dict[str, int] = {}
     for e in done:
@@ -221,13 +259,9 @@ async def dashboard(
     ahead = [(day_start + offset + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
 
     under_care = {a.patient_id for a in apts if as_aware(a.scheduled_at) >= now - timedelta(days=90)}
-    alerts = (await db.execute(
-        select(Notification).where(Notification.practitioner_id == me, Notification.severity == "critical",
-                                   Notification.read_at.is_(None)).order_by(desc(Notification.created_at)).limit(5)
-    )).scalars().all()
-
     nxt = upcoming[0] if upcoming else None
-    return {
+
+    result = {
         "next_appointment": appointment_out(nxt, profiles.get(nxt.patient_id), encs.get(nxt.encounter_id)) if nxt else None,
         "today": [appointment_out(a, profiles.get(a.patient_id), encs.get(a.encounter_id)) for a in today],
         "stats": {
@@ -241,6 +275,8 @@ async def dashboard(
         "scheduled_by_day": [{"date": d, "count": scheduled_per_day.get(d, 0)} for d in ahead],
         "alerts": [notification_to_dict(n) for n in alerts],
     }
+    _set_cached_dashboard(cache_key, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -254,14 +290,24 @@ async def list_appointments(
     current_doctor: Dict[str, Any] = Depends(require_doctor),
     db: AsyncSession = Depends(get_db),
 ):
+    me = current_doctor["user_id"]
+    cache_key = f"{me}:{start.isoformat()}:{end.isoformat()}"
+    cached = _APPOINTMENTS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1]
+
     rows = (await db.execute(
-        select(Appointment).where(Appointment.practitioner_id == current_doctor["user_id"],
+        select(Appointment).where(Appointment.practitioner_id == me,
                                   Appointment.scheduled_at >= as_aware(start), Appointment.scheduled_at < as_aware(end))
         .order_by(Appointment.scheduled_at)
     )).scalars().all()
-    profiles = await _profiles(db, [a.patient_id for a in rows])
-    encs = await _encounters(db, [a.encounter_id for a in rows])
-    return [appointment_out(a, profiles.get(a.patient_id), encs.get(a.encounter_id)) for a in rows]
+    profiles, encs = await asyncio.gather(
+        _profiles(db, [a.patient_id for a in rows]),
+        _encounters(db, [a.encounter_id for a in rows])
+    )
+    result = [appointment_out(a, profiles.get(a.patient_id), encs.get(a.encounter_id)) for a in rows]
+    _APPOINTMENTS_CACHE[cache_key] = (time.time(), result)
+    return result
 
 
 @router.get("/appointments/{appointment_id}")
@@ -349,6 +395,7 @@ async def book_appointment(req: AppointmentIn, current_doctor: Dict[str, Any] = 
     db.add(AuditEvent(actor_id=me, action="APPOINTMENT_BOOKED", resource_id=apt.appointment_id,
                       outcome="SUCCESS", purpose=f"{profile.full_name} · {date_label} {time_label}"))
     await db.commit()
+    invalidate_doctor_caches(me)
     await _tell_patient(apt, "appointment_rescheduled")  # the patient app treats this as "appointment changed"
     return appointment_out(apt, profile)
 
@@ -403,6 +450,7 @@ async def change_appointment(appointment_id: str, req: AppointmentIn,
     apt.mode = req.mode or apt.mode
     db.add(AuditEvent(actor_id=me, action=action, resource_id=apt.appointment_id, outcome="SUCCESS", purpose=detail or None))
     await db.commit()
+    invalidate_doctor_caches(me)
     await _tell_patient(apt, "appointment_rescheduled")
     profile = await db.get(PatientProfile, apt.patient_id)
     return appointment_out(apt, profile)
@@ -444,15 +492,34 @@ async def _my_patient_ids(db: AsyncSession, me: str) -> set:
     return {i for i in ids if not str(i).startswith("lab_")}       # the CHIBI Test Lab's stand-in patient
 
 
+_PATIENTS_CACHE: Dict[str, tuple[float, Any]] = {}
+
 @router.get("/patients")
 async def my_patients(current_doctor: Dict[str, Any] = Depends(require_doctor), db: AsyncSession = Depends(get_db)):
     me = current_doctor["user_id"]
+    cached = _PATIENTS_CACHE.get(me)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1]
+
     now = now_utc()
     ids = await _my_patient_ids(db, me)
-    profiles = await _profiles(db, ids)
-    users = {u.user_id: u for u in (await db.execute(select(User).where(User.user_id.in_(list(ids))))).scalars()} if ids else {}
-    apts = (await db.execute(select(Appointment).where(Appointment.patient_id.in_(list(ids))))).scalars().all() if ids else []
-    encs = (await db.execute(select(Encounter).where(Encounter.patient_id.in_(list(ids))))).scalars().all() if ids else []
+    id_list = list(ids)
+
+    if not id_list:
+        _PATIENTS_CACHE[me] = (time.time(), [])
+        return []
+
+    profiles_task = _profiles(db, ids)
+    users_task = db.execute(select(User).where(User.user_id.in_(id_list)))
+    apts_task = db.execute(select(Appointment).where(Appointment.patient_id.in_(id_list)))
+    encs_task = db.execute(select(Encounter).where(Encounter.patient_id.in_(id_list)))
+
+    profiles, users_res, apts_res, encs_res = await asyncio.gather(
+        profiles_task, users_task, apts_task, encs_task
+    )
+    users = {u.user_id: u for u in users_res.scalars()}
+    apts = apts_res.scalars().all()
+    encs = encs_res.scalars().all()
 
     out = []
     for pid, profile in profiles.items():
@@ -472,6 +539,7 @@ async def my_patients(current_doctor: Dict[str, Any] = Depends(require_doctor), 
         })
     out.sort(key=lambda p: (p["next_appointment"] is None,
                             p["next_appointment"]["scheduled_at"] if p["next_appointment"] else now, p["full_name"]))
+    _PATIENTS_CACHE[me] = (time.time(), out)
     return out
 
 
@@ -659,11 +727,18 @@ async def structured_note(encounter_id: str, current_doctor: Dict[str, Any] = De
 async def list_notifications(limit: int = Query(50, le=200), current_doctor: Dict[str, Any] = Depends(require_doctor),
                              db: AsyncSession = Depends(get_db)):
     me = current_doctor["user_id"]
+    cached = _NOTIFICATIONS_CACHE.get(me)
+    if cached and time.time() - cached[0] < 10.0:
+        return cached[1]
+
     rows = (await db.execute(select(Notification).where(Notification.practitioner_id == me)
                              .order_by(desc(Notification.created_at)).limit(limit))).scalars().all()
-    unread = (await db.execute(select(Notification.notification_id).where(
-        Notification.practitioner_id == me, Notification.read_at.is_(None)))).scalars().all()
-    return {"items": [notification_to_dict(n) for n in rows], "unread": len(unread)}
+    unread_count = (await db.execute(select(func.count(Notification.notification_id)).where(
+        Notification.practitioner_id == me, Notification.read_at.is_(None)))).scalar() or 0
+
+    result = {"items": [notification_to_dict(n) for n in rows], "unread": unread_count}
+    _NOTIFICATIONS_CACHE[me] = (time.time(), result)
+    return result
 
 
 class MarkReadIn(BaseModel):
@@ -674,6 +749,7 @@ class MarkReadIn(BaseModel):
 @router.post("/notifications/read")
 async def mark_read(req: MarkReadIn, current_doctor: Dict[str, Any] = Depends(require_doctor),
                     db: AsyncSession = Depends(get_db)):
+    _NOTIFICATIONS_CACHE.pop(current_doctor["user_id"], None)
     stmt = update(Notification).where(Notification.practitioner_id == current_doctor["user_id"],
                                       Notification.read_at.is_(None))
     if not req.all:
@@ -725,20 +801,30 @@ def _valid_availability(av: Dict[str, Any]) -> Dict[str, Any]:
     return {"weekly": weekly, "leaves": sorted(leaves, key=lambda l: l["start"])}
 
 
+_SETTINGS_CACHE: Dict[str, tuple[float, Any]] = {}
+
 @router.get("/settings")
 async def get_settings(current_doctor: Dict[str, Any] = Depends(require_doctor), db: AsyncSession = Depends(get_db)):
-    doctor = await db.get(Practitioner, current_doctor["user_id"])
+    me = current_doctor["user_id"]
+    cached = _SETTINGS_CACHE.get(me)
+    if cached and time.time() - cached[0] < 60.0:
+        return cached[1]
+
+    doctor = await db.get(Practitioner, me)
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     row = await _settings_row(db, doctor.practitioner_id)
-    await db.commit()
-    return _settings_out(doctor, row)
+    out = _settings_out(doctor, row)
+    _SETTINGS_CACHE[me] = (time.time(), out)
+    return out
 
 
 @router.put("/settings")
 async def save_settings(req: SettingsIn, current_doctor: Dict[str, Any] = Depends(require_doctor),
                         db: AsyncSession = Depends(get_db)):
-    doctor = await db.get(Practitioner, current_doctor["user_id"])
+    me = current_doctor["user_id"]
+    _SETTINGS_CACHE.pop(me, None)
+    doctor = await db.get(Practitioner, me)
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor profile not found")
     row = await _settings_row(db, doctor.practitioner_id)

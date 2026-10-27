@@ -277,7 +277,7 @@ class Appointment(Base):
 
     appointment_id = Column(String(36), primary_key=True, default=generate_uuid)
     patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=False, index=True)
-    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), nullable=True)
+    practitioner_id = Column(String(36), ForeignKey("practitioners.practitioner_id"), nullable=True, index=True)
     date_label = Column(String(100), nullable=False)  # "Tomorrow, 23 Oct 2026"
     time_label = Column(String(50), nullable=False)  # "10:30 AM IST"
     relative_label = Column(String(150), nullable=True)

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Set
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal, get_db
@@ -639,7 +639,7 @@ async def active_encounter(doctor_id: Optional[str] = None,
                                 Encounter.status.in_(["in_progress", "queued"]))
     if doctor_id:
         q = q.where(Encounter.practitioner_id == doctor_id)
-    enc = (await db.execute(q.order_by(Encounter.start_time))).scalars().first()  # oldest open, as the queue shows
+    enc = (await db.execute(q.order_by(desc(Encounter.start_time)))).scalars().first()
     if not enc:
         return {"encounter_id": None}
     practitioner = await db.get(Practitioner, enc.practitioner_id) if enc.practitioner_id else None

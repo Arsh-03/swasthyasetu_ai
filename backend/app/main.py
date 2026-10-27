@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import List, Dict
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.seed_data import seed_database
 from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls, doctor, chat, vitals, asha, privacy, lab, partner, care
@@ -11,13 +12,38 @@ from app.services.connection_manager import ws_manager
 from app.services.auth_dependencies import decode_access_token
 from app.services.llm_completion import completion_service
 
+from sqlalchemy import text
+from app.database import AsyncSessionLocal
+
+async def _pool_warmup_keepalive():
+    """Keeps connection pool warm and prevents Neon serverless compute cold-starts."""
+    while True:
+        try:
+            await asyncio.sleep(45)
+            async with AsyncSessionLocal() as s:
+                await s.execute(text("SELECT 1"))
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            pass
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Seed database
-    await seed_database()
+    # Startup: Seed database (non-blocking if already initialized)
+    try:
+        await seed_database()
+    except Exception as e:
+        print(f"Startup notice: seed_database skipped: {e}")
+    try:
+        from app.care_network import ensure_care_network
+        await ensure_care_network()
+    except Exception as e:
+        print(f"Startup notice: ensure_care_network skipped: {e}")
     await completion_service.start()  # Tier 3 health checks (no-op when disabled)
+    keepalive_task = asyncio.create_task(_pool_warmup_keepalive())
     yield
     # Shutdown
+    keepalive_task.cancel()
     await completion_service.stop()
 
 app = FastAPI(
@@ -26,6 +52,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Response compression for payloads > 500 bytes (reduces transfer time over network)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Enable CORS for frontend Vite development
 app.add_middleware(

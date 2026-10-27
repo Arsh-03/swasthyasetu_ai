@@ -21,7 +21,14 @@ function useCountdown(iso: string | undefined) {
 
 export function HomeScreen() {
   const { t, fmt, doctor, version, markRead } = usePortal();
-  const [data, setData] = useState<Dashboard | null>(null);
+  const [data, setData] = useState<Dashboard | null>(() => {
+    try {
+      const v = localStorage.getItem('cached_dashboard');
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [booking, setBooking] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
@@ -31,7 +38,13 @@ export function HomeScreen() {
     let alive = true;
     const today = fmt.today();
     doctorApi.dashboard(fmt.fromLocal(today, '00:00').toISOString(), fmt.offset())
-      .then((d) => { if (alive) { setData(d); setError(null); } })
+      .then((d) => {
+        if (alive) {
+          setData(d);
+          setError(null);
+          try { localStorage.setItem('cached_dashboard', JSON.stringify(d)); } catch { /* */ }
+        }
+      })
       .catch((e) => alive && setError(e instanceof Error ? e.message : t('loadError')));
     return () => { alive = false; };
   }, [fmt, version, reload, t]);

@@ -42,12 +42,9 @@ export const CallWindow: React.FC<Props> = ({ call, title, panel, children }) =>
         {call.recordingSession && <span className="cc-rec"><span className="cc-rec-dot" /> REC</span>}
         <span className="cc-window-spacer" />
         {size === 'min' && (
-          <>
-            <button type="button" className="cc-icon-btn" onClick={call.toggleMic} aria-label={call.micOff ? 'Unmute' : 'Mute'}>
-              {call.micOff ? <MicOff size={16} /> : <Mic size={16} />}
-            </button>
-            <button type="button" className="cc-icon-btn cc-icon-end" onClick={call.endCall} aria-label="End call"><PhoneOff size={16} /></button>
-          </>
+          <button type="button" className="cc-icon-btn" onClick={call.toggleMic} aria-label={call.micOff ? 'Unmute' : 'Mute'}>
+            {call.micOff ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
         )}
         {size !== 'min' && (
           <button type="button" className="cc-icon-btn" onClick={() => setSize('min')} aria-label="Minimise"><ChevronDown size={16} /></button>
@@ -55,6 +52,9 @@ export const CallWindow: React.FC<Props> = ({ call, title, panel, children }) =>
         <button type="button" className="cc-icon-btn" onClick={() => setSize(size === 'large' ? 'small' : 'large')}
           aria-label={size === 'large' ? 'Make smaller' : 'Make larger'}>
           {size === 'large' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+        <button type="button" className="cc-icon-btn cc-icon-end" onClick={call.endCall} aria-label="End call" title="Cut / End call">
+          <PhoneOff size={16} />
         </button>
       </div>
       {/* Hidden (not removed) when minimised, so video and the notepad keep their state. */}

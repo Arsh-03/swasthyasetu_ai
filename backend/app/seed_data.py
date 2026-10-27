@@ -77,6 +77,14 @@ async def seed_database():
     from app.demo_schedule import ensure_demo_schedule
     from app.services.migrations import add_missing_columns
 
+    try:
+        async with AsyncSessionLocal() as session:
+            check = await session.execute(select(User).limit(1))
+            if check.scalars().first() is not None:
+                return  # Database is already initialized; skip startup delay
+    except Exception:
+        pass  # Fresh database without tables yet
+
     async with migration_engine.begin() as conn:
         # Create all tables (direct connection, not the pooler), then add any newer columns.
         await conn.run_sync(Base.metadata.create_all)

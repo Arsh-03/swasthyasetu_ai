@@ -2,7 +2,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from app.database import get_db
 from app.models.models import Encounter, PatientProfile, Practitioner, Representative, AuditEvent
 from app.schemas.schemas import AuditEventOut, SymptomIntakeIn
@@ -45,7 +45,9 @@ async def submit_symptom_intake(
     open_q = select(Encounter).where(Encounter.patient_id == patient_id, Encounter.status.in_(["queued", "in_progress"]))
     if doctor:
         open_q = open_q.where(Encounter.practitioner_id == doctor.practitioner_id)
-    enc = (await db.execute(open_q.order_by(Encounter.start_time))).scalars().first()
+    else:
+        open_q = open_q.where(Encounter.practitioner_id.is_(None))
+    enc = (await db.execute(open_q.order_by(desc(Encounter.start_time)))).scalars().first()
 
     if enc:
         enc.symptoms_text = complaint or enc.symptoms_text
