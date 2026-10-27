@@ -31,6 +31,7 @@ import { SummaryOfferSheet } from './src/components/VisitSummary';
 import { AshaApp } from './src/components/AshaApp';
 import { MeetingJoinView } from './src/components/MeetingJoinView';
 import { ChibiButton, type ChibiSkill } from './src/components/chibi/Chibi';
+import { chibiVoice } from './src/services/voice/chibiVoiceService';
 import { WhoSawMyRecordsView } from './src/components/WhoSawMyRecordsView';
 import { RecordsLockerView } from './src/components/RecordsLockerView';
 import { SymptomIntakeModal } from './src/components/SymptomIntakeModal';
@@ -78,7 +79,7 @@ export default function App() {
 
 function PatientApp() {
   const insets = useSafeAreaInsets();
-  const { lang, t, applyProfileLanguage } = useLanguage();
+  const { lang, t, setLang, applyProfileLanguage } = useLanguage();
   // The WebSocket handler is created once per login, so read translations through refs
   const tRef = useRef(t);
   const langRef = useRef(lang);
@@ -128,9 +129,41 @@ function PatientApp() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToastMessage(null), 4000);
   };
+
   const [appointmentInfo, setAppointmentInfo] = useState<PatientAppointmentInfo | undefined>(undefined);
   // Display-only: lets the Today card tell loading / none / failed apart
   const [appointmentStatus, setAppointmentStatus] = useState<AppointmentStatus>('loading');
+
+  // Listen for CHIBI voice navigation & assistant actions
+  useEffect(() => {
+    return chibiVoice.onAction((action) => {
+      switch (action.type) {
+        case 'navigate':
+          if (action.screen === 'join' && appointmentInfo?.meetingCode) {
+            setJoinCode(appointmentInfo.meetingCode ?? null);
+          }
+          if (action.screen === 'whosaw') {
+            setPrivacyBackTarget('home');
+          }
+          setCurrentScreen(action.screen);
+          showToast(action.feedback, 'success');
+          break;
+        case 'sos':
+          setIsEmergencyVisible(true);
+          showToast(action.feedback, 'error');
+          break;
+        case 'change_language':
+          setLang(action.lang);
+          showToast(action.feedback, 'info');
+          break;
+        case 'screen_summary':
+        case 'help':
+        case 'unknown':
+          showToast(action.feedback, 'info');
+          break;
+      }
+    });
+  }, [appointmentInfo?.meetingCode, setLang]);
   // ---- Consultation call (real WebRTC call with the doctor) ----
   const [callRoom, setCallRoom] = useState<{ encounter_id: string; doctor_name?: string } | null>(null);
   // Meeting link (web: ?join=<code>) or the next appointment's meeting
@@ -601,7 +634,14 @@ function PatientApp() {
               callRoomEncounterId={callRoom?.encounter_id ?? null}
               onRoom={setCallRoom}
               onBack={() => setCurrentScreen('home')}
-              onRequestCall={() => { setCurrentScreen('home'); setIsIntakeVisible(true); }}
+              onRequestCall={() => {
+                setCurrentScreen('home');
+                openIntake(
+                  appointmentInfo?.practitionerId
+                    ? { id: appointmentInfo.practitionerId, name: appointmentInfo.doctorName || t('yourDoctor') }
+                    : null
+                );
+              }}
             />
           )}
 
@@ -667,8 +707,9 @@ function PatientApp() {
         onClose={() => setIsIntakeVisible(false)}
         onSubmit={async (symptoms, isRep, notes) => {
           const doctorId = intakeDoctor?.id ?? null;
+          let intakeRes: { encounter_id: string; status: string; complaint: string } | null = null;
           try {
-            await patientApi.submitIntake(symptoms, notes || '', isRep, doctorId);
+            intakeRes = await patientApi.submitIntake(symptoms, notes || '', isRep, doctorId);
           } catch (err) {
             showToast(t('toastCouldNotSendSymptoms', { error: errorText(err) }), 'error');
             return;
@@ -679,7 +720,15 @@ function PatientApp() {
             return;
           }
           showToast(t('toastTriageComplete'), 'call');
-          if (await refreshCallRoom(doctorId)) setPendingCallStart(true);
+          if (intakeRes?.encounter_id) {
+            setCallRoom({
+              encounter_id: intakeRes.encounter_id,
+              doctor_name: intakeDoctor?.name || t('yourDoctor'),
+            });
+            setPendingCallStart(true);
+          } else if (await refreshCallRoom(doctorId)) {
+            setPendingCallStart(true);
+          }
         }}
       />
 

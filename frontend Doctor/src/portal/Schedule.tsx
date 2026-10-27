@@ -70,7 +70,14 @@ export function AppointmentRow({ apt, showDate = false, hidePatient = false }: {
 /** Appointments from `startDay` for `days` days, refetched when portal data changes. */
 function useAppointments(startDay: string, days: number) {
   const { fmt, version } = usePortal();
-  const [items, setItems] = useState<Appointment[] | null>(null);
+  const [items, setItems] = useState<Appointment[] | null>(() => {
+    try {
+      const v = localStorage.getItem(`cached_apts_${startDay}`);
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  });
   const [error, setError] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -78,7 +85,12 @@ function useAppointments(startDay: string, days: number) {
     const start = fmt.fromLocal(startDay, '00:00').toISOString();
     const end = fmt.fromLocal(addDays(startDay, days), '00:00').toISOString();
     doctorApi.appointments(start, end)
-      .then((rows) => alive && setItems(rows))
+      .then((rows) => {
+        if (alive) {
+          setItems(rows);
+          try { localStorage.setItem(`cached_apts_${startDay}`, JSON.stringify(rows)); } catch { /* */ }
+        }
+      })
       .catch(() => alive && setError(true));
     return () => { alive = false; };
   }, [startDay, days, fmt, version]);

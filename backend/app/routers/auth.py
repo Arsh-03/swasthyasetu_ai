@@ -1,5 +1,7 @@
 import uuid
 import hashlib
+import asyncio
+import time
 from datetime import datetime, timezone
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -19,6 +21,8 @@ from app.services.ocr_service import process_document
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_PROFILES_CACHE: Optional[tuple[float, Dict[str, Any]]] = None
+
 @router.get("/profiles")
 async def get_all_demo_profiles(db: AsyncSession = Depends(get_db)):
     """
@@ -27,16 +31,20 @@ async def get_all_demo_profiles(db: AsyncSession = Depends(get_db)):
     - Sunita Devi (Authorised Representative)
     - Dr. Ananya Sharma (Telemedicine Physician)
     """
-    pat_res = await db.execute(select(PatientProfile))
+    global _PROFILES_CACHE
+    if _PROFILES_CACHE and time.time() - _PROFILES_CACHE[0] < 60.0:
+        return _PROFILES_CACHE[1]
+
+    pat_task = db.execute(select(PatientProfile).limit(1))
+    doc_task = db.execute(select(Practitioner).limit(1))
+    rep_task = db.execute(select(Representative).limit(1))
+    pat_res, doc_res, rep_res = await asyncio.gather(pat_task, doc_task, rep_task)
+
     patient = pat_res.scalars().first()
-
-    doc_res = await db.execute(select(Practitioner))
     doc = doc_res.scalars().first()
-
-    rep_res = await db.execute(select(Representative))
     rep = rep_res.scalars().first()
 
-    return {
+    res = {
         "patient": {
             "patient_id": patient.patient_id if patient else "usr_ramesh_gowda",
             "full_name": patient.full_name if patient else "Ramesh Gowda",
@@ -60,6 +68,8 @@ async def get_all_demo_profiles(db: AsyncSession = Depends(get_db)):
             "authority_status": "active"
         }
     }
+    _PROFILES_CACHE = (time.time(), res)
+    return res
 
 @router.post("/login", response_model=AuthResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -589,6 +599,8 @@ async def register_doctor(req: DoctorRegisterRequest, db: AsyncSession = Depends
     )
 
 
+_ME_CACHE: Dict[str, tuple[float, Any]] = {}
+
 @router.get("/me")
 async def get_current_user_profile(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -598,6 +610,10 @@ async def get_current_user_profile(
     Protected Endpoint: Returns verified user identity from validated JWT claims and database.
     """
     user_id = current_user["user_id"]
+    cached = _ME_CACHE.get(user_id)
+    if cached and time.time() - cached[0] < 60.0:
+        return cached[1]
+
     role = current_user["role"]
 
     if role == "patient":
@@ -610,7 +626,7 @@ async def get_current_user_profile(
         record = res.first()
         if record:
             profile, user = record
-            return {
+            data = {
                 "user_id": user_id,
                 "role": "patient",
                 "full_name": profile.full_name,
@@ -619,7 +635,9 @@ async def get_current_user_profile(
                 "preferred_language": profile.preferred_language,
                 "demographics": profile.demographics_json
             }
-        return {
+            _ME_CACHE[user_id] = (time.time(), data)
+            return data
+        data = {
             "user_id": user_id,
             "role": "patient",
             "full_name": current_user.get("name", "Ramesh Gowda"),
@@ -627,6 +645,8 @@ async def get_current_user_profile(
             "phone_number": "9845012345",
             "preferred_language": "kn"
         }
+        _ME_CACHE[user_id] = (time.time(), data)
+        return data
     else:
         stmt = (
             select(Practitioner, User)
@@ -637,7 +657,7 @@ async def get_current_user_profile(
         record = res.first()
         if record:
             doc, user = record
-            return {
+            data = {
                 "user_id": user_id,
                 "role": "doctor",
                 "practitioner_id": doc.practitioner_id,
@@ -648,7 +668,9 @@ async def get_current_user_profile(
                 "specialty": doc.specialty,
                 "credential_status": doc.credential_status
             }
-        return {
+            _ME_CACHE[user_id] = (time.time(), data)
+            return data
+        data = {
             "user_id": user_id,
             "role": "doctor",
             "display_name": current_user.get("name", "Dr. Ananya Sharma"),
@@ -657,6 +679,8 @@ async def get_current_user_profile(
             "specialty": "General Medicine",
             "credential_status": "verified"
         }
+        _ME_CACHE[user_id] = (time.time(), data)
+        return data
 
 
 @router.get("/patient/{patient_id}/details")

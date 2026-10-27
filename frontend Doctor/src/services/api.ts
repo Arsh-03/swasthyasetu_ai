@@ -190,14 +190,47 @@ class ApiService {
     return res.json();
   }
 
+  private apiCache = new Map<string, { time: number; data: any }>();
+  private inFlight = new Map<string, Promise<any>>();
+  private readonly CACHE_TTL_MS = 10000;
+
   /** Throws with the backend's error message on a non-2xx response. */
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: this.getHeaders() });
-    const data = await res.json().catch(() => null);
-    if (!res.ok) {
-      throw new Error((data && data.detail) || `Request failed (${res.status})`);
+    const isGet = !init.method || init.method.toUpperCase() === 'GET';
+
+    if (isGet) {
+      const cached = this.apiCache.get(path);
+      if (cached && Date.now() - cached.time < this.CACHE_TTL_MS) {
+        return cached.data as T;
+      }
+      const existing = this.inFlight.get(path);
+      if (existing) {
+        return existing as Promise<T>;
+      }
     }
-    return data as T;
+
+    const fetchPromise = (async () => {
+      const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers: this.getHeaders() });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error((data && data.detail) || `Request failed (${res.status})`);
+      }
+      return data as T;
+    })();
+
+    if (isGet) {
+      this.inFlight.set(path, fetchPromise);
+      try {
+        const result = await fetchPromise;
+        this.apiCache.set(path, { time: Date.now(), data: result });
+        return result;
+      } finally {
+        this.inFlight.delete(path);
+      }
+    }
+
+    this.apiCache.clear();
+    return fetchPromise;
   }
 
   async getMe(): Promise<DoctorProfile> {

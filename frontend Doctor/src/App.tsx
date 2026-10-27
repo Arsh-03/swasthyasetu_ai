@@ -45,8 +45,22 @@ interface Toast { id: number; message: string; tone: ToastTone }
 
 export function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => Boolean(api.getToken()));
-  const [doctor, setDoctor] = useState<DoctorProfile | null>(null);
-  const [settings, setSettings] = useState<DoctorSettings | null>(null);
+  const [doctor, setDoctor] = useState<DoctorProfile | null>(() => {
+    try {
+      const v = localStorage.getItem('cached_doctor_me');
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [settings, setSettings] = useState<DoctorSettings | null>(() => {
+    try {
+      const v = localStorage.getItem('cached_doctor_settings');
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  });
   const [lang, setLangState] = useState<Lang>(storedLang);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unread, setUnread] = useState(0);
@@ -76,6 +90,12 @@ export function App() {
 
   const logout = useCallback(() => {
     api.clearToken();
+    try {
+      localStorage.removeItem('cached_doctor_me');
+      localStorage.removeItem('cached_doctor_settings');
+      localStorage.removeItem('cached_dashboard');
+      localStorage.removeItem('cached_patients_list');
+    } catch { /* private mode */ }
     setIsAuthenticated(false);
     setDoctor(null);
     setSettings(null);
@@ -87,15 +107,24 @@ export function App() {
   // ---- Signed-in doctor and settings ----
   useEffect(() => {
     if (!isAuthenticated) return;
-    api.getMe().then(setDoctor).catch(() => logout());
+    api.getMe().then((d) => {
+      setDoctor(d);
+      try { localStorage.setItem('cached_doctor_me', JSON.stringify(d)); } catch { /* */ }
+    }).catch(() => logout());
     doctorApi.settings().then((s) => {
       setSettings(s);
+      try { localStorage.setItem('cached_doctor_settings', JSON.stringify(s)); } catch { /* */ }
       // The server has no time-zone database: keep the doctor's UTC offset current for chat ("available again at...").
       const offset = makeFormatters({ ...DEFAULT_PREFS, ...s.prefs }).offset();
       if (s.prefs.utc_offset_minutes !== offset) doctorApi.saveSettings({ prefs: { utc_offset_minutes: offset } }).then(setSettings).catch(() => undefined);
       setLangState(s.prefs.language);
       try { localStorage.setItem(LANG_KEY, s.prefs.language); } catch { /* */ }
     }).catch(() => { /* older server: defaults */ });
+
+    // Eagerly prefetch dashboard in background so HomeScreen renders instantly
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    doctorApi.dashboard(todayMidnight.toISOString(), -todayMidnight.getTimezoneOffset()).catch(() => {});
   }, [isAuthenticated, logout]);
 
   const setLang = useCallback((next: Lang) => {
@@ -288,12 +317,23 @@ export function App() {
       {/* In a call but on another page: a small floating call window. */}
       {inCall && route.page !== 'meeting' && (
         <CallWindow call={call} title={patient?.full_name ?? ''} panel={<CallPanel call={call} compact hideStart />}>
-          <a
-            href={consultation?.appointmentId ? hrefFor({ page: 'meeting', appointmentId: consultation.appointmentId }) : '#/home'}
-            className="block w-full py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold text-center"
-          >
-            {t('backToMeeting')}
-          </a>
+          <div className="flex items-center gap-2">
+            <a
+              href={consultation?.appointmentId ? hrefFor({ page: 'meeting', appointmentId: consultation.appointmentId }) : '#/home'}
+              className="flex-1 py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold text-center"
+            >
+              {t('backToMeeting')}
+            </a>
+            <button
+              type="button"
+              onClick={call.endCall}
+              className="px-4 py-2 rounded-xl bg-danger-deep hover:bg-danger-pressed text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-colors"
+              title={t('endCall')}
+            >
+              <Icon name="callEnd" size={14} />
+              {t('endCall')}
+            </button>
+          </div>
         </CallWindow>
       )}
 
@@ -332,6 +372,7 @@ export function App() {
           </div>
         ))}
       </div>
+
     </PortalContext.Provider>
   );
 }

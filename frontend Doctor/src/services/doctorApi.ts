@@ -246,17 +246,55 @@ export class ApiError extends Error {
   }
 }
 
+const apiCache = new Map<string, { time: number; data: any }>();
+const inFlightRequests = new Map<string, Promise<any>>();
+const CACHE_TTL_MS = 8000; // 8 seconds
+
+export function clearDoctorApiCache() {
+  apiCache.clear();
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = api.getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    const detail = data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
-    throw new ApiError(detail || `Request failed (${res.status})`, res.status);
+  const isGet = !init.method || init.method.toUpperCase() === 'GET';
+
+  if (isGet) {
+    const cached = apiCache.get(path);
+    if (cached && Date.now() - cached.time < CACHE_TTL_MS) {
+      return cached.data as T;
+    }
+    const existing = inFlightRequests.get(path);
+    if (existing) {
+      return existing as Promise<T>;
+    }
   }
-  return data as T;
+
+  const fetchPromise = (async () => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const token = api.getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const detail = data && (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail));
+      throw new ApiError(detail || `Request failed (${res.status})`, res.status);
+    }
+    return data as T;
+  })();
+
+  if (isGet) {
+    inFlightRequests.set(path, fetchPromise);
+    try {
+      const result = await fetchPromise;
+      apiCache.set(path, { time: Date.now(), data: result });
+      return result;
+    } finally {
+      inFlightRequests.delete(path);
+    }
+  }
+
+  // Any mutation clears cache
+  apiCache.clear();
+  return fetchPromise;
 }
 
 const qs = (params: Record<string, string | number | undefined | null>) =>

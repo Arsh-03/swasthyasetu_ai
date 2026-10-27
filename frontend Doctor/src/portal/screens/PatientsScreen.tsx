@@ -10,7 +10,14 @@ type Filter = 'all' | 'today' | 'upcoming' | 'attention';
 
 export function PatientsScreen() {
   const { t, fmt, version, notifications } = usePortal();
-  const [items, setItems] = useState<PatientListItem[] | null>(null);
+  const [items, setItems] = useState<PatientListItem[] | null>(() => {
+    try {
+      const v = localStorage.getItem('cached_patients_list');
+      return v ? JSON.parse(v) : null;
+    } catch {
+      return null;
+    }
+  });
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -18,7 +25,15 @@ export function PatientsScreen() {
 
   useEffect(() => {
     let alive = true;
-    doctorApi.patients().then((rows) => { if (alive) { setItems(rows); setError(false); } }).catch(() => alive && setError(true));
+    doctorApi.patients()
+      .then((rows) => {
+        if (alive) {
+          setItems(rows);
+          setError(false);
+          try { localStorage.setItem('cached_patients_list', JSON.stringify(rows)); } catch { /* */ }
+        }
+      })
+      .catch(() => alive && setError(true));
     return () => { alive = false; };
   }, [version, reload]);
 

@@ -16,12 +16,13 @@ Rules
 - Messages are part of the record: stored, linked to the visit, and logged in the audit trail.
 """
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select, update
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -247,13 +248,24 @@ async def list_threads(current_user: Dict[str, Any] = Depends(get_current_user),
     return out
 
 
+_CHAT_UNREAD_CACHE: Dict[str, tuple[float, int]] = {}
+_CHAT_CACHE_TTL = 15.0
+
+
 @router.get("/unread")
 async def unread_count(current_user: Dict[str, Any] = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     me = _who(current_user)
+    user_id = current_user["user_id"]
+    cache_key = f"{user_id}:{me}"
+    cached = _CHAT_UNREAD_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < _CHAT_CACHE_TTL:
+        return {"count": cached[1]}
+
     col = ChatMessage.practitioner_id if me == "doctor" else ChatMessage.patient_id
-    rows = (await db.execute(select(ChatMessage.message_id).where(
-        col == current_user["user_id"], ChatMessage.sender_role != me, ChatMessage.read_at.is_(None)))).all()
-    return {"count": len(rows)}
+    count = (await db.execute(select(func.count(ChatMessage.message_id)).where(
+        col == user_id, ChatMessage.sender_role != me, ChatMessage.read_at.is_(None)))).scalar() or 0
+    _CHAT_UNREAD_CACHE[cache_key] = (time.time(), count)
+    return {"count": count}
 
 
 @router.get("/threads/{other_id}")
@@ -325,6 +337,7 @@ async def send_message(other_id: str, req: MessageIn, current_user: Dict[str, An
 
     payload = {"type": "chat_message", "patient_id": patient_id, "practitioner_id": practitioner_id,
                "sender_name": current_user.get("name") or "", **message_out(msg)}
+    _CHAT_UNREAD_CACHE.clear()
     await ws_manager.send_to([patient_id, practitioner_id], payload)
     if urgent:
         name = patient.full_name if patient else "A patient"
@@ -337,6 +350,7 @@ async def send_message(other_id: str, req: MessageIn, current_user: Dict[str, An
 @router.post("/threads/{other_id}/read")
 async def mark_thread_read(other_id: str, current_user: Dict[str, Any] = Depends(get_current_user),
                            db: AsyncSession = Depends(get_db)):
+    _CHAT_UNREAD_CACHE.clear()
     patient_id, practitioner_id, me = _pair(current_user, other_id)
     result = await db.execute(update(ChatMessage).where(
         ChatMessage.patient_id == patient_id, ChatMessage.practitioner_id == practitioner_id,

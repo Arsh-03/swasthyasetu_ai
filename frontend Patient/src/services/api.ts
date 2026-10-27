@@ -703,8 +703,8 @@ class PatientApiService {
   }
 
   /** `practitionerId`: which of the patient's doctors the visit is for (none = general triage queue). */
-  async submitIntake(symptoms: string[], notes: string, isRepresentative = false, practitionerId?: string | null) {
-    return this.request('/encounters/intake', {
+  async submitIntake(symptoms: string[], notes: string, isRepresentative = false, practitionerId?: string | null): Promise<{ encounter_id: string; status: string; complaint: string }> {
+    return this.request<{ encounter_id: string; status: string; complaint: string }>('/encounters/intake', {
       method: 'POST',
       body: JSON.stringify({ symptoms, notes, is_representative: isRepresentative, practitioner_id: practitionerId || null }),
     });
