@@ -17,7 +17,7 @@ router = APIRouter(prefix="/scribe", tags=["scribe"])
 
 
 def _prescription_from_text(text: str, doctor_name: str, when: datetime) -> Dict[str, Any]:
-    """Turn a free-text order like 'Paracetamol 650mg TDS (After food)' into a chart prescription."""
+    """Turn a free-text order like 'Paracetamol 650mg TDS (After food)' into a chart prescription with patient-friendly fields."""
     t = text.upper()
     has = lambda *words: any(re.search(rf"\b{w}\b", t) for w in words)  # whole words only ("OD" not in "FOOD")
     if has("TDS", "TID", "THRICE", "THREE TIMES"):
@@ -31,9 +31,57 @@ def _prescription_from_text(text: str, doctor_name: str, when: datetime) -> Dict
     else:
         schedule = {"morning": False, "afternoon": False, "night": False}  # as needed
     timing = text[text.find("(") + 1:text.rfind(")")] if "(" in text and ")" in text else "As advised"
+    full_name = text.split("(")[0].strip()
+
+    # Patient-friendly short name
+    s = re.sub(r"\b(Tablet|Oral Solution|Solution|Syrup|Capsule|Injection|Suspension|Drops|Ointment|Gel|Cream|SR|ER|CR|XL|OD|BD|TDS|IP|BP|USP)\b", "", full_name, flags=re.IGNORECASE)
+    s = re.sub(r"\bHydrochloride\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b\d+(\.\d+)?\s*(mg|ml|mcg|g|iu)\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s+", " ", s).strip()
+    short_name = s or full_name.split()[0]
+
+    # Form
+    fl = full_name.lower()
+    if any(w in fl for w in ("solution", "syrup", "suspension", "liquid", "ml")):
+        form = "syrup"
+    elif any(w in fl for w in ("capsule", "cap")):
+        form = "capsule"
+    elif any(w in fl for w in ("drops", "drop")):
+        form = "drops"
+    elif any(w in fl for w in ("injection", "inj")):
+        form = "injection"
+    else:
+        form = "tablet"
+
+    # Meal relation
+    tl = timing.lower()
+    if "bedtime" in tl or "night" in tl or "sleep" in tl:
+        meal_rel = "bedtime"
+    elif "before" in tl or "empty" in tl:
+        meal_rel = "before_food"
+    elif "with" in tl or "during" in tl:
+        meal_rel = "with_food"
+    else:
+        meal_rel = "after_food"
+
+    purpose_patient = {
+        "en": f"Prescribed by {doctor_name}",
+        "kn": f"{doctor_name} ಅವರು ಸೂಚಿಸಿದ ಔಷಧಿ",
+        "hi": f"{doctor_name} द्वारा सुझाई गई दवा",
+    }
+
     return {
         "id": f"rx_{uuid.uuid4().hex[:8]}",
-        "name": text.split("(")[0].strip(),
+        "name": full_name,
+        "short_name": short_name,
+        "purpose_patient": purpose_patient,
+        "form": form,
+        "instructions": {
+            "dose_amount": "1 tablet" if form == "tablet" else "As advised",
+            "meal_relation": meal_rel,
+            "intake_method": "with_water",
+            "timing_label": timing,
+        },
         "dosage": "",
         "route": "Oral",
         "frequency": "As prescribed",

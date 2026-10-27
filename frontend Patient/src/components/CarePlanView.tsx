@@ -12,12 +12,16 @@ import { EmptyMedications } from './illustrations';
 import { SavedSummaries } from './VisitSummary';
 import { DepartmentBadge } from './doctors/DoctorParts';
 import { doctorShortName } from '../utils/departments';
+import { MedicationCard } from './medications/MedicationCard';
+import { MedicationDetailSheet } from './medications/MedicationDetailSheet';
+import { resolveMedicationInfo } from '../utils/medicationInfo';
 import {
   AppText,
   AudioListenButton,
   Badge,
   Card,
   ChoiceTiles,
+  DoubleTapSpeakable,
   Groove,
   Icon,
   type IconName,
@@ -50,6 +54,48 @@ const SLOT_STYLE: Record<DoseSlot, { icon: IconName; time: TranslationKey; tone:
   prn: { icon: 'medication', time: 'slotPrn', tone: 'success' },
 };
 const SLOT_ORDER: DoseSlot[] = ['morning', 'afternoon', 'night', 'prn'];
+
+const ROUTINE_SLOTS: {
+  slot: DoseSlot;
+  titleKey: TranslationKey;
+  subKey: TranslationKey;
+  timeLabel: string;
+  plateIcon: IconName;
+  tone: Tone;
+}[] = [
+  {
+    slot: 'morning',
+    titleKey: 'routineMorning',
+    subKey: 'routineMorningSub',
+    timeLabel: '8:00 AM',
+    plateIcon: 'morning',
+    tone: 'gold',
+  },
+  {
+    slot: 'afternoon',
+    titleKey: 'routineAfternoon',
+    subKey: 'routineAfternoonSub',
+    timeLabel: '1:30 PM',
+    plateIcon: 'afternoon',
+    tone: 'warning',
+  },
+  {
+    slot: 'night',
+    titleKey: 'routineNight',
+    subKey: 'routineNightSub',
+    timeLabel: '8:30 PM',
+    plateIcon: 'night',
+    tone: 'primary',
+  },
+  {
+    slot: 'prn',
+    titleKey: 'routinePrn',
+    subKey: 'routinePrnSub',
+    timeLabel: 'SOS',
+    plateIcon: 'bolt',
+    tone: 'teal',
+  },
+];
 
 const CHECKIN_OPTIONS: { value: CheckinStatus; label: TranslationKey; icon: IconName; tone: Tone }[] = [
   { value: 'better', label: 'feelingBetter', icon: 'feelingBetter', tone: 'success' },
@@ -93,6 +139,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
   const [isSnoozed, setIsSnoozed] = useState(false);
   const [noticeText, setNoticeText] = useState<string | null>(null);
   const [showCelebrationPopper, setShowCelebrationPopper] = useState(false);
+  const [selectedDetail, setSelectedDetail] = useState<{ med: CarePlanMedication; slot: DoseSlot } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,9 +252,10 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
   const buildAudioText = () => {
     const meds = plan?.medications || [];
     if (meds.length === 0) return `${t('audioIntro')} ${t('audioNoMeds')}`;
-    const lines = meds.map(
-      (m) => `${[m.name, localized(m.dosage, lang), localized(m.frequency, lang), localized(m.timing, lang)].filter(Boolean).join(', ')}.`
-    );
+    const lines = meds.map((m) => {
+      const info = resolveMedicationInfo(m, lang);
+      return `${info.shortName}, ${info.purposePatient}. ${info.doseAmount}, ${info.timingLabel}.`;
+    });
     const adviceText = plan?.latest_visit?.advice.join('. ') || localized(plan?.latest_note?.plan?.advice, lang);
     const advice = adviceText ? ` ${adviceText}.` : '';
     return `${t('audioIntro')} ${lines.join(' ')}${advice}`;
@@ -333,7 +381,10 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
               </AppText>
               <AppText variant="footnote" color="inkMuted">
                 {dueSlotDoses
-                  .map((d) => `${d.med.name} (${localized(d.med.dosage, lang) || localized(d.med.timing, lang) || ''})`)
+                  .map((d) => {
+                    const info = resolveMedicationInfo(d.med, lang);
+                    return `${info.shortName} (${info.purposePatient})`;
+                  })
                   .join(' • ')}
               </AppText>
             </View>
@@ -390,8 +441,8 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
           </NeuPressable>
         </View>
 
-        <Card padded={false}>
-          {doseRows.length === 0 && (
+        {doseRows.length === 0 ? (
+          <Card padded={false}>
             <View style={styles.empty} accessibilityLiveRegion="polite">
               <EmptyMedications width={150} />
               {status === 'loading' ? (
@@ -409,7 +460,11 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
                       {t('carePlanError')}
                     </AppText>
                   </View>
-                  <SecondaryButton label={t('retry')} tone="primary" size="sm" onPress={() => {
+                  <SecondaryButton
+                    label={t('retry')}
+                    tone="primary"
+                    size="sm"
+                    onPress={() => {
                       setStatus('loading');
                       setReloadKey((k) => k + 1);
                     }}
@@ -421,48 +476,103 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
                 </AppText>
               )}
             </View>
-          )}
-          {doseRows.map((row, index) => {
-            const look = SLOT_STYLE[row.slot];
-            const taken = !!loggedDoses[row.key];
-            // Drug name stays in Latin script; a local-script name, if sent, is a secondary line
-            const nameLocal = localized(row.med.nameLocal, lang);
-            return (
-              <React.Fragment key={row.key}>
-                {index > 0 && <Groove inset={LIST_ROW_TEXT_INSET} />}
-                <ListRow
-                  icon={look.icon}
-                  iconTone={look.tone}
-                  title={row.med.name}
-                  subtitle={[localized(row.med.dosage, lang), localized(row.med.timing, lang)].filter(Boolean).join(' • ')}
-                  trailing={
-                    <DoseButton
-                      taken={taken}
-                      label={taken ? t('taken') : t('take')}
-                      accessibilityLabel={t('markDoseTaken', { name: row.med.name })}
-                      onPress={() => toggleDose(row)}
-                    />
-                  }
-                >
-                  {nameLocal && nameLocal !== row.med.name ? (
-                    <AppText variant="footnote" color="inkMuted">
-                      {nameLocal}
-                    </AppText>
-                  ) : null}
-                  <View style={styles.medBadges}>
-                    <Badge label={t(look.time)} tone={look.tone} icon="clock" />
-                    {row.med.prescriber?.department ? <DepartmentBadge department={row.med.prescriber.department} /> : null}
+          </Card>
+        ) : (
+          <View style={styles.routineList}>
+            {ROUTINE_SLOTS.map((moment) => {
+              const momentRows = doseRows.filter((r) => r.slot === moment.slot);
+              if (momentRows.length === 0) return null;
+              const isCurrent = moment.slot === currentSlot;
+              const takenCount = momentRows.filter((r) => loggedDoses[r.key]).length;
+              const allTaken = takenCount === momentRows.length;
+
+              return (
+                <View key={moment.slot} style={styles.routineMoment}>
+                  {/* Routine Moment Header (Meal times) */}
+                  <DoubleTapSpeakable
+                    speechText={() =>
+                      `${t(moment.titleKey)}. ${moment.timeLabel}. ${t(moment.subKey)}. ${allTaken ? t('allDosesTakenInRoutine') : t('medicationTakenCount', { taken: takenCount, total: momentRows.length })}`
+                    }
+                    radius={radii.lg}
+                    style={[styles.momentHeaderCard, isCurrent && styles.momentHeaderActive]}
+                  >
+                    <View
+                      style={[
+                        styles.momentDisc,
+                        {
+                          backgroundColor:
+                            moment.slot === 'morning'
+                              ? '#FEF3C7'
+                              : moment.slot === 'afternoon'
+                              ? '#E0F2FE'
+                              : moment.slot === 'night'
+                              ? '#EDE9FE'
+                              : '#E6F4F1',
+                        },
+                      ]}
+                    >
+                      <Icon
+                        name={moment.plateIcon}
+                        size={22}
+                        color={
+                          moment.slot === 'morning'
+                            ? colors.goldDeep
+                            : moment.slot === 'afternoon'
+                            ? colors.tealDeep
+                            : moment.slot === 'night'
+                            ? colors.primary
+                            : colors.teal
+                        }
+                        active
+                      />
+                    </View>
+
+                    <View style={styles.momentText}>
+                      <View style={styles.momentTitleRow}>
+                        <AppText variant="title" weight={700} color="ink">
+                          {t(moment.titleKey)}
+                        </AppText>
+                        <Badge label={moment.timeLabel} tone="neutral" icon="clock" />
+                      </View>
+                      <AppText variant="caption" color="inkMuted">
+                        {t(moment.subKey)}
+                      </AppText>
+                    </View>
+
+                    <View style={styles.momentBadges}>
+                      {isCurrent && <Badge label={t('routineDueNow')} tone="primary" />}
+                      <Badge
+                        label={
+                          allTaken
+                            ? '✓ ' + t('medicationTakenCount', { taken: takenCount, total: momentRows.length })
+                            : t('medicationTakenCount', { taken: takenCount, total: momentRows.length })
+                        }
+                        tone={allTaken ? 'success' : 'neutral'}
+                      />
+                    </View>
+                  </DoubleTapSpeakable>
+
+                  {/* List of Medication Cards in this Routine Moment */}
+                  <View style={styles.momentCardsList}>
+                    {momentRows.map((row) => {
+                      const taken = !!loggedDoses[row.key];
+                      return (
+                        <MedicationCard
+                          key={row.key}
+                          med={row.med}
+                          slot={row.slot}
+                          taken={taken}
+                          onToggleDose={() => toggleDose(row)}
+                          onPress={() => setSelectedDetail({ med: row.med, slot: row.slot })}
+                        />
+                      );
+                    })}
                   </View>
-                  {row.med.prescriber?.name || row.med.prescribedBy ? (
-                    <AppText variant="caption" color="inkMuted" numberOfLines={1}>
-                      {t('prescribedBy', { name: doctorShortName(row.med.prescriber?.name || row.med.prescribedBy || '') })}
-                    </AppText>
-                  ) : null}
-                </ListRow>
-              </React.Fragment>
-            );
-          })}
-        </Card>
+                </View>
+              );
+            })}
+          </View>
+        )}
         {saveError && (
           <AppText variant="footnote" color="dangerDeep" accessibilityRole="alert">
             {saveError}
@@ -498,6 +608,13 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
         </Card>
       </View>
     </ScreenScroll>
+
+    <MedicationDetailSheet
+      visible={!!selectedDetail}
+      med={selectedDetail?.med || null}
+      slot={selectedDetail?.slot || null}
+      onClose={() => setSelectedDetail(null)}
+    />
   </View>
 );
 };
@@ -589,6 +706,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     padding: spacing.xl,
+  },
+  routineList: {
+    gap: spacing.lg,
+  },
+  routineMoment: {
+    gap: spacing.sm,
+  },
+  momentHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: '#FBFDFD',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: '#D8E5E8',
+  },
+  momentHeaderActive: {
+    backgroundColor: '#F3FAFA',
+    borderColor: colors.teal,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.teal,
+  },
+  momentDisc: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  momentText: {
+    flex: 1,
+    gap: 2,
+  },
+  momentTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  momentBadges: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 3,
+  },
+  momentCardsList: {
+    gap: spacing.sm,
   },
   inline: {
     flexDirection: 'row',

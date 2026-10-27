@@ -5,6 +5,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { colors } from './src/theme/tokens';
 import { FontsProvider } from './src/theme/FontsProvider';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
+import { SpeechProvider } from './src/i18n/SpeechContext';
 import {
   patientApi,
   telehealthSocketUrl,
@@ -62,10 +63,12 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <LanguageProvider>
-        {/* Active language's fonts load first; on failure the app falls back to system fonts */}
-        <FontsProvider fallback={<View style={styles.root} />}>
-          <PatientApp />
-        </FontsProvider>
+        <SpeechProvider>
+          {/* Active language's fonts load first; on failure the app falls back to system fonts */}
+          <FontsProvider fallback={<View style={styles.root} />}>
+            <PatientApp />
+          </FontsProvider>
+        </SpeechProvider>
       </LanguageProvider>
     </SafeAreaProvider>
   );

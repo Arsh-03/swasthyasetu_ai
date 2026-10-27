@@ -165,6 +165,19 @@
       {
         "id": "rx_1",
         "name": "Tamsulosin Hydrochloride Tablet",
+        "short_name": "Tamsulosin",
+        "purpose_patient": {
+          "en": "For easier urination & stone passage",
+          "kn": "ಸುಲಭ ಮೂತ್ರ ವಿಸರ್ಜನೆಗಾಗಿ",
+          "hi": "पेशाब की रुकावट कम करने के लिए"
+        },
+        "form": "tablet",
+        "instructions": {
+          "dose_amount": { "en": "1 tablet (0.4 mg)", "kn": "1 ಮಾತ್ರೆ (0.4 mg)", "hi": "1 गोली (0.4 mg)" },
+          "meal_relation": "bedtime",
+          "intake_method": "with_water",
+          "timing_label": { "en": "At bedtime after dinner", "kn": "ರಾತ್ರಿ ಊಟದ ನಂತರ ಮಲಗುವಾಗ", "hi": "रात को खाने के बाद सोते समय" }
+        },
         "dosage": "0.4 mg",
         "route": "Oral",
         "frequency": "Once Daily (OD)",
@@ -184,6 +197,19 @@
       {
         "id": "rx_2",
         "name": "Potassium Magnesium Citrate Oral Solution",
+        "short_name": "Potassium Citrate",
+        "purpose_patient": {
+          "en": "For dissolving kidney stones",
+          "kn": "ಮೂತ್ರಪಿಂಡದ ಕಲ್ಲು ಕರಗಿಸಲು",
+          "hi": "गुर्दे की पथरी घोलने के लिए"
+        },
+        "form": "syrup",
+        "instructions": {
+          "dose_amount": { "en": "10 mL in a glass of water", "kn": "10 ಮಿಲಿ ಒಂದು ಲೋಟ ನೀರಿನಲ್ಲಿ", "hi": "10 मिलीलीटर एक गिलास पानी में" },
+          "meal_relation": "after_food",
+          "intake_method": "with_water",
+          "timing_label": { "en": "Immediately after meals", "kn": "ಊಟದ ತಕ್ಷಣ", "hi": "भोजन के तुरंत बाद" }
+        },
         "dosage": "10 mL in a glass of water",
         "route": "Oral",
         "frequency": "Three Times Daily (TDS)",
@@ -203,6 +229,19 @@
       {
         "id": "rx_3",
         "name": "Drotaverine Hydrochloride Tablet",
+        "short_name": "Drotaverine",
+        "purpose_patient": {
+          "en": "For stomach & colic pain",
+          "kn": "ಹೊಟ್ಟೆ ಶೂಲೆ ಮತ್ತು ನೋವಿಗೆ",
+          "hi": "पेट दर्द और ऐंठन के लिए"
+        },
+        "form": "tablet",
+        "instructions": {
+          "dose_amount": { "en": "1 tablet (80 mg)", "kn": "1 ಮಾತ್ರೆ (80 mg)", "hi": "1 गोली (80 mg)" },
+          "meal_relation": "after_food",
+          "intake_method": "with_water",
+          "timing_label": { "en": "When experiencing acute colic spasms", "kn": "ನೋವು ಬಂದಾಗ ಮಾತ್ರ", "hi": "दर्द होने पर (ज़रूरत पड़ने पर)" }
+        },
         "dosage": "80 mg",
         "route": "Oral",
         "frequency": "PRN (As needed)",
@@ -222,6 +261,19 @@
       {
         "id": "rx_4",
         "name": "Paracetamol Tablet",
+        "short_name": "Paracetamol",
+        "purpose_patient": {
+          "en": "For fever & mild pain",
+          "kn": "ಜ್ವರ ಮತ್ತು ಮೈಕೈ ನೋವಿಗೆ",
+          "hi": "बुखार और बदन दर्द के लिए"
+        },
+        "form": "tablet",
+        "instructions": {
+          "dose_amount": { "en": "1 tablet (650 mg)", "kn": "1 ಮಾತ್ರೆ (650 mg)", "hi": "1 गोली (650 mg)" },
+          "meal_relation": "after_food",
+          "intake_method": "with_water",
+          "timing_label": { "en": "For fever or mild pain after food", "kn": "ಜ್ವರ ಅಥವಾ ನೋವು ಬಂದಾಗ ಊಟದ ನಂತರ", "hi": "बुखार या दर्द होने पर भोजन के बाद" }
+        },
         "dosage": "650 mg",
         "route": "Oral",
         "frequency": "SOS (As needed)",
@@ -241,6 +293,19 @@
       {
         "id": "rx_5",
         "name": "Metformin Hydrochloride SR Tablet",
+        "short_name": "Metformin",
+        "purpose_patient": {
+          "en": "For sugar control",
+          "kn": "ಸಕ್ಕರೆ (ಡಯಾಬಿಟಿಸ್) ನಿಯಂತ್ರಣಕ್ಕೆ",
+          "hi": "शुगर (डायबिटीज) नियंत्रण के लिए"
+        },
+        "form": "tablet",
+        "instructions": {
+          "dose_amount": { "en": "1 tablet (500 mg)", "kn": "1 ಮಾತ್ರೆ (500 mg)", "hi": "1 गोली (500 mg)" },
+          "meal_relation": "with_food",
+          "intake_method": "with_water",
+          "timing_label": { "en": "With morning breakfast & dinner", "kn": "ಬೆಳಗಿನ ಉಪಹಾರ ಮತ್ತು ರಾತ್ರಿ ಊಟದೊಂದಿಗೆ", "hi": "सुबह नाश्ते और रात के खाने के साथ" }
+        },
         "dosage": "500 mg",
         "route": "Oral",
         "frequency": "Twice Daily (BD)",

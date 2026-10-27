@@ -208,6 +208,19 @@ export interface CarePlanMedication {
   id: string;
   /** Drug name: always Latin script, never translated. */
   name: string;
+  /** Short everyday name (e.g. "Metformin", "Potassium Citrate") */
+  short_name?: string | null;
+  /** Patient-friendly purpose line (translated in en, kn, hi) */
+  purpose_patient?: LocalizedText | null;
+  /** Medicine formulation type: tablet, syrup, capsule, drops, injection */
+  form?: 'tablet' | 'syrup' | 'capsule' | 'drops' | 'injection' | string | null;
+  /** Structured intake instructions */
+  instructions?: {
+    dose_amount?: LocalizedText | null;
+    meal_relation?: 'after_food' | 'before_food' | 'with_food' | 'bedtime' | string | null;
+    intake_method?: 'with_water' | 'oral' | string | null;
+    timing_label?: LocalizedText | null;
+  } | null;
   /** Optional name in the patient's script, shown as a secondary line. */
   nameLocal?: LocalizedText | null;
   dosage: LocalizedText;

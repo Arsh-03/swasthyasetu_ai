@@ -350,8 +350,8 @@ def _prescriptions_by(profile: Optional[PatientProfile], doc: Practitioner) -> L
     out = []
     for rx in ((profile.chart_json if profile else None) or {}).get("prescriptions", []):
         if rx.get("status", "Active") == "Active" and key and prescriber_key(rx.get("prescribedBy")) == key:
-            out.append({k: rx.get(k) for k in ("id", "name", "dosage", "frequency", "timing", "duration", "purpose",
-                                               "prescribedDate")})
+            out.append({k: rx.get(k) for k in ("id", "name", "short_name", "purpose_patient", "form", "instructions",
+                                               "dosage", "frequency", "timing", "duration", "purpose", "prescribedDate")})
     return out
 
 

@@ -53,10 +53,110 @@ async def get_my_care_plan(
             return {"practitioner_id": None, "name": name or "", "department": ""}
         return {"practitioner_id": doc.practitioner_id, "name": doc.display_name, "department": department_of(doc)}
 
-    medications = [
-        {
+    def normalize_medication(rx):
+        name = rx.get("name") or ""
+        dosage = rx.get("dosage") or ""
+        timing = rx.get("timing") or ""
+        
+        # 1. Short name
+        short_name = rx.get("short_name")
+        if not short_name:
+            import re
+            s = re.sub(r"\b(Tablet|Oral Solution|Solution|Syrup|Capsule|Injection|Suspension|Drops|Ointment|Gel|Cream|SR|ER|CR|XL|OD|BD|TDS|IP|BP|USP)\b", "", name, flags=re.IGNORECASE)
+            s = re.sub(r"\bHydrochloride\b", "", s, flags=re.IGNORECASE)
+            s = re.sub(r"\b\d+(\.\d+)?\s*(mg|ml|mcg|g|iu)\b", "", s, flags=re.IGNORECASE)
+            s = re.sub(r"\s+", " ", s).strip()
+            short_name = s or (name.split()[0] if name else "Medicine")
+
+        # 2. Form
+        form = rx.get("form")
+        if not form:
+            nl = (name + " " + str(dosage)).lower()
+            if any(w in nl for w in ("solution", "syrup", "suspension", "liquid", "ml")):
+                form = "syrup"
+            elif any(w in nl for w in ("capsule", "cap")):
+                form = "capsule"
+            elif any(w in nl for w in ("drops", "drop", "eye drop", "ear drop")):
+                form = "drops"
+            elif any(w in nl for w in ("injection", "inj", "vial")):
+                form = "injection"
+            else:
+                form = "tablet"
+
+        # 3. Purpose (Patient friendly in English, Kannada, Hindi)
+        purpose_patient = rx.get("purpose_patient")
+        if not purpose_patient:
+            nl = (name + " " + str(rx.get("purpose") or "")).lower()
+            if "potassium" in nl or "citrate" in nl or "kidney" in nl or "stone" in nl:
+                purpose_patient = {
+                    "en": "For dissolving kidney stones",
+                    "kn": "ಮೂತ್ರಪಿಂಡದ ಕಲ್ಲು ಕರಗಿಸಲು",
+                    "hi": "गुर्दे की पथरी घोलने के लिए"
+                }
+            elif "metformin" in nl or "glycemic" in nl or "sugar" in nl or "diabetes" in nl:
+                purpose_patient = {
+                    "en": "For sugar control",
+                    "kn": "ಸಕ್ಕರೆ (ಡಯಾಬಿಟಿಸ್) ನಿಯಂತ್ರಣಕ್ಕೆ",
+                    "hi": "शुगर (डायबिटीज) नियंत्रण के लिए"
+                }
+            elif "tamsulosin" in nl or "urination" in nl or "ureteral" in nl:
+                purpose_patient = {
+                    "en": "For easier urination & stone passage",
+                    "kn": "ಸುಲಭ ಮೂತ್ರ ವಿಸರ್ಜನೆಗಾಗಿ",
+                    "hi": "पेशाब की रुकावट कम करने के लिए"
+                }
+            elif "drotaverine" in nl or "colic" in nl or "spasm" in nl:
+                purpose_patient = {
+                    "en": "For stomach & colic pain",
+                    "kn": "ಹೊಟ್ಟೆ ಶೂಲೆ ಮತ್ತು ನೋವಿಗೆ",
+                    "hi": "पेट दर्द और ऐंठन के लिए"
+                }
+            elif "paracetamol" in nl or "fever" in nl or "antipyretic" in nl:
+                purpose_patient = {
+                    "en": "For fever & mild pain",
+                    "kn": "ಜ್ವರ ಮತ್ತು ಮೈಕೈ ನೋವಿಗೆ",
+                    "hi": "बुखार और बदन दर्द के लिए"
+                }
+            elif "ciprofloxacin" in nl or "uti" in nl or "antibacterial" in nl:
+                purpose_patient = {
+                    "en": "For urinary infection",
+                    "kn": "ಮೂತ್ರದ ಸೋಂಕಿಗೆ",
+                    "hi": "पेशाब के संक्रमण के लिए"
+                }
+            else:
+                p_orig = rx.get("purpose") or "As prescribed by doctor"
+                purpose_patient = {
+                    "en": p_orig,
+                    "kn": p_orig,
+                    "hi": p_orig
+                }
+
+        # 4. Structured instructions
+        instructions = rx.get("instructions")
+        if not instructions:
+            tl = timing.lower()
+            if "bedtime" in tl or "night" in tl or "sleep" in tl:
+                meal_rel = "bedtime"
+            elif "before" in tl or "empty" in tl:
+                meal_rel = "before_food"
+            elif "with" in tl or "during" in tl:
+                meal_rel = "with_food"
+            else:
+                meal_rel = "after_food"
+            instructions = {
+                "dose_amount": dosage or ("10 mL in a glass of water" if form == "syrup" else "1 tablet"),
+                "meal_relation": meal_rel,
+                "intake_method": "with_water",
+                "timing_label": timing or "As directed by physician"
+            }
+
+        return {
             "id": rx.get("id"),
             "name": rx.get("name"),
+            "short_name": short_name,
+            "purpose_patient": purpose_patient,
+            "form": form,
+            "instructions": instructions,
             "dosage": rx.get("dosage"),
             "frequency": rx.get("frequency"),
             "timing": rx.get("timing"),
@@ -66,6 +166,9 @@ async def get_my_care_plan(
             "prescribedBy": rx.get("prescribedBy"),
             "prescriber": prescriber(rx.get("prescribedBy")),
         }
+
+    medications = [
+        normalize_medication(rx)
         for rx in chart.get("prescriptions", [])
         if rx.get("status", "Active") == "Active"
     ]
