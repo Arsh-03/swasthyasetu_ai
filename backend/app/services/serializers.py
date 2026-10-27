@@ -7,10 +7,13 @@ from app.models.models import Appointment, Consent
 URGENCY_RANK = {"high": 0, "follow_up": 1, "routine": 2}
 
 
-def as_aware(dt: Optional[datetime]) -> Optional[datetime]:
-    """SQLite returns naive datetimes; treat them as UTC so comparisons work everywhere."""
-    if dt is None:
+def as_aware(dt: "Optional[datetime | str]") -> Optional[datetime]:
+    """SQLite returns naive datetimes; treat them as UTC so comparisons work everywhere.
+    Also takes an ISO string (serialized appointments carry "scheduledAt" as text)."""
+    if dt is None or dt == "":
         return None
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
