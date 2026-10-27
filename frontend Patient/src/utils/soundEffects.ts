@@ -1,10 +1,10 @@
 /**
  * Audio Synthesizer & Audio Player for tactile feedback and medication reminders.
  * Provides guaranteed cross-platform audio playback across Web, iOS Safari,
- * Android Chrome, and Native Mobile (Expo AV).
+ * Android Chrome, and Native Mobile (expo-audio; expo-av is no longer in Expo Go).
  */
 import { Platform } from 'react-native';
-import { Audio as ExpoAudio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { POPPER_SOUND_BASE64 } from './popperSoundBase64';
 import { haptic } from './haptics';
 
@@ -25,7 +25,8 @@ function getAudioContext(): AudioContext | null {
 }
 
 // Proactively unlock Web Audio on mobile browsers (Safari/Chrome require user interaction)
-if (typeof window !== 'undefined') {
+// (Native apps have a `window` without addEventListener, so check for the method itself.)
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   const unlock = () => {
     try {
       const ctx = getAudioContext();
@@ -90,7 +91,7 @@ export function playMedicationAlertSound() {
  * Guaranteed to play on mobile browsers (Safari/Chrome) and native apps:
  * 1. HTML5 Audio element with base64 data URI (reliable across all mobile browsers)
  * 2. Web Audio API synthesizer layer for rich resonance
- * 3. Expo-AV native player on iOS & Android native apps
+ * 3. expo-audio native player on iOS & Android native apps
  */
 export function playBirthdayPopperSound() {
   // Always trigger haptics
@@ -157,27 +158,20 @@ export function playBirthdayPopperSound() {
     }
   }
 
-  // 3. Native iOS & Android (Expo AV)
+  // 3. Native iOS & Android (expo-audio)
   if (Platform.OS !== 'web') {
-    try {
-      ExpoAudio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-      }).then(() => {
-        ExpoAudio.Sound.createAsync(
-          { uri: POPPER_SOUND_BASE64 },
-          { shouldPlay: true, volume: 1.0 }
-        ).then(({ sound }: { sound: any }) => {
-          sound.setOnPlaybackStatusUpdate((status: any) => {
-            if (status.didJustFinish) {
-              sound.unloadAsync().catch(() => {});
-            }
-          });
+    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: false, interruptionMode: 'duckOthers' })
+      .then(() => {
+        const player = createAudioPlayer({ uri: POPPER_SOUND_BASE64 });
+        player.volume = 1.0;
+        const sub = player.addListener('playbackStatusUpdate', (status) => {
+          if (status.didJustFinish) {
+            sub.remove();
+            player.remove();          // free the native player
+          }
         });
-      }).catch(() => {});
-    } catch {
-      // ignore
-    }
+        player.play();
+      })
+      .catch(() => {});
   }
 }

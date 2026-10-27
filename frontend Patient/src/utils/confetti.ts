@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import confetti from 'canvas-confetti';
 
 /**
@@ -5,7 +6,8 @@ import confetti from 'canvas-confetti';
  * streamers, stars, and multi-colored flutter confetti.
  */
 export function triggerBirthdayPopper(originX?: number, originY?: number) {
-  if (typeof window === 'undefined') return;
+  // canvas-confetti draws on an HTML canvas: web only (native apps show their own burst animation).
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return;
 
   const colors = [
     '#EF4444', // Festive Red
