@@ -20,6 +20,7 @@ import {
   SegmentedControl,
 } from '../ui';
 import { AppointmentRow, appointmentWhen, ConfirmSheet, DepartmentBadge, DoctorAvatar, isVideo } from './DoctorParts';
+import { appointmentFacts, departmentIdFrom, parseQualification, spokenDepartment, spokenDoctor, useScripts } from '../../speech';
 
 export type MyDoctorsTab = 'doctors' | 'schedule';
 type Tab = MyDoctorsTab;
@@ -43,6 +44,7 @@ interface MyDoctorsViewProps {
  */
 export const MyDoctorsView: React.FC<MyDoctorsViewProps> = ({ initialTab = 'doctors', refreshKey, onOpenDoctor, onAddDoctor, onBook, onChat, onChanged, onNotice }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [tab, setTab] = useState<Tab>(initialTab);
   const [doctors, setDoctors] = useState<MyDoctor[] | null>(null);
   const [schedule, setSchedule] = useState<{ upcoming: NextAppointment[]; past: NextAppointment[] } | null>(null);
@@ -90,7 +92,7 @@ export const MyDoctorsView: React.FC<MyDoctorsViewProps> = ({ initialTab = 'doct
         </AppText>
       </View>
 
-      <PrimaryButton label={t('addDoctor')} icon="personAdd" onPress={onAddDoctor} />
+      <PrimaryButton label={t('addDoctor')} icon="personAdd" speech={scripts.doctors.add} onPress={onAddDoctor} />
 
       <SegmentedControl<Tab>
         options={[
@@ -219,54 +221,91 @@ const DoctorCard: React.FC<{ doctor: MyDoctor; onOpen: () => void; onBook: () =>
   const next = doctor.next_appointment;
   const when = next ? appointmentWhen(next, lang) : null;
   const lastVisit = doctor.last_visit_at ? formatDate(localCalendarDate(new Date(doctor.last_visit_at)), lang) : null;
+  const scripts = useScripts();
+  // Card level: who, what kind of doctor, upcoming visits and unread messages (degrees are read on the degree line)
+  const spokenName = () => spokenDoctor(doctor.name, lang);
+  const specialist = () => spokenDepartment(departmentIdFrom(doctor.department, doctor.specialty), lang)?.specialist;
+  const cardSpeech = () => {
+    const base = scripts.doctors.card({ doctor: spokenName(), specialist: specialist(), upcoming: doctor.upcoming_count, unread: doctor.unread_messages });
+    return next ? `${base} ${scripts.appointment.row(appointmentFacts({ ...next, doctorName: doctor.name }, lang))}` : base;
+  };
+
   return (
-    <NeuPressable onPress={onOpen} radius={radii.lg} style={styles.card} accessibilityLabel={`${doctor.name}. ${t('openDoctor')}`}>
-      <View style={styles.cardTop}>
-        <DoctorAvatar name={doctor.name} department={doctor.department} />
-        <View style={styles.flex}>
-          <AppText variant="headline" numberOfLines={1}>
-            {doctorShortName(doctor.name)}
-          </AppText>
-          <AppText variant="caption" color="inkMuted" numberOfLines={1}>
-            {doctorQualifications(doctor.name) || doctor.specialty}
-          </AppText>
-          <View style={styles.badgeRow}>
-            <DepartmentBadge department={doctor.department} fallback={doctor.specialty} />
+    <NeuPressable onPress={onOpen} speech={cardSpeech} radius={radii.lg} style={styles.card} accessibilityLabel={`${doctor.name}. ${t('openDoctor')}`}>
+        <View style={styles.cardTop}>
+          <DoctorAvatar name={doctor.name} department={doctor.department} />
+          <View style={styles.flex}>
+            <AppText variant="headline" numberOfLines={1} speech={() => scripts.appointment.doctor(spokenName())}>
+              {doctorShortName(doctor.name)}
+            </AppText>
+            <AppText
+              variant="caption"
+              color="inkMuted"
+              numberOfLines={1}
+              speech={
+                doctorQualifications(doctor.name)
+                  ? () => {
+                      const q = parseQualification(doctor.name);
+                      return scripts.appointment.qualification(spokenName(), q?.degrees ?? [], q?.subject ?? '', specialist());
+                    }
+                  : undefined
+              }
+            >
+              {doctorQualifications(doctor.name) || doctor.specialty}
+            </AppText>
+            <View style={styles.badgeRow}>
+              <DepartmentBadge department={doctor.department} fallback={doctor.specialty} />
+            </View>
           </View>
+          <Icon name="chevronRight" size={20} color={colors.inkMuted} />
         </View>
-        <Icon name="chevronRight" size={20} color={colors.inkMuted} />
-      </View>
 
-      {doctor.reason ? (
-        <View style={styles.reason}>
-          <AppText variant="caption" weight={600} color="inkMuted" compact>
-            {t('lookingAfter')}
-          </AppText>
-          <AppText variant="subhead" weight={600} numberOfLines={2}>
-            {doctor.reason}
+        {doctor.reason ? (
+          <View style={styles.reason}>
+            <AppText variant="caption" weight={600} color="inkMuted" compact>
+              {t('lookingAfter')}
+            </AppText>
+            <AppText variant="subhead" weight={600} numberOfLines={2}>
+              {doctor.reason}
+            </AppText>
+          </View>
+        ) : null}
+
+        <View style={styles.nextRow}>
+          <Icon name={next ? 'calendarCheck' : 'calendar'} size={18} color={next ? colors.primary : colors.inkMuted} active={!!next} />
+          <AppText variant="footnote" weight={next ? 600 : 400} color={next ? 'ink' : 'inkMuted'} style={styles.flex}>
+            {next && when
+              ? t('nextVisitOn', { date: when.date, time: when.time, type: isVideo(next.mode) ? t('visitVideo') : t('visitInPerson') })
+              : lastVisit
+              ? t('lastVisitOn', { date: lastVisit })
+              : t('noUpcomingWithDoctor')}
           </AppText>
         </View>
-      ) : null}
 
-      <View style={styles.nextRow}>
-        <Icon name={next ? 'calendarCheck' : 'calendar'} size={18} color={next ? colors.primary : colors.inkMuted} active={!!next} />
-        <AppText variant="footnote" weight={next ? 600 : 400} color={next ? 'ink' : 'inkMuted'} style={styles.flex}>
-          {next && when
-            ? t('nextVisitOn', { date: when.date, time: when.time, type: isVideo(next.mode) ? t('visitVideo') : t('visitInPerson') })
-            : lastVisit
-            ? t('lastVisitOn', { date: lastVisit })
-            : t('noUpcomingWithDoctor')}
-        </AppText>
-      </View>
-
-      <View style={styles.actions}>
-        <SecondaryButton label={next ? t('bookAnother') : t('bookVisit')} icon="calendarPlus" tone="primary" size="sm" onPress={onBook} style={styles.flex} />
-        <SecondaryButton label={t('tabChat')} icon="chat" tone="neutral" size="sm" onPress={onChat} style={styles.flex} />
-      </View>
-      {doctor.unread_messages > 0 && (
-        <Badge label={t('unreadMessages', { n: doctor.unread_messages })} tone="danger" icon="chat" style={styles.unread} />
-      )}
-    </NeuPressable>
+        <View style={styles.actions}>
+          <SecondaryButton
+            label={next ? t('bookAnother') : t('bookVisit')}
+            icon="calendarPlus"
+            tone="primary"
+            size="sm"
+            onPress={onBook}
+            style={styles.flex}
+            speech={() => scripts.doctors.book(spokenName())}
+          />
+          <SecondaryButton
+            label={t('tabChat')}
+            icon="chat"
+            tone="neutral"
+            size="sm"
+            onPress={onChat}
+            style={styles.flex}
+            speech={() => scripts.doctors.chat(spokenName())}
+          />
+        </View>
+        {doctor.unread_messages > 0 && (
+          <Badge label={t('unreadMessages', { n: doctor.unread_messages })} tone="danger" icon="chat" style={styles.unread} />
+        )}
+      </NeuPressable>
   );
 };
 

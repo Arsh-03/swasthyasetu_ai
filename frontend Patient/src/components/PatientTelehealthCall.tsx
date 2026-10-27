@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Platform, Pressable } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, shadows, spacing, tints } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -10,6 +10,7 @@ import type { ConsultationCallApi } from '../services/call/useConsultationCall';
 import { useCallTimer } from '../services/call/useCallTimer';
 import { CONSENT_TEXT } from '../services/call/consentText';
 import { NativeCallVideo } from '../services/webrtcPlatform';
+import { Speakable, useScripts } from '../speech';
 
 interface PatientTelehealthCallProps {
   /** The live call (state lives in App so the call keeps running across screens). */
@@ -43,6 +44,7 @@ const WebVideo: React.FC<{ stream: MediaStream | null; mirror?: boolean }> = ({ 
 
 export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ call, onEndCall, doctorName }) => {
   const { t, lang } = useLanguage();
+  const scripts = useScripts();
   const insets = useSafeAreaInsets();
   const timer = useCallTimer(call.callStartedAt);
   const copy = CONSENT_TEXT[lang];
@@ -128,7 +130,8 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ ca
                 <AppText variant="footnote" weight={500} color="onPrimary" style={styles.captionText}>
                   {copy.recordingBanner}
                 </AppText>
-                <Pressable
+                <Speakable
+                  atomic
                   onPress={call.withdrawConsent}
                   accessibilityRole="button"
                   accessibilityLabel={copy.stop}
@@ -139,7 +142,7 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ ca
                   <AppText variant="caption" weight={700} color="onPrimary" compact>
                     {copy.stop}
                   </AppText>
-                </Pressable>
+                </Speakable>
               </GlassSurface>
             )}
             {slow && !call.recordingSession && (
@@ -165,6 +168,7 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ ca
               iconSize={24}
               selected={!isMicOn}
               accessibilityLabel={isMicOn ? t('muteMic') : t('unmuteMic')}
+              speech={scripts.call.mute(!isMicOn)}
               onPress={call.toggleMic}
               haptics
             />
@@ -177,6 +181,7 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ ca
               iconSize={24}
               selected={!isCamOn}
               accessibilityLabel={isCamOn ? t('cameraOff') : t('cameraOn')}
+              speech={scripts.call.camera(!isCamOn)}
               onPress={call.toggleCam}
               haptics
             />
@@ -185,6 +190,7 @@ export const PatientTelehealthCall: React.FC<PatientTelehealthCallProps> = ({ ca
             tone="danger"
             label={calling ? t('callCancel') : t('endCall')}
             icon="callEnd"
+            speech={scripts.call.end}
             onPress={handleEnd}
             fullWidth={false}
           />

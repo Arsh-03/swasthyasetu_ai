@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { colors, radii, spacing, tints, touch } from '../theme/tokens';
 import { patientApi, type ChatMessage, type ChatThread, type ChatThreadSummary } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatClock, formatDate, formatTimestamp, localCalendarDate } from '../utils/dates';
 import { haptic } from '../utils/haptics';
 import { AppText, Card, Icon, NavBar, SecondaryButton, useChromeInsets } from './ui';
+import { Speakable, spokenDoctor, spokenTimestamp, useScripts } from '../speech';
 
 interface ChatViewProps {
   onBack: () => void;
@@ -27,6 +28,7 @@ interface ChatViewProps {
  */
 export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergency, onRequestVisit, onUnreadChanged, initialDoctorId, backLabel }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const insets = useChromeInsets();
   const [threads, setThreads] = useState<ChatThreadSummary[] | null>(null);
   const [doctorId, setDoctorId] = useState<string | null>(initialDoctorId ?? null);
@@ -88,7 +90,8 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
   };
 
   const emergencyStrip = (
-    <Pressable
+    <Speakable
+      atomic
       onPress={() => Linking.openURL('tel:108').catch(() => undefined)}
       accessibilityRole="button"
       accessibilityLabel={t('chatEmergencyStrip')}
@@ -99,7 +102,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
         {t('chatEmergencyStrip')}
       </AppText>
       <Icon name="call" size={18} color={colors.dangerDeep} />
-    </Pressable>
+    </Speakable>
   );
 
   // Several doctors: pick one.
@@ -118,7 +121,13 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
           </Card>
         )}
         {threads?.map((th) => (
-          <Pressable key={th.other_id} onPress={() => setDoctorId(th.other_id)} accessibilityRole="button" style={styles.threadRow}>
+          <Speakable
+            key={th.other_id}
+            onPress={() => setDoctorId(th.other_id)}
+            speech={() => scripts.chat.thread(spokenDoctor(th.name, lang) || th.name, th.unread, th.last_message?.body)}
+            accessibilityRole="button"
+            style={styles.threadRow}
+          >
             <Icon name="doctor" size={24} color={colors.primary} />
             <View style={styles.flex}>
               <AppText variant="headline">{th.name}</AppText>
@@ -126,7 +135,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
             </View>
             {th.unread > 0 && <View style={styles.dot} />}
             <Icon name="chevronRight" size={20} color={colors.inkMuted} />
-          </Pressable>
+          </Speakable>
         ))}
       </ScrollView>
     );
@@ -183,6 +192,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
               {sep && <AppText variant="caption" color="inkMuted" align="center" style={styles.day}>{day}</AppText>}
               <Bubble
                 m={m}
+                doctorName={thread.doctor.name}
                 showOriginal={original.has(m.message_id)}
                 onToggle={() => setOriginal((s) => { const n = new Set(s); if (n.has(m.message_id)) n.delete(m.message_id); else n.add(m.message_id); return n; })}
               />
@@ -209,9 +219,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
               multiline
               maxLength={2000}
               style={styles.input}
-              accessibilityLabel={t('chatPlaceholder')}
+              accessibilityLabel={scripts.chat.input}
             />
-            <Pressable
+            <Speakable
+              atomic
+              speech={scripts.chat.send}
               onPress={() => void send()}
               disabled={!draft.trim() || sending}
               accessibilityRole="button"
@@ -219,7 +231,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
               style={({ pressed }) => [styles.sendBtn, (!draft.trim() || sending) && { opacity: 0.4 }, pressed && { opacity: 0.8 }]}
             >
               {sending ? <ActivityIndicator color={colors.onPrimary} /> : <Icon name="send" size={22} color={colors.onPrimary} />}
-            </Pressable>
+            </Speakable>
           </View>
         )}
       </View>
@@ -227,15 +239,29 @@ export const ChatView: React.FC<ChatViewProps> = ({ onBack, chatEvent, onEmergen
   );
 };
 
-const Bubble: React.FC<{ m: ChatMessage; showOriginal: boolean; onToggle: () => void }> = ({ m, showOriginal, onToggle }) => {
-  const { t } = useLanguage();
+const Bubble: React.FC<{ m: ChatMessage; showOriginal: boolean; onToggle: () => void; doctorName?: string }> = ({
+  m,
+  showOriginal,
+  onToggle,
+  doctorName,
+}) => {
+  const { t, lang } = useLanguage();
+  const scripts = useScripts();
   const mine = m.sender === 'patient';
   // Doctor messages are shown in the patient's language when a translation exists.
   const text = !mine && m.translation && !showOriginal ? m.translation : m.body;
   return (
     <View style={[styles.bubbleWrap, mine ? styles.right : styles.left]}>
       <View style={[styles.bubble, mine ? styles.mine : styles.theirs, m.urgent && styles.urgent]}>
-        <AppText variant="body" color={mine ? 'onPrimary' : 'ink'}>{text}</AppText>
+        <AppText
+          variant="body"
+          color={mine ? 'onPrimary' : 'ink'}
+          speech={() =>
+            scripts.chat.message(!mine, spokenDoctor(doctorName, lang) || t('yourDoctor'), text, spokenTimestamp(m.created_at, lang).split(', ').pop())
+          }
+        >
+          {text}
+        </AppText>
       </View>
       <View style={styles.metaRow}>
         <AppText variant="caption" color="inkMuted">
@@ -243,9 +269,9 @@ const Bubble: React.FC<{ m: ChatMessage; showOriginal: boolean; onToggle: () => 
           {mine ? ` · ${m.read ? t('chatSeen') : t('chatSent')}` : ''}
         </AppText>
         {!mine && m.translation ? (
-          <Pressable onPress={onToggle} hitSlop={8} accessibilityRole="button">
+          <Speakable atomic onPress={onToggle} hitSlop={8} accessibilityRole="button">
             <AppText variant="caption" color="primary" weight={600}>{showOriginal ? t('chatShowTranslation') : t('chatShowOriginal')}</AppText>
-          </Pressable>
+          </Speakable>
         ) : null}
       </View>
     </View>

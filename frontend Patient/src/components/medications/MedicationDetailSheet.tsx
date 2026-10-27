@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useId } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { colors, radii, spacing, tints } from '../../theme/tokens';
 import type { CarePlanMedication, DoseSlot } from '../../services/api';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { localized } from '../../utils/localized';
 import { resolveMedicationInfo, getMedicationSpeechText } from '../../utils/medicationInfo';
-import { speak, stopSpeaking } from '../../utils/speech';
+import { speakFor, stopSpeech, useSpeechSelector } from '../../speech';
 import { haptic } from '../../utils/haptics';
 import { GlassSheet } from '../glass/GlassSheet';
 import { SheetHeader } from '../ui/SheetHeader';
@@ -34,7 +34,8 @@ export const MedicationDetailSheet: React.FC<MedicationDetailSheetProps> = ({
 }) => {
   const { lang, t } = useLanguage();
   const [copied, setCopied] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const listenId = useId();
+  const isPlaying = useSpeechSelector((st) => st.speakingId === listenId);
 
   if (!med) return null;
 
@@ -65,13 +66,10 @@ export const MedicationDetailSheet: React.FC<MedicationDetailSheetProps> = ({
   const toggleSpeech = () => {
     haptic.tap();
     if (isPlaying) {
-      stopSpeaking();
-      setIsPlaying(false);
+      stopSpeech();
       return;
     }
-    const text = getMedicationSpeechText(med, effectiveSlot, lang);
-    const started = speak(text, lang, () => setIsPlaying(false));
-    setIsPlaying(started);
+    speakFor(listenId, getMedicationSpeechText(med, effectiveSlot, lang));
   };
 
   return (
@@ -94,6 +92,7 @@ export const MedicationDetailSheet: React.FC<MedicationDetailSheetProps> = ({
         {/* Audio read-aloud button for elderly / low literacy patients */}
         <NeuPressable
           onPress={toggleSpeech}
+          atomic
           haptics="tap"
           selected={isPlaying}
           fill={colors.audioBg}

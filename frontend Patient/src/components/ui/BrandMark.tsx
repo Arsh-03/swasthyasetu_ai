@@ -1,19 +1,22 @@
 import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { brandGradient, colors, shadows, tints } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 interface BrandMarkProps {
   size?: number;
   icon?: IconName;
   /** Dev hook (style guide). Not announced to screen readers. */
   onLongPress?: () => void;
+  /** Spoken on double tap (e.g. the app name). */
+  speech?: SpeechSource;
 }
 
 /** Brand tile: primary → ink gradient with a soft white ring. */
-export const BrandMark: React.FC<BrandMarkProps> = ({ size = 36, icon = 'brand', onLongPress }) => {
+export const BrandMark: React.FC<BrandMarkProps> = ({ size = 36, icon = 'brand', onLongPress, speech }) => {
   const mark = (
     <LinearGradient
       colors={brandGradient}
@@ -24,11 +27,11 @@ export const BrandMark: React.FC<BrandMarkProps> = ({ size = 36, icon = 'brand',
       <Icon name={icon} size={Math.round(size * 0.56)} color={colors.onPrimary} active />
     </LinearGradient>
   );
-  if (!onLongPress) return mark;
+  // Double tap names the app; long press (development builds) opens the style guide
   return (
-    <Pressable onLongPress={onLongPress} delayLongPress={600} accessible={false}>
+    <Speakable atomic speech={speech} onLongPress={onLongPress} delayLongPress={600} accessible={false}>
       {mark}
-    </Pressable>
+    </Speakable>
   );
 };
 

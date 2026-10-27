@@ -22,6 +22,7 @@ import {
   TertiaryButton,
 } from '../ui';
 import { AppointmentRow, appointmentWhen, ConfirmSheet, DepartmentBadge, DoctorAvatar, slotDayLabel } from './DoctorParts';
+import { useScripts } from '../../speech';
 
 interface DoctorDetailViewProps {
   practitionerId: string;
@@ -49,6 +50,7 @@ export const DoctorDetailView: React.FC<DoctorDetailViewProps> = ({
   onNotice,
 }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [data, setData] = useState<MyDoctorDetail | null>(null);
   const [error, setError] = useState(false);
   const [toCancel, setToCancel] = useState<NextAppointment | null>(null);
@@ -158,10 +160,29 @@ export const DoctorDetailView: React.FC<DoctorDetailViewProps> = ({
 
       {/* Actions */}
       <View style={styles.actions}>
-        <PrimaryButton label={data.upcoming.length ? t('bookAnother') : t('bookVisit')} icon="calendarPlus" onPress={onBook} />
+        <PrimaryButton
+          label={data.upcoming.length ? t('bookAnother') : t('bookVisit')}
+          icon="calendarPlus"
+          speech={scripts.doctors.book(name)}
+          onPress={onBook}
+        />
         <View style={styles.row}>
-          <SecondaryButton label={t('tabChat')} icon="chat" tone="neutral" onPress={onChat} style={styles.flex} />
-          <SecondaryButton label={t('videoVisitNow')} icon="video" tone="primary" onPress={() => onRequestVisit(doc.name)} style={styles.flex} />
+          <SecondaryButton
+            label={t('tabChat')}
+            icon="chat"
+            tone="neutral"
+            speech={scripts.doctors.chat(name)}
+            onPress={onChat}
+            style={styles.flex}
+          />
+          <SecondaryButton
+            label={t('videoVisitNow')}
+            icon="video"
+            tone="primary"
+            speech={scripts.doctors.requestVisit(name)}
+            onPress={() => onRequestVisit(doc.name)}
+            style={styles.flex}
+          />
         </View>
         {!data.upcoming.length && data.next_free ? (
           <AppText variant="footnote" color="inkMuted" align="center">
@@ -258,7 +279,13 @@ export const DoctorDetailView: React.FC<DoctorDetailViewProps> = ({
         )}
       </View>
 
-      <TertiaryButton label={t('removeDoctor')} icon="personRemove" onPress={() => setConfirmRemove(true)} style={styles.remove} />
+      <TertiaryButton
+        label={t('removeDoctor')}
+        icon="personRemove"
+        speech={scripts.doctors.remove(name)}
+        onPress={() => setConfirmRemove(true)}
+        style={styles.remove}
+      />
 
       <ConfirmSheet
         visible={toCancel !== null}

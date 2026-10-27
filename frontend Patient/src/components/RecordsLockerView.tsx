@@ -25,6 +25,7 @@ import {
   SegmentedControl,
 } from './ui';
 import { UploadReportModal } from './UploadReportModal';
+import { useScripts } from '../speech';
 
 interface LockerRecord {
   id: string;
@@ -79,6 +80,7 @@ interface RecordsLockerViewProps {
 
 export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId, onBack, onOpenAudit }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [activeFilter, setActiveFilter] = useState<Filter>('all');
   const [records, setRecords] = useState<LockerRecord[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -118,7 +120,7 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
       <NavBar
         backLabel={t('home')}
         onBack={onBack}
-        right={<SecondaryButton label={t('privacyLog')} icon="shieldCheck" tone="primary" size="sm" onPress={onOpenAudit} />}
+        right={<SecondaryButton label={t('privacyLog')} icon="shieldCheck" tone="primary" size="sm" speech={scripts.records.whoSaw} onPress={onOpenAudit} />}
       />
 
       <ScreenHeader
@@ -158,6 +160,7 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
               label={t('uploadReport')}
               icon="upload"
               size="sm"
+              speech={scripts.records.upload}
               onPress={() => setUploadModalVisible(true)}
             />
           }
@@ -194,6 +197,7 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
                     label={t('uploadReport')}
                     icon="upload"
                     size="sm"
+                    speech={scripts.records.upload}
                     onPress={() => setUploadModalVisible(true)}
                   />
                 </>
@@ -206,18 +210,32 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
             {filteredRecords.map((r) => {
               const shared = !!r.sharedWith;
               const title = localized(r.title, lang);
+              const facilityName = localized(r.facility, lang) || t('abdmLinkedFacility');
+              const catName = r.category === 'lab' ? t('categoryLab') : t('categoryImaging');
+              const dateFormatted = formatDateLabel(r.date, lang);
+
+              const recordSpeech = scripts.records.item({
+                title,
+                kind: catName,
+                date: dateFormatted,
+                source: facilityName,
+                sharedWith: shared ? (r.sharedWith ? `Doctor ${r.sharedWith}` : '') : null,
+                minutesLeft: r.minutesLeft,
+              });
+
               return (
                 <ListRow
                   key={r.id}
                   icon={r.icon}
                   iconTone={shared ? 'success' : 'primary'}
                   title={title}
-                  subtitle={`${r.category === 'lab' ? t('categoryLab') : t('categoryImaging')} • ${formatDateLabel(r.date, lang)}`}
+                  subtitle={`${catName} • ${dateFormatted}`}
+                  speechText={recordSpeech}
                 >
                   <View style={styles.meta}>
                     <Icon name="building" size={14} color={colors.inkMuted} />
                     <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
-                      {localized(r.facility, lang) || t('abdmLinkedFacility')}
+                      {facilityName}
                     </AppText>
                   </View>
 
@@ -247,7 +265,16 @@ export const RecordsLockerView: React.FC<RecordsLockerViewProps> = ({ patientId,
       </View>
 
       {/* Security note */}
-      <Card style={styles.trust}>
+      <Card
+        style={styles.trust}
+        speechText={() =>
+          lang === 'hi'
+            ? '256-बिट सुरक्षित लॉकर। आपकी अनुमति, बायोमेट्रिक या ओटीपी के बिना कोई भी आपके स्वास्थ्य रिकॉर्ड नहीं देख सकता।'
+            : lang === 'kn'
+            ? '256-ಬಿಟ್ ಸುರಕ್ಷಿತ ವಾಲ್ಟ್. ನಿಮ್ಮ ಅನುಮತಿ ಇಲ್ಲದೆ ಯಾರೂ ನಿಮ್ಮ ದಾಖಲೆಗಳನ್ನು ಪ್ರವೇಶಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ.'
+            : '256-bit AES end-to-end encrypted vault. Records cannot be accessed by anyone without your explicit biometric or OTP authorization.'
+        }
+      >
         <IconDisc icon="lock" tone="primary" />
         <View style={styles.flex}>
           <AppText variant="subhead" weight={600}>

@@ -8,6 +8,8 @@ import { HeroAppointmentCard, type AppointmentStatus, type PatientAppointmentInf
 import { TactileGrid } from './TactileGrid';
 import { AppointmentRow } from './doctors/DoctorParts';
 import { AppText, Badge, Card, Groove, ScreenScroll, SectionHeader, TertiaryButton } from './ui';
+import { Speakable, spokenToday, useScripts } from '../speech';
+import { SpeechSettingsRow } from '../speech/SpeechSettingsRow';
 
 interface HomeViewProps {
   user: PatientUser;
@@ -33,16 +35,20 @@ export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointme
   // Full localised weekday + month (tables, not device Intl: Hermes ICU data varies on Android)
   const today = formatLongDate(localCalendarDate(), lang, false);
 
+  const scripts = useScripts();
+  // "Hello Ramesh. Today is Tuesday, 27 October."
+  const greetingSpeech = () => scripts.home.greeting(firstName, spokenToday(lang));
+
   return (
     <ScreenScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-      <View style={styles.greeting}>
-        <AppText variant="eyebrow" color="inkMuted" compact>
+      <Speakable speech={greetingSpeech} style={styles.greeting}>
+        <AppText variant="eyebrow" color="inkMuted" compact speech={greetingSpeech}>
           {today}
         </AppText>
-        <AppText variant="largeTitle" accessibilityRole="header" numberOfLines={2}>
+        <AppText variant="largeTitle" accessibilityRole="header" numberOfLines={2} speech={greetingSpeech}>
           {t('greeting', { name: firstName })}
         </AppText>
-      </View>
+      </Speakable>
 
       <HeroAppointmentCard onJoinCall={onJoinCall} appointment={appointment} status={appointmentStatus} />
 
@@ -52,7 +58,8 @@ export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointme
             title={t('otherUpcoming')}
             icon="calendar"
             count={otherUpcoming.length}
-            action={<TertiaryButton label={t('seeAll')} size="sm" onPress={onOpenSchedule} />}
+            speech={() => scripts.home.otherUpcoming(otherUpcoming.length)}
+            action={<TertiaryButton label={t('seeAll')} size="sm" onPress={onOpenSchedule} speech={scripts.home.seeAllAppointments} />}
           />
           <Card padded={false}>
             {otherUpcoming.slice(0, 3).map((apt, i) => (
@@ -67,11 +74,19 @@ export const HomeView: React.FC<HomeViewProps> = ({ user, appointment, appointme
 
       <TactileGrid {...gridActions} />
 
-      {/* ABDM & DPDP reassurance as badges; the full sentence goes to screen readers */}
-      <View style={styles.footer} accessible accessibilityLabel={t('complianceFooter')}>
-        <Badge label={t('badgeAbdm')} tone="gold" icon="verified" solid />
-        <Badge label={t('badgeDpdp')} tone="primary" icon="shieldCheck" solid />
+      {/* Settings: double tap to hear on / off */}
+      <View style={styles.others}>
+        <SectionHeader title={scripts.settings.title} icon="listen" />
+        <Card padded={false}>
+          <SpeechSettingsRow />
+        </Card>
       </View>
+
+      {/* ABDM & DPDP reassurance as badges; the full sentence goes to screen readers */}
+      <Speakable speech={scripts.home.compliance} style={styles.footer} accessibilityLabel={t('complianceFooter')}>
+        <Badge label={t('badgeAbdm')} tone="gold" icon="verified" solid speech={scripts.home.badgeAbdm} />
+        <Badge label={t('badgeDpdp')} tone="primary" icon="shieldCheck" solid speech={scripts.home.badgeDpdp} />
+      </Speakable>
     </ScreenScroll>
   );
 };

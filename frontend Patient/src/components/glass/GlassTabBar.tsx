@@ -1,10 +1,12 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptic } from '../../utils/haptics';
 import { colors, radii, spacing, touch } from '../../theme/tokens';
 import { Icon, type IconName } from '../ui/Icon';
 import { AppText } from '../ui/AppText';
+import { Speakable } from '../../speech/Speakable';
+import { useScripts, type TabKey } from '../../speech/scripts';
 import { GlassSurface } from './GlassSurface';
 
 /** Docked bottom tab bar height (compact, no floating waste). */
@@ -42,6 +44,7 @@ export function GlassTabBar<K extends string>({ tabs, activeKey, onChange }: Gla
           {tabs.map((tab) => (
             <TabItem
               key={tab.key}
+              tabKey={tab.key}
               label={tab.label}
               icon={tab.icon}
               badge={tab.badge}
@@ -56,47 +59,60 @@ export function GlassTabBar<K extends string>({ tabs, activeKey, onChange }: Gla
 }
 
 export const TabItem: React.FC<{
+  tabKey?: string;
   label: string;
   icon: IconName;
   active: boolean;
   onPress: () => void;
   /** Unread count, shown as a small red badge on the icon. */
   badge?: number;
-}> = ({ label, icon, active, onPress, badge }) => (
-  <Pressable
-    onPress={() => {
-      if (!active) haptic.selection();
-      onPress();
-    }}
-    style={({ pressed }) => [styles.item, pressed && !active && styles.pressed]}
-    accessibilityRole="tab"
-    accessibilityState={{ selected: active }}
-    accessibilityLabel={badge ? `${label} (${badge})` : label}
-  >
-    <View style={[styles.pill, active && styles.activePill]}>
-      {badge ? (
-        <View style={styles.badge} pointerEvents="none">
-          <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
-        </View>
-      ) : null}
-      <Icon
-        name={icon}
-        size={20}
-        color={active ? colors.primary : colors.inkMuted}
-        active={active}
-      />
-      <AppText
-        variant="caption"
-        weight={active ? 700 : 500}
-        color={active ? 'primary' : 'inkMuted'}
-        numberOfLines={1}
-        compact
+}> = ({ tabKey, label, icon, active, onPress, badge }) => {
+  const scripts = useScripts();
+  // "Medications. See the medicines you need to take." (+ unread messages on Chat)
+  const speech = () => {
+    const known = tabKey && tabKey in scripts.tabs ? scripts.tabs[tabKey as TabKey] : scripts.common.tab(label, active);
+    return `${known}${badge ? scripts.tabs.unread(badge) : ''}`;
+  };
+
+  return (
+    <Speakable
+        atomic
+        speech={speech}
+        radius={radii.lg}
+        onPress={() => {
+          if (!active) haptic.selection();
+          onPress();
+        }}
+        style={({ pressed }) => [styles.item, pressed && !active && styles.pressed]}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: active }}
+        accessibilityLabel={badge ? `${label} (${badge})` : label}
       >
-        {label}
-      </AppText>
-    </View>
-  </Pressable>
-);
+        <View style={[styles.pill, active && styles.activePill]}>
+          {badge ? (
+            <View style={styles.badge} pointerEvents="none">
+              <Text style={styles.badgeText}>{badge > 9 ? '9+' : badge}</Text>
+            </View>
+          ) : null}
+          <Icon
+            name={icon}
+            size={20}
+            color={active ? colors.primary : colors.inkMuted}
+            active={active}
+          />
+          <AppText
+            variant="caption"
+            weight={active ? 700 : 500}
+            color={active ? 'primary' : 'inkMuted'}
+            numberOfLines={1}
+            compact
+          >
+            {label}
+          </AppText>
+        </View>
+      </Speakable>
+  );
+};
 
 const styles = StyleSheet.create({
   dockWrap: {

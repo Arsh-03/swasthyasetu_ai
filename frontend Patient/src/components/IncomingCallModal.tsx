@@ -5,6 +5,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { haptic } from '../utils/haptics';
 import { GlassSheet } from './glass';
 import { AppText, CriticalButton, Icon } from './ui';
+import { spokenDoctor, useScripts } from '../speech';
 
 interface IncomingCallModalProps {
   visible: boolean;
@@ -20,7 +21,9 @@ interface IncomingCallModalProps {
 export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
   visible, callerName, onAccept, onDecline, video = true, onAcceptAudio,
 }) => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const scripts = useScripts();
+  const announce = () => scripts.call.incoming(spokenDoctor(callerName, lang) || callerName, !!video);
   const [pulse] = useState(() => new Animated.Value(0));
 
   // Ringing pulse; skipped when the user prefers reduced motion
@@ -65,10 +68,10 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
         </View>
 
         <View style={styles.text}>
-          <AppText variant="eyebrow" color="successDeep" align="center" compact>
+          <AppText variant="eyebrow" color="successDeep" align="center" compact speech={announce}>
             {video ? t('incomingVideoCall') : t('incomingAudioCall')}
           </AppText>
-          <AppText variant="title" color="onPrimary" align="center">
+          <AppText variant="title" color="onPrimary" align="center" speech={announce}>
             {callerName}
           </AppText>
           <AppText variant="footnote" color="onNightMuted" align="center">
@@ -83,11 +86,11 @@ export const IncomingCallModal: React.FC<IncomingCallModalProps> = ({
         </View>
 
         <View style={styles.actions}>
-          <CriticalButton tone="danger" label={t('decline')} icon="callEnd" onPress={onDecline} fullWidth={false} style={styles.action} />
-          <CriticalButton tone="primary" label={t('accept')} icon={video ? 'video' : 'call'} onPress={onAccept} fullWidth={false} style={styles.action} />
+          <CriticalButton tone="danger" label={t('decline')} icon="callEnd" onPress={onDecline} fullWidth={false} style={styles.action} speech={scripts.call.decline} />
+          <CriticalButton tone="primary" label={t('accept')} icon={video ? 'video' : 'call'} onPress={onAccept} fullWidth={false} style={styles.action} speech={video ? scripts.call.accept : scripts.call.acceptAudio} />
         </View>
         {video && onAcceptAudio && (
-          <CriticalButton tone="success" label={t('answerAudioOnly')} icon="call" onPress={onAcceptAudio} style={styles.audioOnly} />
+          <CriticalButton tone="success" label={t('answerAudioOnly')} icon="call" onPress={onAcceptAudio} style={styles.audioOnly} speech={scripts.call.acceptAudio} />
         )}
       </View>
     </GlassSheet>

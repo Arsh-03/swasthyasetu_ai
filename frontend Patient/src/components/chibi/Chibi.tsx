@@ -2,11 +2,12 @@
 // Tap it for what it can do right now (heart rate, medicines, joining a consultation, messages, who has seen
 // your records). Any feature can add a skill with registerChibiSkill (e.g. the accessibility / navigation work).
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Ellipse, G, Line, Path, Rect } from 'react-native-svg';
 import { colors, radii, spacing, tints } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText, Icon, type IconName } from '../ui';
+import { Speakable, useScripts } from '../../speech';
 
 export type ChibiMood = 'idle' | 'listening' | 'hint' | 'alert';
 
@@ -75,6 +76,7 @@ export const ChibiButton: React.FC<{
   status?: string;
 }> = ({ bottom, skills, mood = 'idle', badge, status }) => {
   const { t } = useLanguage();
+  const scripts = useScripts();
   const [open, setOpen] = useState(false);
   const [, bump] = useState(0);
   useEffect(() => { const l = () => bump((n) => n + 1); listeners.add(l); return () => { listeners.delete(l); }; }, []);
@@ -93,18 +95,18 @@ export const ChibiButton: React.FC<{
     <View pointerEvents="box-none" style={[styles.wrap, { bottom }]}>
       {open && (
         <View style={styles.panel} accessibilityRole="menu">
-          <AppText variant="headline">{status || t('chibiHi')}</AppText>
+          <AppText variant="headline" speech={status ? undefined : scripts.chibi.menuTitle}>{status || t('chibiHi')}</AppText>
           <AppText variant="caption" color="inkMuted" style={styles.sub}>Central Health Informatics Bot Interface</AppText>
           {all.map((s) => (
-            <Pressable key={s.id} accessibilityRole="menuitem" style={({ pressed }) => [styles.skill, pressed && styles.pressed]}
+            <Speakable key={s.id} atomic speech={() => scripts.chibi.menuItem(s.label)} accessibilityRole="menuitem" style={({ pressed }) => [styles.skill, pressed && styles.pressed]}
               onPress={() => { setOpen(false); s.run(); }}>
               <Icon name={s.icon} size={20} color={colors.primary} />
               <AppText variant="body" style={styles.skillText}>{s.label}</AppText>
-            </Pressable>
+            </Speakable>
           ))}
         </View>
       )}
-      <Pressable onPress={() => setOpen((o) => !o)} accessibilityRole="button"
+      <Speakable atomic speech={scripts.chibi.button} onPress={() => setOpen((o) => !o)} accessibilityRole="button"
         accessibilityLabel={`CHIBI${status ? `: ${status}` : ''}`} style={styles.fab}>
         <Animated.View style={{ transform: [{ translateY: bob }] }}>
           <ChibiFace mood={mood} size={50} />
@@ -114,7 +116,7 @@ export const ChibiButton: React.FC<{
             <AppText variant="caption" weight={700} style={styles.badgeText}>{badge > 9 ? '9+' : String(badge)}</AppText>
           </View>
         ) : null}
-      </Pressable>
+      </Speakable>
     </View>
   );
 };

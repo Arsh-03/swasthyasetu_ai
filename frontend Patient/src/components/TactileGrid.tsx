@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { spacing } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { CriticalButton, MetricCard, SectionHeader } from './ui';
+import { useScripts } from '../speech';
 
 interface TactileGridProps {
   onOpenDoctors: () => void;
@@ -26,13 +27,17 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
 }) => {
   const { t } = useLanguage();
 
+  const scripts = useScripts();
+
   return (
     <View style={styles.container}>
-      <SectionHeader title={t('quickActions')} />
+      <SectionHeader title={t('quickActions')} speech={scripts.home.quickActions} />
 
       <View style={styles.gridRow}>
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.myDoctors}
           compact
           equalHeight
           label={t('myDoctorsCaption')}
@@ -40,10 +45,11 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="doctor"
           tone="primary"
           onPress={onOpenDoctors}
-          style={styles.tile}
         />
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.myRecords}
           compact
           equalHeight
           label={t('myRecordsCaption')}
@@ -51,12 +57,13 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="records"
           tone="primary"
           onPress={onOpenRecords}
-          style={styles.tile}
         />
       </View>
       <View style={styles.gridRow}>
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.medicines}
           compact
           equalHeight
           label={t('medicinesCaption')}
@@ -64,10 +71,11 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="medication"
           tone="success"
           onPress={onOpenMedicines}
-          style={styles.tile}
         />
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.privacy}
           compact
           equalHeight
           label={t('privacyCaption')}
@@ -75,13 +83,14 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="shieldCheck"
           tone="navy"
           onPress={onOpenPrivacy}
-          style={styles.tile}
         />
       </View>
 
       <View style={styles.gridRow}>
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.heartRate}
           compact
           equalHeight
           label={t('heartRateCaption')}
@@ -89,10 +98,11 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="heartbeat"
           tone="danger"
           onPress={onOpenHeartRate}
-          style={styles.tile}
         />
         <MetricCard
           layout="stacked"
+          style={styles.tile}
+          speech={scripts.home.messageDoctor}
           compact
           equalHeight
           label={t('messageDoctorCaption')}
@@ -100,7 +110,6 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
           icon="chat"
           tone="primary"
           onPress={onOpenChat}
-          style={styles.tile}
         />
       </View>
 
@@ -111,6 +120,7 @@ export const TactileGrid: React.FC<TactileGridProps> = ({
         label={t('emergencySos')}
         sublabel={t('emergencySosCaption')}
         onPress={onTriggerEmergency}
+        speech={scripts.home.sos}
       />
     </View>
   );

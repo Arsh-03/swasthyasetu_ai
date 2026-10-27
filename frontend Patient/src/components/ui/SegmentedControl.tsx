@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { colors, elevation, radii, spacing } from '../../theme/tokens';
 import { timing } from '../../theme/motion';
 import { haptic } from '../../utils/haptics';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { Speakable } from '../../speech/Speakable';
+import { useScripts } from '../../speech/scripts';
 
 export interface SegmentOption<V extends string> {
   value: V;
@@ -34,6 +36,7 @@ export function SegmentedControl<V extends string>({
   style,
   accessibilityLabel,
 }: SegmentedControlProps<V>) {
+  const scripts = useScripts();
   const [width, setWidth] = useState(0);
   const index = Math.max(0, options.findIndex((o) => o.value === value));
   const segment = width > 0 ? (width - PADDING * 2) / options.length : 0;
@@ -59,7 +62,9 @@ export function SegmentedControl<V extends string>({
         {options.map((opt) => {
           const selected = opt.value === value;
           return (
-            <Pressable
+            <Speakable
+              atomic
+              speech={() => scripts.common.tab(opt.label, selected)}
               key={opt.value}
               onPress={() => {
                 if (!selected) {
@@ -93,7 +98,7 @@ export function SegmentedControl<V extends string>({
               >
                 {opt.label}
               </AppText>
-            </Pressable>
+            </Speakable>
           );
         })}
       </View>

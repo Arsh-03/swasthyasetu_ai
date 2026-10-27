@@ -5,6 +5,8 @@ import { GlassSheet } from './glass';
 import { AppText, CriticalButton, SegmentedControl, SheetHeader } from './ui';
 import { CONSENT_TEXT } from '../services/call/consentText';
 import type { CallLanguage } from '../services/call/callTypes';
+import { spokenDoctor, useScripts } from '../speech';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface RecordingConsentSheetProps {
   visible: boolean;
@@ -28,13 +30,16 @@ const LANGUAGE_OPTIONS: { value: CallLanguage; label: string }[] = [
 export const RecordingConsentSheet: React.FC<RecordingConsentSheetProps> = ({ visible, doctorName, language, onRespond }) => {
   const [lang, setLang] = useState<CallLanguage>(language);
   const copy = CONSENT_TEXT[lang];
+  // Spoken in the app language (the voice follows the app language, not this sheet's picker)
+  const scripts = useScripts();
+  const appLang = useLanguage().lang;
 
   return (
     <GlassSheet visible={visible}>
       <SheetHeader icon="shieldCheck" title={copy.heading} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         <SegmentedControl options={LANGUAGE_OPTIONS} value={lang} onChange={setLang} accessibilityLabel="Language" />
-        <AppText variant="headline" color="ink">
+        <AppText variant="headline" color="ink" speech={() => scripts.call.recordingAsk(spokenDoctor(doctorName, appLang) || doctorName)}>
           {copy.title(doctorName)}
         </AppText>
         <View style={styles.points}>
@@ -48,8 +53,8 @@ export const RecordingConsentSheet: React.FC<RecordingConsentSheetProps> = ({ vi
           ))}
         </View>
         <View style={styles.actions}>
-          <CriticalButton tone="danger" label={copy.deny} icon="close" onPress={() => onRespond(false)} fullWidth={false} style={styles.deny} />
-          <CriticalButton tone="success" label={copy.allow} icon="mic" onPress={() => onRespond(true)} fullWidth={false} style={styles.allow} />
+          <CriticalButton tone="danger" label={copy.deny} icon="close" onPress={() => onRespond(false)} fullWidth={false} style={styles.deny} speech={scripts.call.recordingDeny} />
+          <CriticalButton tone="success" label={copy.allow} icon="mic" onPress={() => onRespond(true)} fullWidth={false} style={styles.allow} speech={scripts.call.recordingAllow} />
         </View>
       </ScrollView>
     </GlassSheet>

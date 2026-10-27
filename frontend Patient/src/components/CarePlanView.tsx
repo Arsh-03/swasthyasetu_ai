@@ -13,6 +13,8 @@ import { SavedSummaries } from './VisitSummary';
 import { DepartmentBadge } from './doctors/DoctorParts';
 import { doctorShortName } from '../utils/departments';
 import { MedicationCard } from './medications/MedicationCard';
+import { DoseButton } from './medications/DoseButton';
+export { DoseButton } from './medications/DoseButton';
 import { MedicationDetailSheet } from './medications/MedicationDetailSheet';
 import { resolveMedicationInfo } from '../utils/medicationInfo';
 import {
@@ -21,7 +23,6 @@ import {
   Badge,
   Card,
   ChoiceTiles,
-  DoubleTapSpeakable,
   Groove,
   Icon,
   type IconName,
@@ -37,6 +38,7 @@ import {
   SecondaryButton,
   SectionHeader,
 } from './ui';
+import { cleanForSpeech, Speakable, useScripts } from '../speech';
 
 interface CarePlanViewProps {
   onBack: () => void;
@@ -489,9 +491,12 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
               return (
                 <View key={moment.slot} style={styles.routineMoment}>
                   {/* Routine Moment Header (Meal times) */}
-                  <DoubleTapSpeakable
-                    speechText={() =>
-                      `${t(moment.titleKey)}. ${moment.timeLabel}. ${t(moment.subKey)}. ${allTaken ? t('allDosesTakenInRoutine') : t('medicationTakenCount', { taken: takenCount, total: momentRows.length })}`
+                  <Speakable
+                    speech={() =>
+                      cleanForSpeech(
+                        `${t(moment.titleKey)}. ${moment.timeLabel}. ${t(moment.subKey)}. ${allTaken ? t('allDosesTakenInRoutine') : t('medicationTakenCount', { taken: takenCount, total: momentRows.length })}`,
+                        lang,
+                      )
                     }
                     radius={radii.lg}
                     style={[styles.momentHeaderCard, isCurrent && styles.momentHeaderActive]}
@@ -550,7 +555,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
                         tone={allTaken ? 'success' : 'neutral'}
                       />
                     </View>
-                  </DoubleTapSpeakable>
+                  </Speakable>
 
                   {/* List of Medication Cards in this Routine Moment */}
                   <View style={styles.momentCardsList}>
@@ -583,7 +588,16 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
       {/* 48-hour recovery check-in */}
       <View style={styles.section}>
         <SectionHeader title={t('recoveryCheckin')} />
-        <Card style={styles.checkinCard}>
+        <Card
+          style={styles.checkinCard}
+          speechText={() =>
+            lang === 'hi'
+              ? '48-घंटे की स्वास्थ्य जांच। आप आज कैसा महसूस कर रहे हैं? बेहतर, वैसा ही, या परेशानी है? अपना जवाब चुनने के लिए किसी विकल्प पर टैप करें।'
+              : lang === 'kn'
+              ? '48-ಗಂಟೆಗಳ ಚೇತರಿಕೆಯ ತಪಾಸಣೆ. ಇಂದು ನಿಮಗೆ ಹೇಗನಿಸುತ್ತಿದೆ? ಗುಣಮುಖ, ಮೊದಲಿನಂತೆ, ಅಥವಾ ಸಹಾಯ ಬೇಕೆ? ಆಯ್ಕೆ ಮಾಡಲು ಟ್ಯಾಪ್ ಮಾಡಿ.'
+              : '48-hour recovery check-in. How are you feeling today? Better, same, or need help? Tap an option to update your doctor.'
+          }
+        >
           <AppText variant="headline">{t('howAreYouFeeling')}</AppText>
           <AppText variant="footnote" color="inkMuted">
             {t('checkinSub')}
@@ -619,51 +633,7 @@ export const CarePlanView: React.FC<CarePlanViewProps> = ({ onBack, summariesKey
 );
 };
 
-/** Raised "Take" control with celebratory spring pop burst and audio feedback. */
-export const DoseButton: React.FC<{
-  taken: boolean;
-  label: string;
-  accessibilityLabel: string;
-  onPress: () => void;
-  lang?: SupportedLanguage;
-}> = ({ taken, label, accessibilityLabel, onPress, lang }) => {
-  const [showBurst, setShowBurst] = useState(false);
-  const [scaleAnim] = useState(() => new Animated.Value(1));
 
-  const handlePress = () => {
-    if (!taken) {
-      setShowBurst(true);
-      Animated.sequence([
-        Animated.spring(scaleAnim, { toValue: 1.25, friction: 3, tension: 150, useNativeDriver: true }),
-        Animated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
-      ]).start();
-    }
-    onPress();
-  };
-
-  return (
-    <View style={styles.doseBtnContainer}>
-      <PopBurstEffect active={showBurst} onComplete={() => setShowBurst(false)} />
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <NeuPressable
-          onPress={handlePress}
-          selected={taken}
-          haptics="none"
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: taken }}
-          accessibilityLabel={accessibilityLabel}
-          containerStyle={styles.doseBtnWrap}
-          style={styles.doseBtn}
-        >
-          {taken && <Icon name="check" size={18} color={colors.successDeep} />}
-          <AppText variant="footnote" weight={700} color={taken ? 'ink' : 'primary'} lang={lang} compact>
-            {label}
-          </AppText>
-        </NeuPressable>
-      </Animated.View>
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {

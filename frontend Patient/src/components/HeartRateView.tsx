@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, StyleSheet, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { colors, radii, spacing, tints } from '../theme/tokens';
 import { patientApi, type VitalReading } from '../services/api';
@@ -9,6 +9,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { formatTimestamp } from '../utils/dates';
 import { haptic } from '../utils/haptics';
 import { AppText, Card, Icon, NavBar, PrimaryButton, ScreenScroll, SecondaryButton } from './ui';
+import { Speakable, useScripts } from '../speech';
 
 const MEASURE_SECONDS = 30;
 const WARMUP_SECONDS = 3; // the camera's exposure settles after the finger goes on
@@ -22,6 +23,7 @@ type Phase = 'intro' | 'measuring' | 'result' | 'failed';
  */
 export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () => void }> = ({ onBack, onMessageDoctor }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [phase, setPhase] = useState<Phase>('intro');
   const phaseRef = useRef<Phase>('intro');
   phaseRef.current = phase;
@@ -142,7 +144,7 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
           </Card>
           <AppText variant="footnote" color="inkMuted">{t('hrDisclaimer')}</AppText>
           {error && <AppText variant="subhead" color="dangerDeep">{error}</AppText>}
-          <PrimaryButton label={t('hrStart')} icon="heartbeat" onPress={() => void begin()} />
+          <PrimaryButton label={t('hrStart')} icon="heartbeat" speech={scripts.heartRate.start} onPress={() => void begin()} />
         </>
       ) : phase === 'measuring' ? (
         <View style={styles.center}>
@@ -156,11 +158,14 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
           {!torch && <AppText variant="footnote" color="inkMuted" align="center">{t('hrNoFlash')}</AppText>}
           <CameraSampler active={capturing} onSample={onSample} onStarted={onCameraStarted} onError={onCameraError} />
           <Wave values={wave} />
-          <SecondaryButton label={t('hrCancel')} onPress={cancel} />
+          <SecondaryButton label={t('hrCancel')} speech={scripts.heartRate.cancel} onPress={cancel} />
         </View>
       ) : phase === 'result' && result ? (
         <>
-          <Card style={styles.resultCard}>
+          <Card
+            style={styles.resultCard}
+            speechText={scripts.heartRate.result(result.bpm, result.confidence === 'good')}
+          >
             <Icon name="heartbeat" size={36} color={colors.dangerDeep} />
             <AppText variant="metric" align="center">{result.bpm} <AppText variant="title" color="inkMuted">{t('hrBpm')}</AppText></AppText>
             <AppText variant="subhead" color={result.confidence === 'good' ? 'successDeep' : 'warningDeep'} align="center">
@@ -171,14 +176,14 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
             </AppText>
           </Card>
           {saved?.out_of_range && (
-            <Pressable onPress={() => Linking.openURL('tel:108').catch(() => undefined)} accessibilityRole="button" style={styles.warning}>
+            <Speakable atomic onPress={() => Linking.openURL('tel:108').catch(() => undefined)} accessibilityRole="button" style={styles.warning}>
               <Icon name="emergency" size={22} color={colors.dangerDeep} />
               <AppText variant="subhead" color="dangerDeep" style={styles.flex}>{t('hrOutOfRange')}</AppText>
-            </Pressable>
+            </Speakable>
           )}
           <AppText variant="footnote" color="inkMuted">{t('hrDisclaimer')}</AppText>
-          <PrimaryButton label={t('hrMessageDoctor')} icon="chat" onPress={onMessageDoctor} />
-          <SecondaryButton label={t('hrAgain')} onPress={() => setPhase('intro')} />
+          <PrimaryButton label={t('hrMessageDoctor')} icon="chat" speech={scripts.heartRate.messageDoctor} onPress={onMessageDoctor} />
+          <SecondaryButton label={t('hrAgain')} speech={scripts.heartRate.again} onPress={() => setPhase('intro')} />
         </>
       ) : (
         <>
@@ -187,7 +192,7 @@ export const HeartRateView: React.FC<{ onBack: () => void; onMessageDoctor: () =
             <AppText variant="headline">{t('hrFailedTitle')}</AppText>
             <AppText variant="body">{t('hrFailedHint')}</AppText>
           </Card>
-          <PrimaryButton label={t('hrAgain')} icon="heartbeat" onPress={() => void begin()} />
+          <PrimaryButton label={t('hrAgain')} icon="heartbeat" speech={scripts.heartRate.again} onPress={() => void begin()} />
         </>
       )}
 

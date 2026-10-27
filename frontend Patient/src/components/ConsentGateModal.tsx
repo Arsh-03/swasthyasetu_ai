@@ -12,6 +12,7 @@ import {
   SheetHeader,
   Well,
 } from './ui';
+import { cleanForSpeech, spokenDoctor, useScripts } from '../speech';
 
 interface ConsentGateModalProps {
   visible: boolean;
@@ -29,7 +30,8 @@ const formatCountdown = (seconds: number) => {
 /** Patient side of the Doctor's ConsentRequestModal: review the request, then allow or decline with one tap
  *  (the patient is already signed in, so no OTP is asked). */
 export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, request, onApprove, onDecline }) => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const scripts = useScripts();
   const minutes = request?.duration_minutes || 60;
   const [timeLeft, setTimeLeft] = useState(minutes * 60);
   const [submitting, setSubmitting] = useState(false);
@@ -58,6 +60,14 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
   const record = request?.record_title || t('healthRecord');
   const purpose = request?.clinical_purpose || '—';
   const notice = t('consentNotice', { minutes });
+  // Plain-language summary: who asks, for what, why, and for how long (used by Listen and by a double tap on the sheet)
+  const summary = () =>
+    scripts.consent.summary({
+      doctor: spokenDoctor(request?.practitioner_name, lang) || t('yourDoctor'),
+      record: cleanForSpeech(record, lang),
+      purpose: cleanForSpeech(purpose, lang),
+      minutes,
+    });
 
   const rows: { label: string; value: string; tone?: 'success' }[] = [
     { label: t('practitioner'), value: practitioner },
@@ -75,7 +85,13 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
         subtitle={t('consentSubtitle')}
         right={
           <View accessible accessibilityLabel={`${t('timeRemaining')} ${formatCountdown(timeLeft)}`}>
-            <Badge label={formatCountdown(timeLeft)} tone="warning" icon="timer" size="md" />
+            <Badge
+              label={formatCountdown(timeLeft)}
+              tone="warning"
+              icon="timer"
+              size="md"
+              speech={() => scripts.consent.timer(Math.floor(timeLeft / 60), timeLeft % 60)}
+            />
           </View>
         }
       />
@@ -83,12 +99,10 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {/* Plain-language notice with audio read-out */}
         <View style={styles.noticeRow}>
-          <AppText variant="footnote" color="inkMuted" style={styles.flex}>
+          <AppText variant="footnote" color="inkMuted" style={styles.flex} speech={summary}>
             {notice}
           </AppText>
-          <AudioListenButton
-            text={() => [notice, ...rows.map((r) => `${r.label}: ${r.value}`)].join('. ')}
-          />
+          <AudioListenButton text={summary} />
         </View>
 
         {/* Request details */}
@@ -115,6 +129,7 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
             label={t('decline')}
             icon="close"
             onPress={onDecline}
+            speech={scripts.consent.decline}
             disabled={submitting}
             fullWidth={false}
             style={styles.decline}
@@ -124,6 +139,7 @@ export const ConsentGateModal: React.FC<ConsentGateModalProps> = ({ visible, req
             label={t('authorizeAccess')}
             icon="shieldCheck"
             onPress={handleConfirm}
+            speech={scripts.consent.approve(minutes)}
             loading={submitting}
             fullWidth={false}
             style={styles.approve}

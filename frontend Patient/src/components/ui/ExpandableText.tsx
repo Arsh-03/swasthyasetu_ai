@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors, spacing, touch } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText, type AppTextProps } from './AppText';
 import { Icon } from './Icon';
+import { Speakable } from '../../speech/Speakable';
 
 interface ExpandableTextProps extends Omit<AppTextProps, 'children' | 'numberOfLines'> {
   children: string;
@@ -42,7 +43,8 @@ export const ExpandableText: React.FC<ExpandableTextProps> = ({ children, lines 
         {children}
       </AppText>
       {(overflows || expanded) && fullHeight > clampedHeight + 1 ? (
-        <Pressable
+        <Speakable
+          atomic
           onPress={() => setExpanded(!expanded)}
           hitSlop={8}
           accessibilityRole="button"
@@ -54,7 +56,7 @@ export const ExpandableText: React.FC<ExpandableTextProps> = ({ children, lines 
             {expanded ? t('showLess') : t('readMore')}
           </AppText>
           <Icon name={expanded ? 'chevronLeft' : 'chevronRight'} size={14} color={colors.primary} />
-        </Pressable>
+        </Speakable>
       ) : null}
     </View>
   );

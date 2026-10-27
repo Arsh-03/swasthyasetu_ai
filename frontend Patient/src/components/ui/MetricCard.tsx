@@ -7,6 +7,7 @@ import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { IconDisc } from './IconDisc';
 import { NeuPanel, NeuPressable } from './Neu';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 interface MetricCardProps {
   /** Uppercase eyebrow (e.g. "Next Appointment"). */
@@ -22,6 +23,10 @@ interface MetricCardProps {
   compact?: boolean;
   onPress?: () => void;
   accessibilityHint?: string;
+  /** Card-level script (double tap on the card; its texts also speak on their own). Default: value, label, caption. */
+  speech?: SpeechSource;
+  /** @deprecated use `speech` */
+  speechText?: SpeechSource;
   /**
    * Quick-action grids (stacked + tappable only): the card grows to its row's tallest sibling,
    * the disc stays at the top and the label gets a fixed two-line area, so values line up.
@@ -47,6 +52,8 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   compact = false,
   onPress,
   accessibilityHint,
+  speech,
+  speechText,
   equalHeight = false,
   style,
 }) => {
@@ -84,22 +91,30 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   );
 
   const layoutStyle = stacked ? styles.stacked : styles.row;
+  const spoken = speech ?? speechText ?? [value, label, caption].filter(Boolean).join('. ');
+
   if (!onPress) {
-    return <NeuPanel style={[layoutStyle, style]}>{content}</NeuPanel>;
+    return (
+      <Speakable speech={spoken} radius={radii.lg} style={style}>
+        <NeuPanel style={layoutStyle}>{content}</NeuPanel>
+      </Speakable>
+    );
   }
   return (
     <NeuPressable
-      onPress={onPress}
-      strength="soft"
-      radius={radii.lg}
-      accessibilityLabel={[label, value, caption].filter(Boolean).join(', ')}
-      accessibilityHint={accessibilityHint}
-      fillHeight={fixedLabel}
-      containerStyle={style}
-      style={[styles.pad, layoutStyle]}
-    >
-      {content}
-    </NeuPressable>
+        onPress={onPress}
+        atomic
+        speech={spoken}
+        containerStyle={style}
+        strength="soft"
+        radius={radii.lg}
+        accessibilityLabel={[label, value, caption].filter(Boolean).join(', ')}
+        accessibilityHint={accessibilityHint}
+        fillHeight={fixedLabel}
+        style={[styles.pad, layoutStyle]}
+      >
+        {content}
+      </NeuPressable>
   );
 };
 

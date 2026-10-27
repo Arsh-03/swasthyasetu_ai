@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Platform, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 import { colors, radii, spacing, touch } from '../../theme/tokens';
 import { fontFamilyFor, SCRIPT_METRICS } from '../../theme/fonts';
@@ -6,6 +6,8 @@ import { useFontsLoaded } from '../../theme/FontsProvider';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { Speakable } from '../../speech/Speakable';
+import { useScripts } from '../../speech/scripts';
 
 interface TextFieldProps extends Omit<TextInputProps, 'style'> {
   label: string;
@@ -31,6 +33,10 @@ export const TextField: React.FC<TextFieldProps> = ({
   ...rest
 }) => {
   const { lang } = useLanguage();
+  const scripts = useScripts();
+  const inputRef = useRef<React.ElementRef<typeof TextInput>>(null);
+  // Double tap on the label or the box: "<label>. You have entered … Tap here to type."
+  const speech = () => scripts.common.input(label, rest.secureTextEntry ? '' : String(rest.value ?? ''), hint ?? rest.placeholder);
   const fontsLoaded = useFontsLoaded();
   const [focused, setFocused] = useState(false);
   const m = SCRIPT_METRICS[lang];
@@ -39,10 +45,14 @@ export const TextField: React.FC<TextFieldProps> = ({
 
   return (
     <View style={styles.wrap}>
-      <AppText variant="eyebrow" color="ink" compact>
+      <AppText variant="eyebrow" color="ink" compact speech={speech}>
         {label}
       </AppText>
-      <View
+      <Speakable
+        atomic
+        speech={speech}
+        onPress={() => inputRef.current?.focus()}
+        accessible={false}
         style={[
           styles.field,
           multiline && styles.fieldMultiline,
@@ -56,6 +66,7 @@ export const TextField: React.FC<TextFieldProps> = ({
           active={focused}
         />
         <TextInput
+          ref={inputRef}
           {...rest}
           multiline={multiline}
           accessibilityLabel={rest.accessibilityLabel ?? label}
@@ -78,9 +89,9 @@ export const TextField: React.FC<TextFieldProps> = ({
             otp && styles.otp,
           ]}
         />
-      </View>
+      </Speakable>
       {hint ? (
-        <AppText variant="caption" color="inkMuted" align={otp ? 'center' : undefined}>
+        <AppText variant="caption" color="inkMuted" align={otp ? 'center' : undefined} speech={speech}>
           {hint}
         </AppText>
       ) : null}

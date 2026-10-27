@@ -4,6 +4,8 @@ import { colors, domains, spacing, type Domain } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Badge } from './Badge';
 import { Icon, type IconName } from './Icon';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
+import { useScripts } from '../../speech/scripts';
 
 interface SectionHeaderProps {
   title: string;
@@ -15,6 +17,8 @@ interface SectionHeaderProps {
   count?: number;
   right?: React.ReactNode;
   action?: React.ReactNode;
+  /** Spoken on double tap (default: the title and the count). */
+  speech?: SpeechSource;
 }
 
 /**
@@ -28,21 +32,25 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   count,
   right,
   action,
+  speech,
 }) => {
+  const scripts = useScripts();
   const iconColor = domain ? domains[domain].deep : colors.primary;
   const trailingAction = action ?? right;
+  const spoken = speech ?? (count !== undefined ? () => scripts.common.count(title, count) : undefined);
 
   return (
     <View style={styles.row} accessibilityRole="header">
-      <View style={styles.left}>
-        {icon && <Icon name={icon} size={18} color={iconColor} active />}
-        <AppText variant="headline" weight={700} color="ink" style={styles.title}>
-          {title}
-        </AppText>
-        {count !== undefined && (
-          <Badge label={String(count)} domain={domain} tone={domain ? undefined : 'primary'} size="sm" />
-        )}
-      </View>
+      {/* Title, icon and count speak as one; the action (e.g. See all) speaks for itself */}
+      <Speakable atomic speech={spoken} style={styles.left}>
+          {icon && <Icon name={icon} size={18} color={iconColor} active />}
+          <AppText variant="headline" weight={700} color="ink" style={styles.title}>
+            {title}
+          </AppText>
+          {count !== undefined && (
+            <Badge label={String(count)} domain={domain} tone={domain ? undefined : 'primary'} size="sm" />
+          )}
+      </Speakable>
       {trailingAction}
     </View>
   );

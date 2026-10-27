@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useId } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { colors, radii, spacing, tints, touch } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { haptic } from '../../utils/haptics';
 import { NeuPressable } from './Neu';
-import { speak, stopSpeaking } from '../../utils/speech';
+import { speakFor, stopSpeech, useSpeechSelector } from '../../speech/store';
+import { cleanForSpeech } from '../../speech/format';
 import { AppText } from './AppText';
 import { Icon } from './Icon';
 
@@ -18,10 +19,13 @@ interface AudioListenButtonProps {
   playingTitle?: string;
   subtitle?: string;
   style?: StyleProp<ViewStyle>;
+  /** What a double tap on the button itself says (default: its label). */
+  speech?: string | (() => string);
 }
 
 /**
- * High-contrast audio badge (accessibility rule, unchanged from V1): colors.audioBg /
+ * Listen button: reads `text` with the same engine as double tap (pass the same script the
+ * card uses, so both always say the same thing). High-contrast audio badge (accessibility rule, unchanged from V1): colors.audioBg /
  * colors.audioText, at least 48×48. Required on cards with consent or diagnostic information.
  */
 export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
@@ -32,22 +36,20 @@ export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
   playingTitle,
   subtitle,
   style,
+  speech,
 }) => {
   const { lang, t } = useLanguage();
-  const [playing, setPlaying] = useState(false);
-
-  // Stop reading when the button unmounts (screen change, sheet closed)
-  useEffect(() => () => stopSpeaking(), []);
+  // Same engine and state as double tap: one reading at a time, stops on screen change
+  const id = useId();
+  const playing = useSpeechSelector((s) => s.speakingId === id);
 
   const toggle = () => {
     haptic.tap();
     if (playing) {
-      stopSpeaking();
-      setPlaying(false);
+      stopSpeech();
       return;
     }
-    const started = speak(typeof text === 'function' ? text() : text, lang, () => setPlaying(false));
-    setPlaying(started);
+    speakFor(id, cleanForSpeech(typeof text === 'function' ? text() : text, lang));
   };
 
   const a11yLabel = playing ? t('stop') : label ?? title ?? t('listen');
@@ -56,6 +58,8 @@ export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
     return (
       <NeuPressable
         onPress={toggle}
+        atomic
+        speech={speech}
         haptics="none"
         selected={playing}
         fill={colors.audioBg}
@@ -75,6 +79,8 @@ export const AudioListenButton: React.FC<AudioListenButtonProps> = ({
   return (
     <NeuPressable
       onPress={toggle}
+      atomic
+      speech={speech}
       haptics="none"
       selected={playing}
       fill={colors.audioBg}
