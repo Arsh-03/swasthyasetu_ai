@@ -387,6 +387,7 @@ class ChatMessage(Base):
     urgent = Column(Boolean, default=False)  # emergency words detected (patient messages)
     created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
     read_at = Column(DateTime(timezone=True), nullable=True)  # read by the recipient
+    reactions = Column(JSONType, nullable=True)  # {"doctor": "👍", "patient": "🙏"}: one emoji per side, never changes the text
 
 
 class VitalReading(Base):

@@ -33,10 +33,22 @@ MEMORY_WORDS = 140
 Notify = Callable[[Dict[str, Any]], Awaitable[None]]
 
 KEYS = [k for k, _, _ in SECTIONS]
-KIND_TO_KEY = {"symptom": "complaints", "allergy": "allergies", "medication": "medications", "family": "history",
-               "advice": "advice", "other": "history"}
+KIND_TO_KEY = {
+    "symptom": "complaints", "complaint": "complaints", "complaints": "complaints",
+    "allergy": "allergies", "allergies": "allergies",
+    "medication": "medications", "current_medications": "medications", "medications": "medications",
+    "family": "history", "history": "history",
+    "vital": "vitals", "vitals": "vitals",
+    "exam": "exam", "examination": "exam",
+    "diagnosis": "diagnosis",
+    "investigation": "investigations", "investigations": "investigations", "labs": "investigations", "tests": "investigations",
+    "rx": "rx", "prescription": "rx", "prescriptions": "rx",
+    "advice": "advice",
+    "follow_up": "follow_up", "followup": "follow_up",
+    "other": "history"
+}
 
-TURN_PROMPT = f"""You are CHIBI, a quiet clinical assistant listening to a doctor-patient consultation in India.
+TURN_PROMPT = f"""You are CHIBI, an expert clinical AI listening to a doctor-patient consultation in India.
 The text is de-identified: [PATIENT], [DOCTOR], [PERSON_1], [PLACE_1], [ID_1] are placeholders. Keep them as they are.
 
 You get MEMORY (your summary of the consultation so far), NEW LINES (speech since your last update) and NOTE
@@ -46,13 +58,23 @@ You get MEMORY (your summary of the consultation so far), NEW LINES (speech sinc
 
 - memory: the updated running summary of the WHOLE consultation (old memory + new lines), at most {MEMORY_WORDS} words,
   clinical style. Keep every symptom, duration, history item, allergy, medicine and plan mentioned.
-- facts: only NEW information from NEW LINES, as short note lines in clinical style ("Fever x 3 days, worse at night").
-  Do not repeat facts already in MEMORY or NOTE; one finding per line ("Sore throat", "Cough x 2 days"), not a list.
-  key is one of: {", ".join(KEYS)}. Use "medications" for medicines the patient already takes, "rx" only for
-  medicines the doctor prescribes now.
-- missed: important things said (now or earlier) that are NOT in NOTE yet. At most 3. Skip trivia.
+- facts: ONLY NEW verified clinical findings from NEW LINES. Must match one of these 11 section keys:
+  * "complaints": Symptoms / chief complaints (e.g. "Headache", "Cough x 2 days", "Skin infection", "Pain")
+  * "history": Past medical history, chronic conditions, family history
+  * "allergies": Verified allergens ONLY (e.g. "Dust allergy", "Penicillin allergy"). NEVER generic words like "something" or "anything"
+  * "medications": Medicines the patient already takes before this visit (e.g. "Taking painkillers x 1 day", "Metformin 500mg")
+  * "vitals": Spoken vitals (BP, pulse, SpO2, temp)
+  * "exam": Physical examination findings
+  * "diagnosis": Clinical impression or diagnosis
+  * "investigations": Diagnostic tests, lab tests, blood tests, scans ordered by the DOCTOR (e.g. "Blood test", "Complete Blood Count (CBC)", "Chest X-ray"). NEVER put lab tests in advice!
+  * "rx": Medicines prescribed by the DOCTOR now during this visit (e.g. "Paracetamol 650mg", "Phenolphthalein"). EVERY medicine prescribed by the doctor MUST go to 'rx', NEVER 'advice' or 'history'!
+  * "advice": Lifestyle, hydration, dietary, precautions (e.g. "Drink plenty of water", "Rest", "Avoid dust")
+  * "follow_up": Review / return timeline (e.g. "Review in 3 days")
+- Each fact must be ONE item per line ("Paracetamol 650mg", "Phenolphthalein"), NOT a list. If multiple medicines or tests are mentioned, output each as its own fact object.
+- Filter out all hesitation noises ("ooh", "aah", "shibi", "shibhi", "shaaba", "chibi"), UI reading, and stuttered corrections.
+- missed: important clinical items said but not in NOTE yet. At most 3.
 - suggest: at most {MAX_SUGGESTIONS_PER_TURN}, only if clearly useful and not already asked or written. Otherwise [].
-- Never invent symptoms, numbers, doses or diagnoses. Never state a diagnosis as fact. Empty lists are fine."""
+- Never invent symptoms, numbers, doses or diagnoses. Never state a diagnosis as fact."""
 
 FINAL_PROMPT = """You are CHIBI. The consultation has ended. From MEMORY, FACTS and NOTE (de-identified; keep placeholders),
 write JSON only:
@@ -113,13 +135,21 @@ def _tidy(items: List[str]) -> List[str]:
 def _fid(key: str, text: str) -> str:
     return hashlib.sha1(f"{key}|{text.lower()}".encode()).hexdigest()[:12]
 
-
 def _norm_key(key: Any) -> str:
     key = str(key or "").strip().lower().replace("-", "_").replace(" ", "_")
-    key = {"symptoms": "complaints", "complaint": "complaints", "allergy": "allergies", "medication": "medications",
-           "current_medications": "medications", "vital": "vitals", "examination": "exam", "assessment": "diagnosis",
-           "labs": "investigations", "tests": "investigations", "prescription": "rx", "plan": "advice",
-           "followup": "follow_up", "family": "history"}.get(key, key)
+    key = {
+        "symptoms": "complaints", "complaint": "complaints", "chief_complaint": "complaints", "chief_complaints": "complaints",
+        "allergy": "allergies", "allergies": "allergies",
+        "medication": "medications", "current_medications": "medications", "current_medication": "medications", "meds": "medications",
+        "vital": "vitals", "vitals": "vitals", "vital_signs": "vitals",
+        "examination": "exam", "physical_examination": "exam", "exam": "exam", "o/e": "exam",
+        "diagnosis": "diagnosis", "assessment": "diagnosis", "impression": "diagnosis",
+        "investigation": "investigations", "investigations": "investigations", "labs": "investigations", "tests": "investigations", "orders": "investigations",
+        "rx": "rx", "prescription": "rx", "prescriptions": "rx", "prescribed": "rx", "treatment": "rx",
+        "advice": "advice", "plan": "advice", "instructions": "advice",
+        "follow_up": "follow_up", "followup": "follow_up", "next_visit": "follow_up", "review": "follow_up",
+        "family": "history", "past_history": "history", "history": "history"
+    }.get(key, key)
     return key if key in KEYS else "history"
 
 
@@ -139,9 +169,20 @@ def due(session: cm.CallSession) -> bool:
 def _add_fact(st: AgentState, key: str, text: str, source: str, shield: pg.Shield) -> Optional[Dict[str, Any]]:
     text = re.sub(r"\s+", " ", str(text or "")).strip().rstrip(".")
     # The heading already says it: "Allergy: Penicillin" -> "Penicillin" under Allergies.
-    text = re.sub(r"(?i)^(?:allerg(?:y|ies)|current medications?|medications?|family history|complaints?)\s*:\s*", "", text)
+    text = re.sub(r"(?i)^(?:allerg(?:y|ies)|current medications?|medications?|family history|complaints?|rx|prescription|investigations?|advice|follow[- ]?up)\s*:\s*", "", text)
     if len(text) < 3:
         return None
+
+    # Filter out fake allergens like "Something (patient-reported)" or generic hesitation words
+    if key == "allergies":
+        clean_cand = re.sub(r"\(patient-reported\)|\bpatient-reported\b", "", text, flags=re.I).strip(" .,-")
+        if clean_cand.lower() in cm.NON_ALLERGENS or len(clean_cand) < 3:
+            return None
+
+    # Filter out acoustic / hesitation noise in facts
+    if re.search(r"\b(?:shibhi|shibi|shaaba|shaba|chibi|chiba|ooh+|aah+)\b", text, re.I):
+        return None
+
     shown = _show(shield, text) or text
     fid = _fid(key, shown)
     if fid in st.seen:
@@ -238,9 +279,18 @@ async def run_turn(session: cm.CallSession, notify: Optional[Notify] = None, for
         if data:
             for f in data.get("facts") or []:
                 if isinstance(f, dict):
-                    fact = _add_fact(st, _norm_key(f.get("key")), f.get("text", ""), "ai", shield)
-                    if fact:
-                        new_facts.append(fact)
+                    norm_k = _norm_key(f.get("key"))
+                    raw_text = str(f.get("text", "")).strip()
+                    # If multiple items were concatenated in one fact line (e.g. "Phenophthalene and Paracetamol" in rx),
+                    # split them so each item is added as its own line in the notepad
+                    if norm_k in ("rx", "investigations", "complaints") and (" and " in raw_text or ", " in raw_text):
+                        parts = [p.strip() for p in re.split(r",\s*(?:and\s+)?|\s+and\s+", raw_text) if p.strip()]
+                    else:
+                        parts = [raw_text] if raw_text else []
+                    for part in parts:
+                        fact = _add_fact(st, norm_k, part, "ai", shield)
+                        if fact:
+                            new_facts.append(fact)
             for s in (data.get("suggest") or [])[:MAX_SUGGESTIONS_PER_TURN]:
                 if isinstance(s, dict):
                     sug = _add_suggestion(st, s.get("kind"), s.get("text"), shield)
@@ -248,7 +298,7 @@ async def run_turn(session: cm.CallSession, notify: Optional[Notify] = None, for
                         new_sugs.append(sug)
             st.missed_model = [{"key": _norm_key(m.get("key")), "text": shield.restore(str(m.get("text", ""))),
                                 "why": shield.restore(str(m.get("why", "")))}
-                               for m in (data.get("missed") or [])[:3] if isinstance(m, dict) and m.get("text")]
+                                for m in (data.get("missed") or [])[:3] if isinstance(m, dict) and m.get("text")]
             memory = str(data.get("memory") or "").strip()
             if memory:
                 st.memory = " ".join(memory.split()[:MEMORY_WORDS + 40])

@@ -58,6 +58,132 @@
 .np-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #334155; }
 .np-banner { margin-bottom: 12px; }
 
+/* --- Speaker toggle in toolbar (Doctor / Patient turn taking) --- */
+.np-speaker-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  width: 184px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  padding: 2px;
+  cursor: pointer;
+  user-select: none;
+  box-sizing: border-box;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.np-speaker-toggle:hover:not(.is-disabled) {
+  border-color: #cbd5e1;
+}
+
+.np-speaker-toggle.is-doctor {
+  background: #f0f7ff;
+  border-color: #dbeafe;
+}
+
+.np-speaker-toggle.is-patient {
+  background: #f0fdf4;
+  border-color: #dcfce7;
+}
+
+.np-speaker-toggle.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Sliding capsule thumb */
+.np-speaker-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  bottom: 2px;
+  width: calc(50% - 2px);
+  border-radius: 9999px;
+  background: #ffffff;
+  pointer-events: none;
+  z-index: 1;
+  transition: transform 0.28s cubic-bezier(0.34, 1.25, 0.64, 1),
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
+}
+
+.np-speaker-toggle.is-doctor .np-speaker-thumb {
+  transform: translateX(0);
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 2px 5px rgba(2, 132, 199, 0.18), 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.np-speaker-toggle.is-patient .np-speaker-thumb {
+  transform: translateX(100%);
+  border: 1px solid #bbf7d0;
+  box-shadow: 0 2px 5px rgba(22, 163, 74, 0.18), 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+/* Options */
+.np-speaker-option {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 100%;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #64748b;
+  border: none;
+  background: transparent;
+  padding: 0 6px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: color 0.22s ease, font-weight 0.22s ease;
+  white-space: nowrap;
+}
+
+.np-speaker-option:hover:not(:disabled) {
+  color: #0f172a;
+}
+
+.np-speaker-option.active-doctor {
+  color: #0284c7;
+  font-weight: 700;
+}
+
+.np-speaker-option.active-patient {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+/* Live pulsing indicator dot */
+.np-speaker-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  opacity: 0;
+  transform: scale(0.3);
+  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.np-speaker-option.active-doctor .np-speaker-dot,
+.np-speaker-option.active-patient .np-speaker-dot {
+  opacity: 1;
+  transform: scale(1);
+  animation: np-speaker-pulse 1.8s infinite;
+}
+
+@keyframes np-speaker-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
 /* --- Editor: overlay + transparent textarea share exact metrics --- */
 .np-editor {
   position: relative;
