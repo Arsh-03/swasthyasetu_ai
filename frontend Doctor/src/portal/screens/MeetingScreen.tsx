@@ -18,6 +18,8 @@ import { VisitNoteForm } from '../meeting/VisitNoteForm';
 import { Conversation } from '../Conversation';
 import { ReadingLine } from '../Readings';
 import { AlertStack, AssistStrip } from '../meeting/LiveAssist';
+import { CallRecordsTab } from '../meeting/CallRecordsTab';
+import { useCallPictureInPicture } from '../../services/call/useCallPictureInPicture';
 import { Avatar, Button, Card, ErrorNote, Facts, Loading, PageHeader, Pill, SelectInput, Tabs, shortName } from '../ui';
 import type { StringKey } from '../i18n';
 
@@ -401,9 +403,17 @@ function RoundButton({ icon, label, onClick, off, danger, active, disabled }: {
 // ------------------------------------------------------------------------------------------ In call
 
 function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: PatientSummary; notesOpen: boolean; onToggleNotes: () => void; endsAt?: string | null }) {
-  const { t, call, speakerOn, setSpeakerOn, notepad } = usePortal();
-  const [panel, setPanel] = useState<'notes' | 'patient' | 'note' | 'chat' | null>(() =>
-    notesOpen ? 'notes' : window.innerWidth >= 1280 ? 'patient' : null);
+  const { t, call, speakerOn, setSpeakerOn, notepad, requestRecords } = usePortal();
+  const [panel, setPanel] = useState<'notes' | 'patient' | 'records' | 'note' | 'chat' | null>(() => {
+    try {
+      const saved = window.sessionStorage.getItem('open_meeting_tab');
+      if (saved === 'records') {
+        window.sessionStorage.removeItem('open_meeting_tab');
+        return 'records';
+      }
+    } catch {}
+    return notesOpen ? 'notes' : window.innerWidth >= 1280 ? 'patient' : null;
+  });
   // "Show notes" (or AI switched on) opens the notes tab; hiding them closes the panel.
   useEffect(() => { setPanel((p) => (notesOpen ? 'notes' : p === 'notes' ? null : p)); }, [notesOpen]);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -411,7 +421,20 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
   const timer = useCallTimer(call.callStartedAt);
   const calling = call.callState === 'calling';
 
-  useEffect(() => { if (remoteRef.current) remoteRef.current.srcObject = call.remoteStream; }, [call.remoteStream, call.remoteHasVideo]);
+  // Picture-in-Picture: auto-shifts to PiP when doctor changes browser tab, with MediaSession controls
+  const { isPipActive, togglePip } = useCallPictureInPicture({
+    call,
+    peerName: patient.full_name,
+    videoRef: remoteRef,
+    enabled: true,
+  });
+
+  useEffect(() => {
+    if (remoteRef.current) {
+      remoteRef.current.setAttribute('autopictureinpicture', '');
+      remoteRef.current.srcObject = call.remoteStream;
+    }
+  }, [call.remoteStream, call.remoteHasVideo]);
   useEffect(() => { if (selfRef.current) selfRef.current.srcObject = call.localStream; }, [call.localStream, call.camOff]);
 
   const q = call.quality;
@@ -422,7 +445,14 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
     <div className="flex gap-4 h-[calc(100vh-8.5rem)] min-h-[480px] relative">
       <div className="flex-1 min-w-0 relative rounded-hero bg-night overflow-hidden">
         {call.remoteHasVideo && !calling ? (
-          <video ref={remoteRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover" />
+          <video
+            ref={remoteRef}
+            autoPlay
+            playsInline
+            muted
+            data-call-pip-target="true"
+            className="absolute inset-0 w-full h-full object-cover"
+          />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white">
             <div className={cx('rounded-full p-1', calling && 'animate-pulse ring-4 ring-white/20')}>
@@ -480,7 +510,9 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
             <RoundButton icon="notepad" label={notesOpen ? t('hideNotes') : t('showNotes')} active={notesOpen} onClick={onToggleNotes} />
             <RoundButton icon="aiAssist" label={call.aiOn ? t('aiTurnOff') : t('aiTurnOn')} active={call.aiOn}
               disabled={calling || !call.speechAvailable} onClick={call.toggleAi} />
-            <RoundButton icon="clinicalNotes" label={t('patientAndNote')} active={panel !== null && panel !== 'notes'} onClick={() => setPanel(panel && panel !== 'notes' ? null : 'patient')} />
+            <RoundButton icon="records" label={t('tabRecords')} active={panel === 'records'} onClick={() => { setPanel((p) => (p === 'records' ? null : 'records')); if (notesOpen) onToggleNotes(); }} />
+            <RoundButton icon="clinicalNotes" label={t('patientAndNote')} active={panel !== null && panel !== 'notes' && panel !== 'records'} onClick={() => setPanel(panel && panel !== 'notes' && panel !== 'records' ? null : 'patient')} />
+            <RoundButton icon="pip" label={t('pipMode')} active={isPipActive} onClick={() => void togglePip(remoteRef.current)} />
             <span className="w-px h-8 bg-white/15 mx-1" aria-hidden />
             <RoundButton icon="callEnd" label={calling ? t('cancelCall') : t('endCall')} danger onClick={call.endCall} />
           </div>
@@ -497,11 +529,11 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
 
       {panel && (
         <aside className={cx('absolute inset-y-0 right-0 z-10 bg-card rounded-panel border border-hairline shadow-lg flex flex-col lg:static shrink-0',
-          panel === 'notes' ? 'w-full lg:w-1/2 lg:min-w-[520px]' : 'w-[min(380px,100%)] lg:w-[380px]')}>
+          panel === 'notes' ? 'w-full lg:w-1/2 lg:min-w-[520px]' : panel === 'records' ? 'w-[min(420px,100%)] lg:w-[420px]' : 'w-[min(380px,100%)] lg:w-[380px]')}>
           <div className="flex items-center justify-between pr-2">
             <div className="flex-1">
               <Tabs label={t('patientAndNote')} value={panel} onChange={(p) => { setPanel(p); if (p !== 'notes' && notesOpen) onToggleNotes(); if (p === 'notes' && !notesOpen) onToggleNotes(); }}
-                tabs={[{ id: 'notes', label: t('tabNotes') }, { id: 'patient', label: t('tabPatient') }, { id: 'note', label: t('tabVisitNote') }, { id: 'chat', label: t('tabChat') }]} />
+                tabs={[{ id: 'notes', label: t('tabNotes') }, { id: 'patient', label: t('tabPatient') }, { id: 'records', label: t('tabRecords') }, { id: 'note', label: t('tabVisitNote') }, { id: 'chat', label: t('tabChat') }]} />
             </div>
             <button type="button" onClick={() => { setPanel(null); if (notesOpen) onToggleNotes(); }} aria-label={t('close')}
               className="w-9 h-9 rounded-tight flex items-center justify-center text-ink-muted hover:bg-ink-tint cursor-pointer">
@@ -514,11 +546,28 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
               <AssistStrip />
               {notepad}
             </div>
+          ) : panel === 'records' ? (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <CallRecordsTab
+                patient={patient}
+                onRequestConsent={() => requestRecords(patient)}
+              />
+            </div>
           ) : panel === 'chat' ? (
             <div className="flex-1 min-h-0 flex flex-col"><Conversation patientId={patient.patient_id} showHeader={false} compact /></div>
           ) : (
             <div className="flex-1 overflow-y-auto p-4">
-              {panel === 'patient' ? <PatientSidePanel patient={patient} /> : <VisitNoteForm patient={patient} compact />}
+              {panel === 'patient' ? (
+                <PatientSidePanel
+                  patient={patient}
+                  onOpenRecords={() => {
+                    setPanel('records');
+                    if (notesOpen) onToggleNotes();
+                  }}
+                />
+              ) : (
+                <VisitNoteForm patient={patient} compact />
+              )}
             </div>
           )}
         </aside>
@@ -527,7 +576,7 @@ function InCall({ patient, notesOpen, onToggleNotes, endsAt }: { patient: Patien
   );
 }
 
-function PatientSidePanel({ patient }: { patient: PatientSummary }) {
+function PatientSidePanel({ patient, onOpenRecords }: { patient: PatientSummary; onOpenRecords?: () => void }) {
   const { t, requestRecords } = usePortal();
   const d = patient.demographics || {};
   return (
@@ -556,7 +605,21 @@ function PatientSidePanel({ patient }: { patient: PatientSummary }) {
         ) : <span className="text-sm text-ink-muted">{t('noneRecorded')}</span>}
       </div>
       <div className="flex flex-wrap gap-2 pt-1">
-        <Button size="sm" icon="lock" onClick={() => requestRecords(patient)}>{t('requestRecords')}</Button>
+        <Button
+          size="sm"
+          icon="lock"
+          onClick={() => {
+            if (onOpenRecords) onOpenRecords();
+            requestRecords(patient);
+          }}
+        >
+          {t('requestRecords')}
+        </Button>
+        {onOpenRecords && (
+          <Button size="sm" variant="ghost" icon="records" onClick={onOpenRecords}>
+            {t('viewRecords')}
+          </Button>
+        )}
         <a href={hrefFor({ page: 'patient', patientId: patient.patient_id })} target="_blank" rel="noreferrer"
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-control text-xs font-semibold text-primary hover:bg-primary-tint">
           <Icon name="external" size={14} /> {t('openFullProfile')}

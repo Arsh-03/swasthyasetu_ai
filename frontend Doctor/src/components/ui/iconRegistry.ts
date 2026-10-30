@@ -21,6 +21,7 @@ import { Keyboard } from '@phosphor-icons/react/dist/csr/Keyboard';
 import { FileCode } from '@phosphor-icons/react/dist/csr/FileCode';
 import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
 import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
+import { PictureInPicture } from '@phosphor-icons/react/dist/csr/PictureInPicture';
 import { StopCircle } from '@phosphor-icons/react/dist/csr/StopCircle';
 import { WifiHigh } from '@phosphor-icons/react/dist/csr/WifiHigh';
 import { PhoneIncoming } from '@phosphor-icons/react/dist/csr/PhoneIncoming';
@@ -201,6 +202,7 @@ export const REGISTRY = {
   speaker: SpeakerHigh,
   trash: Trash,
   external: ArrowSquareOut,
+  pip: PictureInPicture,
 } satisfies Record<string, ComponentType<PhosphorProps>>;
 
 export type IconName = keyof typeof REGISTRY;

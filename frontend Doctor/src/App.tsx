@@ -5,8 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DoctorLoginView } from './components/DoctorLoginView';
 import { ConsentRequestModal } from './components/ConsentRequestModal';
 import { ClinicalNotepad } from './components/ClinicalNotepad';
-import { CallPanel } from './components/call/CallPanel';
-import { CallWindow } from './components/call/CallWindow';
+import { CallPipWindow } from './components/call/CallPipWindow';
 import { IncomingCallCard } from './components/call/CallOverlays';
 import { RemoteAudio } from './components/call/RemoteAudio';
 import { Icon } from './components/ui/Icon';
@@ -15,9 +14,10 @@ import { api, WS_BASE_URL, type DoctorProfile, type PatientSummary } from './ser
 import { chatApi, doctorApi, type DoctorSettings, type NotificationItem } from './services/doctorApi';
 import { useConsultationCall } from './services/call/useConsultationCall';
 import { useDoctorLobby } from './services/call/useDoctorLobby';
+import { useCallPictureInPicture } from './services/call/useCallPictureInPicture';
 import { PortalContext, type PortalState, type ToastTone } from './portal/PortalContext';
 import { Shell } from './portal/Shell';
-import { hrefFor, navigate, useRoute } from './portal/router';
+import { navigate, useRoute } from './portal/router';
 import { translate, type Lang, type StringKey } from './portal/i18n';
 import { DEFAULT_PREFS, makeFormatters, addDays } from './portal/time';
 import { HomeScreen } from './portal/screens/HomeScreen';
@@ -242,6 +242,13 @@ export function App() {
   const lobbyCall = lobby.ringing && lobby.ringing.encounterId !== patient?.encounter_id ? lobby.ringing : null;
   const inCall = call.callState === 'calling' || call.callState === 'in_call';
 
+  // Automatically shift call to PiP mode when doctor switches browser tabs (with MediaSession controls)
+  useCallPictureInPicture({
+    call,
+    peerName: patient?.full_name,
+    enabled: true,
+  });
+
   const openConsultation = useCallback((p: PatientSummary, appointmentId: string | null) => {
     setConsultation((cur) => (cur && cur.patient.encounter_id === p.encounter_id && cur.appointmentId === appointmentId ? cur : { patient: p, appointmentId }));
   }, []);
@@ -314,27 +321,14 @@ export function App() {
       {/* The patient's voice: one audio element for the whole portal (videos are muted). */}
       {inCall && <RemoteAudio stream={call.remoteStream} muted={!speakerOn} sinkId={speakerId} />}
 
-      {/* In a call but on another page: a small floating call window. */}
+      {/* In a call but on another tab/page: automatically shifts into floating PiP mode with controls. */}
       {inCall && route.page !== 'meeting' && (
-        <CallWindow call={call} title={patient?.full_name ?? ''} panel={<CallPanel call={call} compact hideStart />}>
-          <div className="flex items-center gap-2">
-            <a
-              href={consultation?.appointmentId ? hrefFor({ page: 'meeting', appointmentId: consultation.appointmentId }) : '#/home'}
-              className="flex-1 py-2 rounded-xl bg-primary hover:bg-primary-deep text-white text-xs font-semibold text-center"
-            >
-              {t('backToMeeting')}
-            </a>
-            <button
-              type="button"
-              onClick={call.endCall}
-              className="px-4 py-2 rounded-xl bg-danger-deep hover:bg-danger-pressed text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-sm transition-colors"
-              title={t('endCall')}
-            >
-              <Icon name="callEnd" size={14} />
-              {t('endCall')}
-            </button>
-          </div>
-        </CallWindow>
+        <CallPipWindow
+          call={call}
+          title={patient?.full_name ?? ''}
+          patient={patient}
+          appointmentId={consultation?.appointmentId ?? null}
+        />
       )}
 
       {/* Ringing: the open consultation's patient, or a patient from another consultation. */}
