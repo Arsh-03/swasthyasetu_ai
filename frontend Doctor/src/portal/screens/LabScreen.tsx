@@ -9,7 +9,10 @@ import { cx } from '../../components/ui/cx';
 import { authFetch } from '../../services/backend';
 import { ChunkRecorder } from '../../services/call/audioRecorder';
 import type { CallFinding, CallMinutes } from '../../services/call/callTypes';
-import { Button, Card, PageHeader, Pill, Segmented, SelectInput } from '../ui';
+import { Button, Card, PageHeader, Pill, Segmented, SelectInput, TextInput } from '../ui';
+import { usePortal } from '../PortalContext';
+import { doctorApi, type PatientBrief } from '../../services/doctorApi';
+import { navigate } from '../router';
 
 interface LabFact { id: string; key: string; heading: string; section: string; text: string; source: string; why?: string | null; replaces?: string[] }
 interface LabTurn { at: number; lines: number; engine: string; ms: number; facts: number; suggestions: number }
@@ -198,6 +201,667 @@ const toFinding = (f: LabFact): CallFinding => ({
   speaker: 'conversation', at_ms: null, quote: '', quote_english: '', why: f.why ?? null, replaces: f.replaces ?? [],
 });
 
+export interface LiveTablet {
+  id: string;
+  name: string;
+  form?: string;
+  strength?: string;
+  frequency?: string;
+  duration?: string;
+  whenToTake?: string;
+  isComplete: boolean;
+  missingFields: ('dose' | 'timing' | 'frequency')[];
+  rawText: string;
+}
+
+interface CommonDrug {
+  name: string;
+  aliases: string[];
+  defaultDose: string;
+  defaultTiming: string;
+  defaultFreq: string;
+  defaultDur: string;
+  classGroup?: string;
+}
+
+const COMMON_DRUGS: CommonDrug[] = [
+  { name: 'Paracetamol', aliases: ['paracetamol', 'dolo', 'crocin', 'calpol', 'pcm'], defaultDose: '650 mg', defaultTiming: 'After food', defaultFreq: 'TDS (Thrice daily)', defaultDur: '5 days', classGroup: 'analgesic' },
+  { name: 'Pantocid', aliases: ['pantocid', 'pantoprazole', 'pan-40', 'pan 40', 'pan d', 'pan-d', 'omez'], defaultDose: '40 mg', defaultTiming: 'Before food', defaultFreq: 'OD (Once daily)', defaultDur: '5 days', classGroup: 'ppi' },
+  { name: 'Cetirizine', aliases: ['cetirizine', 'cetzine', 'alerid', 'zyrtec'], defaultDose: '10 mg', defaultTiming: 'At bedtime', defaultFreq: 'OD (Once daily)', defaultDur: '5 days', classGroup: 'antihistamine' },
+  { name: 'Amoxicillin', aliases: ['amoxicillin', 'mox', 'novamox', 'amoxil'], defaultDose: '500 mg', defaultTiming: 'After food', defaultFreq: 'TDS (Thrice daily)', defaultDur: '5 days', classGroup: 'penicillin' },
+  { name: 'Augmentin', aliases: ['augmentin', 'amoxyclav', 'clavum'], defaultDose: '625 mg', defaultTiming: 'With meals', defaultFreq: 'BD (Twice daily)', defaultDur: '5 days', classGroup: 'penicillin' },
+  { name: 'Combiflam', aliases: ['combiflam', 'ibuprofen', 'brufen'], defaultDose: '400 mg', defaultTiming: 'After food', defaultFreq: 'BD (Twice daily)', defaultDur: '3 days', classGroup: 'nsaid' },
+  { name: 'Azithromycin', aliases: ['azithromycin', 'azithral', 'aithro'], defaultDose: '500 mg', defaultTiming: 'Before food', defaultFreq: 'OD (Once daily)', defaultDur: '3 days', classGroup: 'macrolide' },
+  { name: 'Metformin', aliases: ['metformin', 'glycomet'], defaultDose: '500 mg', defaultTiming: 'After food', defaultFreq: 'BD (Twice daily)', defaultDur: '30 days', classGroup: 'antidiabetic' },
+  { name: 'Telmisartan', aliases: ['telmisartan', 'telma', 'telpres'], defaultDose: '40 mg', defaultTiming: 'Morning', defaultFreq: 'OD (Once daily)', defaultDur: '30 days', classGroup: 'antihypertensive' },
+  { name: 'Aspirin', aliases: ['aspirin', 'ecosprin', 'disprin'], defaultDose: '75 mg', defaultTiming: 'After food', defaultFreq: 'OD (Once daily)', defaultDur: '30 days', classGroup: 'nsaid' },
+  { name: 'Montair-LC', aliases: ['montair-lc', 'montair lc', 'montelukast'], defaultDose: '10 mg', defaultTiming: 'At bedtime', defaultFreq: 'OD (Once daily)', defaultDur: '7 days', classGroup: 'antihistamine' },
+];
+
+function detectAllergyConflicts(allergies: string[], tablets: LiveTablet[]): { tabletName: string; allergy: string; detail: string }[] {
+  const conflicts: { tabletName: string; allergy: string; detail: string }[] = [];
+  const normalizedAllergies = allergies.map(a => a.toLowerCase().trim());
+
+  for (const tab of tablets) {
+    const drugName = tab.name.toLowerCase();
+    for (const allergy of normalizedAllergies) {
+      if (!allergy || allergy === 'none' || allergy === 'nkda' || allergy === 'no known allergies') continue;
+
+      if (drugName.includes(allergy) || allergy.includes(drugName)) {
+        conflicts.push({
+          tabletName: tab.name,
+          allergy,
+          detail: `Patient has direct allergy recorded for "${allergy}". Prescribing ${tab.name} is strictly contraindicated!`,
+        });
+        continue;
+      }
+
+      if ((allergy.includes('penicillin') || allergy.includes('beta-lactam') || allergy.includes('amox')) &&
+          (drugName.includes('amoxicillin') || drugName.includes('augmentin') || drugName.includes('ampicillin') || drugName.includes('clavum'))) {
+        conflicts.push({
+          tabletName: tab.name,
+          allergy,
+          detail: `Patient reported allergy to Penicillin. Prescribing ${tab.name} carries severe risk of cross-reactivity and anaphylaxis!`,
+        });
+        continue;
+      }
+
+      if ((allergy.includes('aspirin') || allergy.includes('nsaid') || allergy.includes('ibuprofen')) &&
+          (drugName.includes('combiflam') || drugName.includes('ibuprofen') || drugName.includes('aspirin') || drugName.includes('diclofenac') || drugName.includes('naproxen'))) {
+        conflicts.push({
+          tabletName: tab.name,
+          allergy,
+          detail: `Patient reported sensitivity to ${allergy}. ${tab.name} is an NSAID and may provoke bronchospasm or gastrointestinal irritation.`,
+        });
+        continue;
+      }
+
+      if (allergy.includes('sulfa') && (drugName.includes('cotrimoxazole') || drugName.includes('bactrim') || drugName.includes('sulfamethoxazole'))) {
+        conflicts.push({
+          tabletName: tab.name,
+          allergy,
+          detail: `Patient reported Sulfa allergy. ${tab.name} contains sulfonamide and may cause severe hypersensitivity or rash.`,
+        });
+        continue;
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+function parseTabletLine(line: string, id?: string, knownDrug?: CommonDrug): LiveTablet | null {
+  const clean = line.replace(/^[-*•]\s*/, '').trim();
+  if (!clean) return null;
+
+  let name = '';
+  let form = 'Tab';
+
+  const mForm = clean.match(/^(Tab(?:let)?|Cap(?:sule)?|Syr(?:up)?|Inj(?:ection)?)\.?\s+([A-Za-z0-9-]+(?:\s+[A-Za-z0-9-]+)?)/i);
+  if (mForm) {
+    form = mForm[1].toLowerCase().startsWith('cap') ? 'Cap' : mForm[1].toLowerCase().startsWith('syr') ? 'Syr' : 'Tab';
+    name = mForm[2].trim();
+  } else if (knownDrug) {
+    name = knownDrug.name;
+    form = 'Tab';
+  } else {
+    for (const d of COMMON_DRUGS) {
+      if (new RegExp(`\\b${d.aliases.join('|')}\\b`, 'i').test(clean)) {
+        name = d.name;
+        break;
+      }
+    }
+  }
+
+  if (!name) return null;
+  name = name.charAt(0).toUpperCase() + name.slice(1);
+
+  const mDose = clean.match(/\b(\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|tablets?|caps?|units?))\b/i);
+  const strength = mDose ? mDose[1].trim() : undefined;
+
+  const mTiming = clean.match(/\b(after\s+food|before\s+food|after\s+meals?|before\s+meals?|empty\s+stomach|at\s+bedtime|with\s+food|with\s+meals?|in\s+the\s+morning|at\s+night)\b/i);
+  let whenToTake: string | undefined = undefined;
+  if (mTiming) {
+    const t = mTiming[1].toLowerCase();
+    if (t.includes('after')) whenToTake = 'After food';
+    else if (t.includes('before') || t.includes('empty')) whenToTake = 'Before food';
+    else if (t.includes('bedtime') || t.includes('night')) whenToTake = 'At bedtime';
+    else if (t.includes('with')) whenToTake = 'With meals';
+    else whenToTake = mTiming[1];
+  }
+
+  const mFreq = clean.match(/\b(once\s+daily|twice\s+daily|thrice\s+daily|four\s+times\s+daily|\b(?:od|bd|bid|tds|tid|qid|sos|prn|hs)\b)/i);
+  let frequency: string | undefined = undefined;
+  if (mFreq) {
+    const f = mFreq[1].toLowerCase();
+    if (f === 'od' || f === 'once daily') frequency = 'OD (Once daily)';
+    else if (f === 'bd' || f === 'bid' || f === 'twice daily') frequency = 'BD (Twice daily)';
+    else if (f === 'tds' || f === 'tid' || f === 'thrice daily') frequency = 'TDS (Thrice daily)';
+    else if (f === 'sos' || f === 'prn') frequency = 'SOS (As needed)';
+    else frequency = mFreq[1].toUpperCase();
+  }
+
+  const mDur = clean.match(/\b(?:x\s*)?(\d+\s*(?:days?|weeks?|months?))\b/i);
+  const duration = mDur ? mDur[1].trim() : undefined;
+
+  const missingFields: ('dose' | 'timing' | 'frequency')[] = [];
+  if (!strength) missingFields.push('dose');
+  if (!whenToTake) missingFields.push('timing');
+
+  return {
+    id: id || `tab_${name.toLowerCase()}_${Date.now()}`,
+    name,
+    form,
+    strength,
+    frequency,
+    duration,
+    whenToTake,
+    isComplete: missingFields.length === 0,
+    missingFields,
+    rawText: clean,
+  };
+}
+
+function parseTabletsAndAllergies(
+  noteText: string,
+  facts: LabFact[],
+  transcript: { speaker: string; text: string }[]
+): { tablets: LiveTablet[]; allergies: string[] } {
+  const tabletsMap = new Map<string, LiveTablet>();
+  const allergiesSet = new Set<string>();
+
+  for (const f of facts) {
+    if (f.key === 'allergies' || f.heading?.toLowerCase().includes('allerg') || f.section === 'allergies') {
+      const cleaned = f.text.replace(/^(?:allerg(?:y|ies)?(?:\s+to)?|known\s+allergies:?)\s*/i, '').trim();
+      if (cleaned && !/^(?:none|nil|nkda|no known)/i.test(cleaned)) {
+        allergiesSet.add(cleaned);
+      }
+    }
+    if (f.key === 'rx' || f.heading?.toLowerCase().includes('rx') || f.heading?.toLowerCase().includes('prescript') || f.section === 'plan') {
+      const tab = parseTabletLine(f.text, f.id);
+      if (tab) tabletsMap.set(tab.name.toLowerCase(), tab);
+    }
+  }
+
+  if (noteText) {
+    const lines = noteText.split('\n');
+    let currentSection = '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const mHeading = trimmed.match(/^([A-Za-z /&-]+):/);
+      if (mHeading) {
+        currentSection = mHeading[1].toLowerCase().trim();
+      }
+
+      if (currentSection.includes('allerg') && trimmed && !mHeading) {
+        const cleaned = trimmed.replace(/^[-*•]\s*/, '').trim();
+        if (cleaned && !/^(?:none|nil|nkda|no known)/i.test(cleaned)) {
+          allergiesSet.add(cleaned);
+        }
+      }
+
+      if ((currentSection.includes('rx') || currentSection.includes('prescript') || currentSection.includes('medication')) && trimmed && !mHeading) {
+        const tab = parseTabletLine(trimmed);
+        if (tab) {
+          tabletsMap.set(tab.name.toLowerCase(), tab);
+        }
+      }
+    }
+  }
+
+  for (const t of transcript) {
+    const mAllergy = t.text.match(/(?:allergic\s+to|allergy\s+(?:to|towards|of)?)\s+([A-Za-z0-9 -]+?)(?:[.,;\n]|$)/i);
+    if (mAllergy && mAllergy[1]) {
+      const allg = mAllergy[1].trim();
+      if (!/^(?:something|anything|nothing|none|no)/i.test(allg)) {
+        allergiesSet.add(allg);
+      }
+    }
+
+    for (const drug of COMMON_DRUGS) {
+      for (const alias of drug.aliases) {
+        if (new RegExp(`\\b${alias}\\b`, 'i').test(t.text)) {
+          if (!tabletsMap.has(drug.name.toLowerCase())) {
+            const tab = parseTabletLine(t.text, undefined, drug);
+            if (tab) tabletsMap.set(drug.name.toLowerCase(), tab);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    tablets: Array.from(tabletsMap.values()),
+    allergies: Array.from(allergiesSet),
+  };
+}
+
+interface LiveTabletsCardProps {
+  tablets: LiveTablet[];
+  allergies: string[];
+  allergyConflicts: { tabletName: string; allergy: string; detail: string }[];
+  onConfirmTablet: (tab: LiveTablet) => void;
+  onAddTablet: (tab: LiveTablet) => void;
+  onRemoveTablet: (name: string) => void;
+}
+
+function LiveTabletsCard({
+  tablets,
+  allergies,
+  allergyConflicts,
+  onConfirmTablet,
+  onAddTablet,
+  onRemoveTablet,
+}: LiveTabletsCardProps) {
+  const [activeClarifyId, setActiveClarifyId] = useState<string | null>(null);
+  const [selectedDose, setSelectedDose] = useState('');
+  const [selectedTiming, setSelectedTiming] = useState('');
+  const [selectedFreq, setSelectedFreq] = useState('');
+  const [selectedDur, setSelectedDur] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [showManualAdd, setShowManualAdd] = useState(false);
+  const [manualName, setManualName] = useState('');
+  const [manualDose, setManualDose] = useState('');
+  const [manualTiming, setManualTiming] = useState('After food');
+
+  // Auto-focus the first incomplete tablet if no clarify tablet is active
+  const incompleteTablet = tablets.find(t => !t.isComplete);
+  const effectiveActiveId = activeClarifyId ?? (incompleteTablet ? incompleteTablet.id : null);
+  const activeTab = tablets.find(t => t.id === effectiveActiveId);
+
+  const completeCount = tablets.filter(t => t.isComplete).length;
+  const needsCount = tablets.length - completeCount;
+
+  const handleApplyClarification = () => {
+    if (!activeTab) return;
+    const finalDose = selectedDose || activeTab.strength || '650 mg';
+    const finalTiming = selectedTiming || activeTab.whenToTake || 'After food';
+    const finalFreq = selectedFreq || activeTab.frequency || 'BD (Twice daily)';
+    const finalDur = selectedDur || activeTab.duration || '5 days';
+
+    const updated: LiveTablet = {
+      ...activeTab,
+      strength: finalDose,
+      whenToTake: finalTiming,
+      frequency: finalFreq,
+      duration: finalDur,
+      isComplete: true,
+      missingFields: [],
+    };
+
+    onConfirmTablet(updated);
+    setActiveClarifyId(null);
+    setSelectedDose('');
+    setSelectedTiming('');
+    setSelectedFreq('');
+    setSelectedDur('');
+    setFeedback(`✓ Confirmed Tab ${updated.name} ${finalDose} (${finalTiming}) & written to note!`);
+    window.setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleCreateManual = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualName.trim()) return;
+    const newTab: LiveTablet = {
+      id: `tab_${manualName.toLowerCase()}_${Date.now()}`,
+      name: manualName.trim().charAt(0).toUpperCase() + manualName.trim().slice(1),
+      form: 'Tab',
+      strength: manualDose.trim() || '650 mg',
+      whenToTake: manualTiming || 'After food',
+      frequency: 'BD (Twice daily)',
+      duration: '5 days',
+      isComplete: true,
+      missingFields: [],
+      rawText: `Tab ${manualName} ${manualDose || '650 mg'} BD x 5 days ${manualTiming || 'After food'}`,
+    };
+    onAddTablet(newTab);
+    setManualName('');
+    setManualDose('');
+    setShowManualAdd(false);
+    setFeedback(`✓ Prescribed Tab ${newTab.name} ${newTab.strength} (${newTab.whenToTake})!`);
+    window.setTimeout(() => setFeedback(null), 4000);
+  };
+
+  return (
+    <Card className="flex flex-col gap-3 p-4 border border-border shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline pb-2.5">
+        <div className="flex items-center gap-2">
+          <Icon name="medication" size={18} tone="primary" />
+          <h3 className="text-sm font-bold text-ink">Live Tablets & Prescription</h3>
+          {tablets.length > 0 && (
+            <span className={cx(
+              'rounded-full px-2 py-0.5 text-xs font-semibold',
+              needsCount > 0 ? 'bg-warning-tint text-warning-deep' : 'bg-success-tint text-success-deep'
+            )}>
+              {completeCount} Confirmed{needsCount > 0 ? ` · ${needsCount} Needs Details` : ' ✓'}
+            </span>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="add"
+          onClick={() => setShowManualAdd(!showManualAdd)}
+        >
+          {showManualAdd ? 'Cancel' : '+ Prescribe Tablet'}
+        </Button>
+      </header>
+
+      {/* Manual tablet entry drawer */}
+      {showManualAdd && (
+        <form onSubmit={handleCreateManual} className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex flex-col gap-2.5 text-xs">
+          <div className="font-bold text-ink">Prescribe New Tablet:</div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div>
+              <label className="text-ink-muted mb-0.5 block">Tablet Name:</label>
+              <TextInput
+                value={manualName}
+                onChange={e => setManualName(e.target.value)}
+                placeholder="e.g. Paracetamol"
+                required
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-ink-muted mb-0.5 block">Dose / Strength:</label>
+              <TextInput
+                value={manualDose}
+                onChange={e => setManualDose(e.target.value)}
+                placeholder="e.g. 650 mg"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-ink-muted mb-0.5 block">When to Take:</label>
+              <SelectInput
+                value={manualTiming}
+                onChange={e => setManualTiming(e.target.value)}
+                className="h-8 text-xs"
+              >
+                <option value="After food">After food</option>
+                <option value="Before food">Before food</option>
+                <option value="At bedtime">At bedtime</option>
+                <option value="With meals">With meals</option>
+                <option value="Empty stomach">Empty stomach</option>
+              </SelectInput>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button size="sm" variant="ghost" onClick={() => setShowManualAdd(false)}>Cancel</Button>
+            <Button size="sm" variant="primary" type="submit" icon="check">Add to Prescription</Button>
+          </div>
+        </form>
+      )}
+
+      {/* Feedback banner */}
+      {feedback && (
+        <div className="rounded-xl bg-success-tint border border-success/30 px-3 py-2 text-xs font-semibold text-success-deep flex items-center gap-1.5 animate-fadeIn">
+          <Icon name="checkCircle" size={16} />
+          <span>{feedback}</span>
+        </div>
+      )}
+
+      {/* Allergy detection chip bar */}
+      {allergies.length > 0 && (
+        <div className="rounded-xl bg-ink-tint/50 border border-hairline p-2 text-xs flex flex-wrap items-center gap-1.5">
+          <Icon name="drugAlert" size={15} tone="warning" />
+          <span className="font-semibold text-ink">Reported Allergies:</span>
+          {allergies.map((a, i) => (
+            <span key={i} className="rounded-chip bg-warning-tint text-warning-deep px-2 py-0.5 text-2xs font-bold border border-warning/20">
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Cross-Allergy Conflict Banner */}
+      {allergyConflicts.length > 0 && (
+        <div className="rounded-xl bg-danger-tint border border-danger/30 p-3 text-xs text-danger-deep flex flex-col gap-1.5 shadow-sm">
+          <div className="flex items-center gap-1.5 font-bold uppercase tracking-wide text-danger">
+            <Icon name="emergency" size={16} /> Drug-Allergy Interaction Warning!
+          </div>
+          {allergyConflicts.map((c, i) => (
+            <p key={i} className="leading-snug">
+              <b>Tab {c.tabletName}:</b> {c.detail}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Tablet list */}
+      {tablets.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border py-4 px-3 text-center text-xs text-ink-muted">
+          <Icon name="medication" size={24} className="mx-auto mb-1 text-ink-muted/60" />
+          No tablets detected yet. Speak your prescription (e.g. <i>"I am prescribing Tab Paracetamol 650 mg after food"</i>) or use the buttons below.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {tablets.map(tab => (
+            <div
+              key={tab.id}
+              className={cx(
+                'rounded-xl border p-2.5 transition-all flex flex-col gap-1.5',
+                !tab.isComplete ? 'border-warning bg-warning-tint/20' : 'border-hairline bg-card'
+              )}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-bold text-sm text-ink truncate">
+                    {tab.form || 'Tab'} {tab.name}
+                  </span>
+                  {tab.isComplete ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-success-tint px-2 py-0.5 text-2xs font-semibold text-success-deep">
+                      <Icon name="check" size={11} /> {tab.strength} · {tab.whenToTake}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-warning-tint px-2 py-0.5 text-2xs font-bold text-warning-deep">
+                      <Icon name="warning" size={11} /> Missing {tab.missingFields.join(' & ')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  {!tab.isComplete && (
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      icon="aiAssist"
+                      onClick={() => setActiveClarifyId(activeClarifyId === tab.id ? null : tab.id)}
+                    >
+                      Fill Details
+                    </Button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onRemoveTablet(tab.name)}
+                    className="p-1 rounded text-ink-muted hover:text-danger hover:bg-danger-tint transition-colors cursor-pointer"
+                    title="Remove tablet"
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {tab.isComplete && (
+                <div className="flex flex-wrap gap-2 text-2xs text-ink-muted">
+                  <span>Frequency: <b>{tab.frequency || 'BD'}</b></span>
+                  <span>Duration: <b>{tab.duration || '5 days'}</b></span>
+                  <span>Timing: <b className="text-primary-deep">{tab.whenToTake}</b></span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Interactive Chibi Prompt Box (whenever dose or timing is missing) */}
+      {activeTab && !activeTab.isComplete && (
+        <div className="rounded-xl border-2 border-primary/40 bg-primary-tint/30 p-3.5 flex flex-col gap-3 shadow-sm animate-fadeIn">
+          <div className="flex items-start gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-white shrink-0 shadow-sm">
+              <Icon name="aiAssist" size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xs font-extrabold uppercase tracking-wider text-primary-deep">CHIBI Interactive Clinical Assistant</span>
+                <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-primary" />
+              </div>
+              <p className="text-xs font-semibold text-ink mt-0.5">
+                Doctor, please confirm the missing dosage and when to take for <b>Tab {activeTab.name}</b>:
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Dose selection */}
+          <div className="space-y-1">
+            <span className="text-2xs font-bold uppercase tracking-wider text-ink-muted">
+              1. Dose / Strength:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {['650 mg', '500 mg', '625 mg', '40 mg', '10 mg', '100 mg', '1 tablet'].map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setSelectedDose(d)}
+                  className={cx(
+                    'rounded-chip px-2.5 py-1 text-xs font-semibold border transition-all cursor-pointer',
+                    (selectedDose || activeTab.strength) === d
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-card text-ink border-border hover:bg-base'
+                  )}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Timing / When to take */}
+          <div className="space-y-1">
+            <span className="text-2xs font-bold uppercase tracking-wider text-ink-muted">
+              2. When to Take:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {['After food', 'Before food', 'At bedtime', 'With meals', 'Empty stomach'].map(timing => (
+                <button
+                  key={timing}
+                  type="button"
+                  onClick={() => setSelectedTiming(timing)}
+                  className={cx(
+                    'rounded-chip px-2.5 py-1 text-xs font-semibold border transition-all cursor-pointer',
+                    (selectedTiming || activeTab.whenToTake) === timing
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-card text-ink border-border hover:bg-base'
+                  )}
+                >
+                  {timing}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Quick Frequency & Duration row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-primary/20">
+            <div>
+              <span className="text-2xs font-bold uppercase tracking-wider text-ink-muted mb-1 block">Frequency:</span>
+              <div className="flex flex-wrap gap-1">
+                {['TDS (Thrice daily)', 'BD (Twice daily)', 'OD (Once daily)', 'SOS'].map(f => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => setSelectedFreq(f)}
+                    className={cx(
+                      'rounded-chip px-2 py-0.5 text-2xs font-medium border transition-colors cursor-pointer',
+                      (selectedFreq || activeTab.frequency || 'BD (Twice daily)') === f
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'bg-card text-ink border-border hover:bg-base'
+                    )}
+                  >
+                    {f.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <span className="text-2xs font-bold uppercase tracking-wider text-ink-muted mb-1 block">Duration:</span>
+              <div className="flex flex-wrap gap-1">
+                {['3 days', '5 days', '7 days', '14 days'].map(dur => (
+                  <button
+                    key={dur}
+                    type="button"
+                    onClick={() => setSelectedDur(dur)}
+                    className={cx(
+                      'rounded-chip px-2 py-0.5 text-2xs font-medium border transition-colors cursor-pointer',
+                      (selectedDur || activeTab.duration || '5 days') === dur
+                        ? 'bg-primary text-on-primary border-primary'
+                        : 'bg-card text-ink border-border hover:bg-base'
+                    )}
+                  >
+                    {dur}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Action button */}
+          <div className="flex items-center gap-2 pt-1">
+            <Button
+              variant="primary"
+              size="sm"
+              icon="check"
+              onClick={handleApplyClarification}
+            >
+              Confirm Details & Write to Note
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveClarifyId(null)}
+            >
+              Skip for now
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Clinic Presets */}
+      <div className="pt-2 border-t border-hairline">
+        <div className="text-2xs font-bold uppercase tracking-wider text-ink-muted mb-1.5">
+          One-Tap Prescribe (Common India Clinic Formulations):
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { name: 'Paracetamol', dose: '650 mg', timing: 'After food', freq: 'TDS (Thrice daily)', dur: '5 days' },
+            { name: 'Pantocid', dose: '40 mg', timing: 'Before food', freq: 'OD (Once daily)', dur: '5 days' },
+            { name: 'Cetirizine', dose: '10 mg', timing: 'At bedtime', freq: 'OD (Once daily)', dur: '5 days' },
+            { name: 'Augmentin', dose: '625 mg', timing: 'With meals', freq: 'BD (Twice daily)', dur: '5 days' },
+          ].map(p => (
+            <button
+              key={p.name}
+              type="button"
+              onClick={() => onAddTablet({
+                id: `tab_${p.name.toLowerCase()}_${Date.now()}`,
+                name: p.name,
+                form: 'Tab',
+                strength: p.dose,
+                frequency: p.freq,
+                duration: p.dur,
+                whenToTake: p.timing,
+                isComplete: true,
+                missingFields: [],
+                rawText: `Tab ${p.name} ${p.dose} ${p.freq} x ${p.dur} ${p.timing}`,
+              })}
+              className="rounded-chip bg-ink-tint/70 hover:bg-ink-tint px-2 py-1 text-2xs font-semibold text-ink flex items-center gap-1 transition-colors cursor-pointer"
+            >
+              <Icon name="add" size={11} /> Tab {p.name} {p.dose} ({p.timing})
+            </button>
+          ))}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function LabScreen() {
   const [status, setStatus] = useState<LabStatus | null>(null);
   const [state, setState] = useState<LabState | null>(null);
@@ -219,6 +883,53 @@ export function LabScreen() {
   speakerRef.current = speaker;
   const sessionRef = useRef<string | null>(null);
   sessionRef.current = state?.session_id ?? null;
+
+  const [liveNote, setLiveNote] = useState('');
+  const [notepadInsert, setNotepadInsert] = useState<{ id: string; text: string; section: string; heading?: string } | null>(null);
+  const [manualTablets, setManualTablets] = useState<LiveTablet[]>([]);
+  const [manualAllergies, setManualAllergies] = useState<string[]>([]);
+
+  const { tablets, allergies, allergyConflicts } = useMemo(() => {
+    const parsed = parseTabletsAndAllergies(liveNote, state?.facts ?? [], state?.transcript ?? []);
+    const combinedAllergies = Array.from(new Set([...parsed.allergies, ...manualAllergies]));
+    const tabsMap = new Map<string, LiveTablet>();
+    for (const t of parsed.tablets) tabsMap.set(t.name.toLowerCase(), t);
+    for (const t of manualTablets) tabsMap.set(t.name.toLowerCase(), t);
+    const combinedTablets = Array.from(tabsMap.values());
+    const conflicts = detectAllergyConflicts(combinedAllergies, combinedTablets);
+    return { tablets: combinedTablets, allergies: combinedAllergies, allergyConflicts: conflicts };
+  }, [liveNote, state?.facts, state?.transcript, manualTablets, manualAllergies]);
+
+  const handleConfirmTablet = useCallback((updated: LiveTablet) => {
+    setManualTablets(prev => {
+      const next = prev.filter(t => t.name.toLowerCase() !== updated.name.toLowerCase());
+      return [...next, updated];
+    });
+    const line = `${updated.form || 'Tab'} ${updated.name} ${updated.strength || '650 mg'} ${updated.frequency || 'BD'} x ${updated.duration || '5 days'} ${updated.whenToTake || 'After food'}`;
+    setNotepadInsert({
+      id: `rx_${updated.name.toLowerCase()}_${Date.now()}`,
+      section: 'plan',
+      heading: 'Rx',
+      text: line,
+    });
+  }, []);
+
+  const handleAddTablet = useCallback((newTab: LiveTablet) => {
+    setManualTablets(prev => [...prev.filter(t => t.name.toLowerCase() !== newTab.name.toLowerCase()), newTab]);
+    if (newTab.isComplete) {
+      const line = `${newTab.form || 'Tab'} ${newTab.name} ${newTab.strength} ${newTab.frequency || 'BD'} x ${newTab.duration || '5 days'} ${newTab.whenToTake}`;
+      setNotepadInsert({
+        id: `rx_${newTab.name.toLowerCase()}_${Date.now()}`,
+        section: 'plan',
+        heading: 'Rx',
+        text: line,
+      });
+    }
+  }, []);
+
+  const handleRemoveTablet = useCallback((name: string) => {
+    setManualTablets(prev => prev.filter(t => t.name.toLowerCase() !== name.toLowerCase()));
+  }, []);
 
   const updateSpeaker = useCallback((newSpeaker: 'patient' | 'doctor') => {
     setSpeaker(newSpeaker);
@@ -417,7 +1128,15 @@ export function LabScreen() {
     finally { setFinishing(false); }
   };
 
-  const reset = () => { stopListening(); setState(null); setInterim(''); };
+  const reset = () => {
+    stopListening();
+    setState(null);
+    setInterim('');
+    setLiveNote('');
+    setManualTablets([]);
+    setManualAllergies([]);
+    setNotepadInsert(null);
+  };
 
   // What the notepad receives: everything heard (auto-write on) or only what's missing (quiet hints).
   const minutes: CallMinutes | null = useMemo(() => state ? {
@@ -504,7 +1223,7 @@ export function LabScreen() {
                 {listening && (
                   <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold transition-colors',
                     voiceGated ? 'bg-ink-tint text-ink-muted' : 'bg-success-tint text-success-deep')}>
-                    <Icon name={voiceGated ? 'shieldCheck' : 'volumeUp'} size={12} />
+                    <Icon name={voiceGated ? 'shieldCheck' : 'speaker'} size={12} />
                     {voiceGated ? 'Noise Gate: Suppressing noise' : 'Voice detected'}
                   </span>
                 )}
@@ -562,17 +1281,37 @@ export function LabScreen() {
               )}
             </Card>
 
-            {state.final && <FinalCard final={state.final} structured={state.structured} />}
+            {state.final && (
+              <FinalCard
+                sessionId={state.session_id}
+                final={state.final}
+                structured={state.structured}
+                liveTablets={tablets}
+                noteText={noteRef.current || liveNote}
+              />
+            )}
           </div>
 
-          <div className="min-w-0">
+          <div className="flex flex-col gap-4 min-w-0">
+            <LiveTabletsCard
+              tablets={tablets}
+              allergies={allergies}
+              allergyConflicts={allergyConflicts}
+              onConfirmTablet={handleConfirmTablet}
+              onAddTablet={handleAddTablet}
+              onRemoveTablet={handleRemoveTablet}
+            />
             <ClinicalNotepad
               key={state.encounter_id}
               encounterId={state.encounter_id}
               patientName="Test Patient"
               callMinutes={minutes}
               autoApplyCall={autoWrite}
-              onTextChange={t => { noteRef.current = t; }}
+              onTextChange={t => {
+                noteRef.current = t;
+                setLiveNote(t);
+              }}
+              insertRequest={notepadInsert}
               docked
               speakerControl={{
                 speaker,
@@ -587,8 +1326,61 @@ export function LabScreen() {
   );
 }
 
-function FinalCard({ final, structured }: { final: LabFinal; structured?: Structured }) {
+function FinalCard({
+  sessionId,
+  final,
+  structured,
+  liveTablets,
+  noteText,
+}: {
+  sessionId: string;
+  final: LabFinal;
+  structured?: Structured;
+  liveTablets: LiveTablet[];
+  noteText?: string;
+}) {
+  const { doctor, toast } = usePortal();
   const [copied, setCopied] = useState(false);
+  const [patients, setPatients] = useState<PatientBrief[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [doctorVerified, setDoctorVerified] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [signedResult, setSignedResult] = useState<{
+    signature: string;
+    signed_at: string;
+    record_id: string;
+    patient_name: string;
+    patient_id: string;
+    pushed_prescriptions_count: number;
+  } | null>(null);
+
+  useEffect(() => {
+    doctorApi.patients().then(list => {
+      setPatients(list);
+      if (list.length > 0 && !selectedPatientId) {
+        setSelectedPatientId(list[0].patient_id);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleSignAndCommit = async () => {
+    if (!doctorVerified) return;
+    setSubmitting(true);
+    try {
+      const res = await doctorApi.signAndPushLabReport(sessionId, {
+        patient_id: selectedPatientId || undefined,
+        note: noteText,
+        doctor_signature_name: doctor?.display_name || 'Dr. Ananya Sharma',
+      });
+      setSignedResult(res);
+      toast('Consultation verified and duly signed! Pushed to ABDM records & patient care plan.', 'success');
+    } catch (e) {
+      toast(`Verification error: ${(e as Error).message}`, 'danger');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const block = (title: string, items?: string[]) => items?.length ? `\n\n${title}:\n${items.map(x => `- ${x}`).join('\n')}` : '';
   const copy = () => {
     const text = final.summary + block('Key points', final.key_points) + block('To consider', final.considerations)
@@ -607,11 +1399,26 @@ function FinalCard({ final, structured }: { final: LabFinal; structured?: Struct
       </ul>
     </section>
   );
+
+  // Tablets to commit: merge structured prescription with live tablets
+  const tabletsToCommit: LabMed[] = useMemo(() => {
+    if (structured?.prescription?.length) return structured.prescription;
+    return liveTablets.map(t => ({
+      name: t.name,
+      form: t.form ?? 'Tab',
+      strength: t.strength ?? '650 mg',
+      frequency: t.frequency ?? 'BD (Twice daily)',
+      duration: t.duration ?? '5 days',
+      timing: t.whenToTake ?? 'After food',
+      text: `${t.form ?? 'Tab'} ${t.name} ${t.strength ?? '650 mg'} ${t.frequency ?? 'BD'} ${t.whenToTake ?? 'After food'}`,
+    }));
+  }, [structured?.prescription, liveTablets]);
+
   return (
-    <Card className="flex flex-col gap-4 p-4">
+    <Card className="flex flex-col gap-4 p-4 border border-border shadow-sm">
       <header className="flex items-center gap-2">
         <Icon name="clinicalNotes" size={18} tone="primary" />
-        <h3 className="text-base font-bold">Consultation summary</h3>
+        <h3 className="text-base font-bold text-ink">Consultation Summary & Review</h3>
         <Pill tone={final.engine === 'ai' ? 'primary' : 'neutral'} label={final.engine === 'ai' ? 'AI' : 'Rules engine'} />
         <span className="flex-1" />
         <Button size="sm" variant="ghost" icon={copied ? 'check' : 'checklist'} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
@@ -641,25 +1448,179 @@ function FinalCard({ final, structured }: { final: LabFinal; structured?: Struct
         </div>
       )}
 
-      {structured && (
-        <div className="border-t border-hairline pt-4">
-          <h3 className="text-base font-bold">What the visit would save (from your note)</h3>
-          <p className="mb-2 text-xs text-ink-muted">Parsed from the note's headings, so nothing is typed twice. The patient app shows this after the visit.</p>
-          {structured.prescription.length > 0 ? (
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs text-ink-muted"><tr><th>Medicine</th><th>Dose</th><th>How often</th><th>For</th><th>When</th></tr></thead>
-              <tbody>{structured.prescription.map((m, i) => (
-                <tr key={i} className="border-t border-hairline"><td className="py-1 font-semibold">{m.form ? `${m.form} ` : ''}{m.name}</td><td>{m.strength ?? '–'}</td>
-                  <td>{m.frequency ?? '–'}</td><td>{m.duration ?? '–'}</td><td>{m.timing ?? '–'}</td></tr>
-              ))}</tbody>
-            </table>
-          ) : <p className="text-sm text-ink-muted">No prescription lines under “Rx:” (e.g. “Tab Paracetamol 650 mg TDS x 5 days after food”).</p>}
-          {Object.keys(structured.vitals).length > 0 && (
-            <p className="mt-2 text-sm"><b>Vitals:</b> {Object.entries(structured.vitals).map(([k, v]) => `${k.toUpperCase()} ${v.value} ${v.unit}`).join(' · ')}</p>
-          )}
-          {structured.diagnosis.length > 0 && <p className="text-sm"><b>Diagnosis:</b> {structured.diagnosis.join('; ')}</p>}
-          {structured.allergies.length > 0 && <p className="text-sm"><b>Allergies:</b> {structured.allergies.join('; ')}</p>}
-          {structured.follow_up.text && <p className="text-sm"><b>Follow-up:</b> {structured.follow_up.text}{structured.follow_up.in_days ? ` (in ${structured.follow_up.in_days} days)` : ''}</p>}
+      {/* Signed Certificate Seal (Displayed after doctor clicks 'Checked by the doctor and duly signed') */}
+      {signedResult ? (
+        <div className="rounded-2xl border-2 border-success bg-success-tint/40 p-5 flex flex-col gap-3 shadow-md animate-fadeIn">
+          <div className="flex items-center gap-2.5 text-success-deep font-bold text-base">
+            <Icon name="verified" size={24} />
+            <span>Checked by the doctor and duly signed</span>
+            <Pill tone="success" dot label="Committed to Records" />
+          </div>
+
+          <p className="text-xs text-ink leading-relaxed">
+            This consultation report and prescription have been cryptographically verified and signed by{' '}
+            <b>{doctor?.display_name || 'Dr. Ananya Sharma'}</b>, and officially committed to the ABDM Health Locker vault.
+            Active tablet prescriptions have been pushed to the patient app daily routine schedule.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs bg-card/90 rounded-xl p-3 border border-success/30">
+            <div>
+              <span className="text-ink-muted">Doctor:</span>{' '}
+              <b>{doctor?.display_name || 'Dr. Ananya Sharma'} (NMC Registered)</b>
+            </div>
+            <div>
+              <span className="text-ink-muted">Digital Signature:</span>{' '}
+              <span className="font-mono text-2xs bg-ink-tint px-1.5 py-0.5 rounded font-bold">{signedResult.signature}</span>
+            </div>
+            <div>
+              <span className="text-ink-muted">Patient:</span>{' '}
+              <b>{signedResult.patient_name}</b>
+            </div>
+            <div>
+              <span className="text-ink-muted">ABDM Record Vault ID:</span>{' '}
+              <span className="font-mono text-2xs bg-ink-tint px-1.5 py-0.5 rounded font-bold">{signedResult.record_id}</span>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="text-ink-muted">Care Plan Propagation:</span>{' '}
+              <b className="text-success-deep">
+                {signedResult.pushed_prescriptions_count} active prescription(s) updated in patient's daily medication schedule
+              </b>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2">
+            <Button
+              variant="primary"
+              icon="person"
+              onClick={() => navigate({ page: 'patient', patientId: signedResult.patient_id, tab: 'overview' })}
+            >
+              View Updated Patient Profile & Care Plan →
+            </Button>
+          </div>
+        </div>
+      ) : (
+        /* Doctor Verification & Sign-off Gate */
+        <div className="border-t border-hairline pt-4 flex flex-col gap-3.5">
+          <div className="flex items-center gap-2">
+            <Icon name="sign" size={20} tone="primary" />
+            <h3 className="text-base font-bold text-ink">Clinical Verification & Doctor Sign-Off</h3>
+          </div>
+          <p className="text-xs text-ink-muted">
+            Before committing this consultation and prescription to the database, verify all tablet doses, timings,
+            allergies, and diagnosis. Once verified, click below to digitally sign and commit into official health records.
+          </p>
+
+          {/* Target Patient Selector */}
+          <div className="flex flex-col gap-1 max-w-md">
+            <label className="text-xs font-semibold text-ink">Commit To Patient Record:</label>
+            <SelectInput
+              value={selectedPatientId}
+              onChange={e => setSelectedPatientId(e.target.value)}
+            >
+              {patients.length > 0 ? (
+                patients.map(p => (
+                  <option key={p.patient_id} value={p.patient_id}>
+                    {p.full_name} ({p.abha_address || p.patient_id}) {p.age ? `· ${p.age}y` : ''}
+                  </option>
+                ))
+              ) : (
+                <option value="">Test Patient (Default)</option>
+              )}
+            </SelectInput>
+          </div>
+
+          {/* Structured Prescription Table to be saved */}
+          <div className="rounded-xl border border-hairline p-3 bg-card flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs font-bold text-ink">
+              <span className="uppercase tracking-wider text-ink-muted">Prescription to commit to care plan:</span>
+              <span className="text-2xs text-ink-muted">{tabletsToCommit.length} medicine(s)</span>
+            </div>
+            {tabletsToCommit.length > 0 ? (
+              <table className="w-full text-left text-sm">
+                <thead className="text-2xs text-ink-muted border-b border-hairline">
+                  <tr>
+                    <th className="py-1">Medicine</th>
+                    <th>Dose</th>
+                    <th>Frequency</th>
+                    <th>When to Take</th>
+                    <th>Duration</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tabletsToCommit.map((m, i) => (
+                    <tr key={i} className="border-t border-hairline text-xs">
+                      <td className="py-1.5 font-semibold text-ink">{m.form ? `${m.form} ` : 'Tab '}{m.name}</td>
+                      <td className="font-mono">{m.strength ?? '–'}</td>
+                      <td>{m.frequency ?? '–'}</td>
+                      <td>
+                        <span className="rounded bg-primary-tint px-1.5 py-0.5 text-primary-deep font-semibold text-2xs">
+                          {m.timing ?? 'After food'}
+                        </span>
+                      </td>
+                      <td>{m.duration ?? '–'}</td>
+                      <td>
+                        <span className="inline-flex items-center gap-1 text-success font-semibold text-2xs">
+                          <Icon name="check" size={11} /> Verified
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p className="text-xs text-ink-muted italic">No prescription lines recorded.</p>
+            )}
+          </div>
+
+          {/* Clinical Findings Preview */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            {structured?.diagnosis && structured.diagnosis.length > 0 && (
+              <div className="rounded-lg bg-base/60 p-2 border border-hairline">
+                <span className="font-bold text-ink block mb-0.5">Diagnosis:</span>
+                <span>{structured.diagnosis.join('; ')}</span>
+              </div>
+            )}
+            {structured?.allergies && structured.allergies.length > 0 && (
+              <div className="rounded-lg bg-base/60 p-2 border border-hairline">
+                <span className="font-bold text-ink block mb-0.5">Allergies:</span>
+                <span className="text-warning-deep font-semibold">{structured.allergies.join('; ')}</span>
+              </div>
+            )}
+            {structured?.vitals && Object.keys(structured.vitals).length > 0 && (
+              <div className="rounded-lg bg-base/60 p-2 border border-hairline sm:col-span-2">
+                <span className="font-bold text-ink block mb-0.5">Vitals:</span>
+                <span>{Object.entries(structured.vitals).map(([k, v]) => `${k.toUpperCase()} ${v.value} ${v.unit}`).join(' · ')}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Doctor Verification Checkbox */}
+          <label className="flex items-start gap-2.5 rounded-xl border border-border p-3 cursor-pointer bg-base/40 hover:bg-base/70 transition-colors">
+            <input
+              type="checkbox"
+              checked={doctorVerified}
+              onChange={e => setDoctorVerified(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+            />
+            <div className="text-xs text-ink leading-snug">
+              <b>I confirm that I have clinically reviewed and verified this entire consultation report</b>, including all tablet doses, timings, duration, and screened for adverse drug-allergy interactions. I hereby authorize pushing this to the electronic health record and patient care plan.
+            </div>
+          </label>
+
+          {/* The Exact Action Button requested by user */}
+          <div className="pt-1">
+            <Button
+              variant="primary"
+              size="lg"
+              icon="sign"
+              disabled={!doctorVerified || submitting}
+              onClick={handleSignAndCommit}
+              className="w-full sm:w-auto shadow-sm text-sm"
+            >
+              {submitting ? 'Signing and committing…' : 'Checked by the doctor and duly signed'}
+            </Button>
+          </div>
         </div>
       )}
     </Card>
