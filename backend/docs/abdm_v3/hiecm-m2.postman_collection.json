@@ -1,0 +1,683 @@
+{
+  "info": {
+    "name": "ABDM HIE-CM M2 Health Information Provider",
+    "description": "Generated from the ABDM HIE-CM specifications. Import hiecm-sandbox.postman_environment.json beside it and fill in clientId and clientSecret: the collection fetches a gateway session token before a call when it needs one.\n\nFolders follow the order a journey is built in. Send the steps in order: each response keeps the txnId and the X-token it returns as collection variables, and the steps after it read them. Callbacks are not included: ABDM sends those to your bridge URL, so receiving them needs a public endpoint, not Postman.\n\nValues ABDM expects encrypted, such as an Aadhaar number or an OTP, are shown as the specification gives them. Encrypt your own values before sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Gets a gateway session token when there is none or it has expired.",
+          "(function () {",
+          "if (pm.request.url.getPath().endsWith('/api/hiecm/gateway/v3/sessions')) return;",
+          "const expiry = Number(pm.environment.get('accessTokenExpiry') || 0);",
+          "if (pm.environment.get('accessToken') && Date.now() < expiry) return;",
+          "pm.sendRequest({",
+          "  url: pm.variables.replaceIn('{{gatewayUrl}}/api/hiecm/gateway/v3/sessions'),",
+          "  method: 'POST',",
+          "  header: {",
+          "    'Content-Type': 'application/json',",
+          "    'REQUEST-ID': pm.variables.replaceIn('{{$guid}}'),",
+          "    'TIMESTAMP': new Date().toISOString(),",
+          "    'X-CM-ID': pm.variables.replaceIn('{{cmId}}'),",
+          "  },",
+          "  body: {",
+          "    mode: 'raw',",
+          "    raw: JSON.stringify({",
+          "      clientId: pm.variables.get('clientId'),",
+          "      clientSecret: pm.variables.get('clientSecret'),",
+          "      grantType: 'client_credentials',",
+          "    }),",
+          "  },",
+          "}, (error, response) => {",
+          "  if (error || response.code >= 300) {",
+          "    console.error('Session token request failed', error || response.text());",
+          "    return;",
+          "  }",
+          "  const {accessToken, expiresIn} = response.json();",
+          "  pm.environment.set('accessToken', accessToken);",
+          "  // A minute early, so a token never expires between this check and the call.",
+          "  pm.environment.set('accessTokenExpiry', Date.now() + (expiresIn - 60) * 1000);",
+          "});",
+          "})();"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Keeps what this response hands to the calls after it, such as the txnId an",
+          "// OTP request returns and the X-token a login returns, as collection variables.",
+          "(function () {",
+          "let body;",
+          "try { body = pm.response.json(); } catch (error) { return; }",
+          "function carriedValues(body) {",
+          "  const list = Array.isArray(body);",
+          "  const first = list ? body[0] : body;",
+          "  if (!first || typeof first !== \"object\") return {};",
+          "  const read = (path) => {",
+          "    let at = first;",
+          "    for (const key of path.split(\".\")) {",
+          "      if (!at || typeof at !== \"object\") return void 0;",
+          "      at = at[key];",
+          "    }",
+          "    return typeof at === \"string\" && at ? at : void 0;",
+          "  };",
+          "  const out = {};",
+          "  const txnId = read(\"txnId\");",
+          "  if (txnId) out[list ? \"searchTxnId\" : \"txnId\"] = txnId;",
+          "  const tokenAt = [\"tokens.token\", \"jwtResponse.token\", \"token\"].find((path) => read(path));",
+          "  if (tokenAt) {",
+          "    const token = read(tokenAt);",
+          "    out[\"X-token\"] = token;",
+          "    out.jwtToken = token;",
+          "    const refresh = read(tokenAt.replace(/token$/, \"refreshToken\"));",
+          "    if (refresh) out[\"R-jwtToken\"] = refresh;",
+          "  }",
+          "  return out;",
+          "}",
+          "const values = carriedValues(body);",
+          "Object.keys(values).forEach(function (key) { pm.collectionVariables.set(key, values[key]); });",
+          "})();"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "txnId",
+      "value": ""
+    },
+    {
+      "key": "searchTxnId",
+      "value": ""
+    },
+    {
+      "key": "X-token",
+      "value": ""
+    },
+    {
+      "key": "jwtToken",
+      "value": ""
+    },
+    {
+      "key": "R-jwtToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Link token",
+      "item": [
+        {
+          "name": "1. Generate link token to link the health records",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIP-ID",
+                "value": "{{hipId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/v3/token/generate-token",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "v3",
+                "token",
+                "generate-token"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"abhaNumber\": 12345678901234,\n  \"abhaAddress\": \"<ABHA_ADDRESS>\",\n  \"name\": \"first_name + middle_name + last_name\",\n  \"gender\": \"M\",\n  \"yearOfBirth\": 9999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Generate a link token which will be valid for 6 months.. This token can be used for Health Information Provider (HIP) Initiated Linking, enabling HIPs to securely link patient health records to their ABHA (Ayushman Bharat Health Account) address. The generated token ensures that the linking process is authenticated and authorised, maintaining the integrity and security of health information exchange. This functionality is crucial for facilitating seamless and efficient linking of health records within the healthcare ecosystem.\n\n**Authorisation:** We are passing the access-token in the authorisation [Example: Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJBbFJiNVd]"
+          }
+        }
+      ]
+    },
+    {
+      "name": "HIP initiated linking",
+      "item": [
+        {
+          "name": "1. Perform HIP initiated linking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIP-ID",
+                "value": "{{hipId}}"
+              },
+              {
+                "key": "X-LINK-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/hip/v3/link/carecontext",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "hip",
+                "v3",
+                "link",
+                "carecontext"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"abhaNumber\": 12345678901234,\n  \"abhaAddress\": \"<ABHA_ADDRESS>\",\n  \"patient\": [\n    {\n      \"referenceNumber\": \"TMH-PUID-001\",\n      \"display\": \"String\",\n      \"careContexts\": [\n        {\n          \"referenceNumber\": \"TMH-PUID-001\",\n          \"display\": \"display 1\"\n        }\n      ],\n      \"hiType\": \"DiagnosticReport\",\n      \"count\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Note:** While generating the link-token the user/patient is providing both ABHA_number and ABHA_address, then at the time of linking both must be mandatory. If not one should be mandatory either 'ABHA_number' or 'ABHA_address'.\n\n This API endpoint is used by the Ayushman Bharat Digital Mission (ABDM) system to store care context or health record references. Upon successful validation of the ABHA (Ayushman Bharat Health Account) address and the associated link token, the system securely records the relevant care context information. This process ensures that health records are accurately linked and accessible, facilitating efficient and seamless health information exchange across the network. The API plays a critical role in maintaining the integrity and continuity of patient health records, thereby supporting comprehensive and coordinated care."
+          }
+        },
+        {
+          "name": "2. Notify a change to a linked care context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIP-ID",
+                "value": "{{hipId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/hip/v3/link/context/notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "hip",
+                "v3",
+                "link",
+                "context",
+                "notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notification\": {\n    \"patient\": {\n      \"id\": \"<ABHA_ADDRESS>\"\n    },\n    \"careContext\": {\n      \"patientReference\": \"<ABHA_ADDRESS>\",\n      \"careContextReference\": \"b009a970-8b04-4779-abd1-b50f113245bf\"\n    },\n    \"hiTypes\": [\n      \"DiagnosticReport\"\n    ],\n    \"date\": \"2024-05-09T10:34:00.387Z\",\n    \"hip\": {\n      \"id\": \"ABDM_HIP\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Notify the Consent Management (CM) system about any updates HiTypes of the already linked care context for a patient. By invoking this API, Health Information Providers (HIPs) can inform the CM system of changes or updates to the patient’s care context, ensuring that the most current and accurate health information is maintained. This process is crucial for the integrity and synchronization of patient health records across the network, supporting seamless and efficient health information exchange."
+          }
+        },
+        {
+          "name": "3. Send SMS notification to patient that a care context is linked",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/hip/v3/link/patient/links/sms/notify2",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "hip",
+                "v3",
+                "link",
+                "patient",
+                "links",
+                "sms",
+                "notify2"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notification\": {\n    \"phoneNo\": \"986543***\",\n    \"hip\": {\n      \"id\": \"ABDM_HIP\",\n      \"name\": \"ABC Hospital\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Send SMS notifications to patients, informing them that a care context has been successfully linked to their ABHA (Ayushman Bharat Health Account) address. By invoking this API, HIPs can ensure that patients are promptly notified about the linkage of their health records, enhancing transparency and patient engagement. This notification process is essential for keeping patients informed and involved in the management of their health information, thereby supporting a more connected and responsive healthcare system."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User initiated linking",
+      "item": [
+        {
+          "name": "1. Answer the care context discovery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/patient/care-context/on-discover",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "patient",
+                "care-context",
+                "on-discover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"f901b782-bfdf-4224-9f8d-da2cadc20c0d\",\n  \"patient\": [\n    {\n      \"referenceNumber\": \"<ABHA_ADDRESS>\",\n      \"display\": \"12345\",\n      \"careContexts\": [\n        {\n          \"referenceNumber\": \"abc123\",\n          \"display\": \"12345\"\n        }\n      ],\n      \"hiType\": \"Prescription\",\n      \"count\": 1\n    }\n  ],\n  \"matchedBy\": [\n    \"MR\"\n  ],\n  \"response\": {\n    \"requestId\": \"f29f0e59-8388-4698-9fe6-05db67aeac46\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Is invoked by the Hospital Management Information System (HMIS) or Laboratory Information Management System (LIMS) or HIP application to share the response of the /api/hiecm/user-initiated-linking/v3/patient/care-context/on-discover API. It facilitates the communication of discovered health records back to the patient or user. By using this API, the HMIS/LIMS application ensures that the patient’s health information is accurately and promptly shared, supporting efficient and transparent health information exchange. This process is crucial for maintaining the integrity and continuity of patient care, enabling patients to have comprehensive access to their health records."
+          }
+        },
+        {
+          "name": "2. Link care context on init",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/link/care-context/on-init",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "link",
+                "care-context",
+                "on-init"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"f901b782-bfdf-4224-9f8d-da2cadc20c0d\",\n  \"link\": {\n    \"referenceNumber\": \"d353b782-bfdf-4224-9f8d-da2cadc20c0d\",\n    \"authenticationType\": \"DIRECT\",\n    \"meta\": {\n      \"communicationMedium\": \"MOBILE\",\n      \"communicationHint\": \"OTP\",\n      \"communicationExpiry\": \"2024-05-01T05:22:34.123Z\"\n    }\n  },\n  \"response\": {\n    \"requestId\": \"f29f0e59-8388-4698-9fe6-05db67aeac46\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Share the response of the /api/hiecm/user-initiated-linking/v3/link/care-context/on-init API. By using this API, the HIP communicates the outcome of the care context linking process, ensuring that the system accurately reflects the status of the operation. This process is essential for maintaining the integrity and synchronization of patient health records, supporting seamless and efficient health information exchange within the healthcare ecosystem."
+          }
+        },
+        {
+          "name": "3. Link care context on confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/link/care-context/on-confirm",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "link",
+                "care-context",
+                "on-confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patient\": [\n    {\n      \"referenceNumber\": \"<ABHA_ADDRESS>\",\n      \"display\": \"12345\",\n      \"careContexts\": [\n        {\n          \"referenceNumber\": \"abc123\",\n          \"display\": \"12345\"\n        }\n      ],\n      \"hiType\": \"Prescription\",\n      \"count\": 1\n    }\n  ],\n  \"response\": {\n    \"requestId\": \"f29f0e59-8388-4698-9fe6-05db67aeac46\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Share the response of the /api/hiecm/user-initiated-linking/v3/link/care-context/on-confirm API. By using this API, the HIP communicates the outcome of the care context confirmation process, ensuring that the system accurately reflects the status of the operation. This process is essential for maintaining the integrity and synchronization of patient health records, supporting seamless and efficient health information exchange within the healthcare ecosystem.\n\nIn case of success scenario, patient object is mandatory and error object is optional\n\nIn case of error scenario, error object is mandatory and patient object is optional\n\nResponse is mandatory in both scenarios"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consent and data flow",
+      "item": [
+        {
+          "name": "1. Acknowledge the consent notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/hip/on-notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "hip",
+                "on-notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledgement\": {\n    \"status\": \"OK\",\n    \"consentId\": \"e3c74829-3f82-4f94-959e-e10f57bcd57b\"\n  },\n  \"response\": {\n    \"requestId\": \"6f0b4665-a915-4c92-aa36-65afb4a2cd71\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Notification of consents, in cases of consent approval, revocation and expiration. Notified by CM earlier via Gateway API - **/api/v3/consent/request/hip/notify**"
+          }
+        },
+        {
+          "name": "2. Submit the health information data request acknowledgement from HIP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/data-flow/v3/health-information/hip/on-request",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "data-flow",
+                "v3",
+                "health-information",
+                "hip",
+                "on-request"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiRequest\": {\n    \"transactionId\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\",\n    \"sessionStatus\": \"ACKNOWLEDGED\"\n  },\n  \"response\": {\n    \"requestId\": \"6f0b4665-a915-4c92-aa36-65afb4a2cd71\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Acknowledge the Health information request receipt. Either the hiRequest or error must be specified. hiRequest element returns the same transaction ID as before with a status indicating that the request is acknowledged."
+          }
+        },
+        {
+          "name": "3. Submit the notifications corresponding to events during data flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/data-flow/v3/health-information/notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "data-flow",
+                "v3",
+                "health-information",
+                "notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notification\": {\n    \"consentId\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\",\n    \"transactionId\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\",\n    \"doneAt\": \"2023-01-24T06:35:44.167Z\",\n    \"notifier\": {\n      \"type\": \"HIP\",\n      \"id\": \"IN2810014366\"\n    },\n    \"statusNotification\": {\n      \"sessionStatus\": \"TRANSFERRED\",\n      \"hipId\": \"IN2810014366\",\n      \"statusResponses\": [\n        {\n          \"careContextReference\": \"10004-20200001768-1\",\n          \"hiStatus\": \"DELIVERED\",\n          \"description\": \"Data sent successfully\"\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "HIU and HIP during data transfer. HIP on the transfer of data would send sessionStatus - one of [TRANSFERRED, FAILED] HIP would also send hiStatus for each careContextReference - on of [DELIVERED, ERRORED] HIU on receipt of data would send sessionStatus - one of [RECEIVED, FAILED]. For example, FAILED when data was not sent or if invalid data was sent HIU would also send hiStatus for each careContextReference - one of [OK, ERRORED]"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2374 @@
+{
+  "info": {
+    "name": "ABDM HIE-CM P2 Consents Management",
+    "description": "Generated from the ABDM HIE-CM specifications. Import hiecm-sandbox.postman_environment.json beside it and fill in clientId and clientSecret: the collection fetches a gateway session token before a call when it needs one.\n\nFolders follow the order a journey is built in. Send the steps in order: each response keeps the txnId and the X-token it returns as collection variables, and the steps after it read them. Callbacks are not included: ABDM sends those to your bridge URL, so receiving them needs a public endpoint, not Postman.\n\nValues ABDM expects encrypted, such as an Aadhaar number or an OTP, are shown as the specification gives them. Encrypt your own values before sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Gets a gateway session token when there is none or it has expired.",
+          "(function () {",
+          "if (pm.request.url.getPath().endsWith('/api/hiecm/gateway/v3/sessions')) return;",
+          "const expiry = Number(pm.environment.get('accessTokenExpiry') || 0);",
+          "if (pm.environment.get('accessToken') && Date.now() < expiry) return;",
+          "pm.sendRequest({",
+          "  url: pm.variables.replaceIn('{{gatewayUrl}}/api/hiecm/gateway/v3/sessions'),",
+          "  method: 'POST',",
+          "  header: {",
+          "    'Content-Type': 'application/json',",
+          "    'REQUEST-ID': pm.variables.replaceIn('{{$guid}}'),",
+          "    'TIMESTAMP': new Date().toISOString(),",
+          "    'X-CM-ID': pm.variables.replaceIn('{{cmId}}'),",
+          "  },",
+          "  body: {",
+          "    mode: 'raw',",
+          "    raw: JSON.stringify({",
+          "      clientId: pm.variables.get('clientId'),",
+          "      clientSecret: pm.variables.get('clientSecret'),",
+          "      grantType: 'client_credentials',",
+          "    }),",
+          "  },",
+          "}, (error, response) => {",
+          "  if (error || response.code >= 300) {",
+          "    console.error('Session token request failed', error || response.text());",
+          "    return;",
+          "  }",
+          "  const {accessToken, expiresIn} = response.json();",
+          "  pm.environment.set('accessToken', accessToken);",
+          "  // A minute early, so a token never expires between this check and the call.",
+          "  pm.environment.set('accessTokenExpiry', Date.now() + (expiresIn - 60) * 1000);",
+          "});",
+          "})();"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Keeps what this response hands to the calls after it, such as the txnId an",
+          "// OTP request returns and the X-token a login returns, as collection variables.",
+          "(function () {",
+          "let body;",
+          "try { body = pm.response.json(); } catch (error) { return; }",
+          "function carriedValues(body) {",
+          "  const list = Array.isArray(body);",
+          "  const first = list ? body[0] : body;",
+          "  if (!first || typeof first !== \"object\") return {};",
+          "  const read = (path) => {",
+          "    let at = first;",
+          "    for (const key of path.split(\".\")) {",
+          "      if (!at || typeof at !== \"object\") return void 0;",
+          "      at = at[key];",
+          "    }",
+          "    return typeof at === \"string\" && at ? at : void 0;",
+          "  };",
+          "  const out = {};",
+          "  const txnId = read(\"txnId\");",
+          "  if (txnId) out[list ? \"searchTxnId\" : \"txnId\"] = txnId;",
+          "  const tokenAt = [\"tokens.token\", \"jwtResponse.token\", \"token\"].find((path) => read(path));",
+          "  if (tokenAt) {",
+          "    const token = read(tokenAt);",
+          "    out[\"X-token\"] = token;",
+          "    out.jwtToken = token;",
+          "    const refresh = read(tokenAt.replace(/token$/, \"refreshToken\"));",
+          "    if (refresh) out[\"R-jwtToken\"] = refresh;",
+          "  }",
+          "  return out;",
+          "}",
+          "const values = carriedValues(body);",
+          "Object.keys(values).forEach(function (key) { pm.collectionVariables.set(key, values[key]); });",
+          "})();"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "txnId",
+      "value": ""
+    },
+    {
+      "key": "searchTxnId",
+      "value": ""
+    },
+    {
+      "key": "X-token",
+      "value": ""
+    },
+    {
+      "key": "jwtToken",
+      "value": ""
+    },
+    {
+      "key": "R-jwtToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "PHR profile, update mobile",
+      "item": [
+        {
+          "name": "1. Request profile OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/request/otp",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "request",
+                "otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-address-profile\",\n    \"mobile-verify\"\n  ],\n  \"loginHint\": \"mobile-number\",\n  \"loginId\": \"{{encryptedData}}\",\n  \"otpSystem\": \"abdm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Send OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Send ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Send Aadhaar OTP - Link-DeLink"
+          }
+        },
+        {
+          "name": "2. Login profile verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/verify",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-address-profile\",\n    \"mobile-verify\"\n  ],\n  \"authData\": {\n    \"authMethods\": [\n      \"otp\"\n    ],\n    \"otp\": {\n      \"txnId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\",\n      \"otpValue\": \"{{encryptedData}}\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Verify OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Password › Verify Password - Update Password\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Verify ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Verify Aadhaar OTP - Link-DeLink"
+          }
+        }
+      ]
+    },
+    {
+      "name": "PHR profile, update password",
+      "item": [
+        {
+          "name": "1. Login profile verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/verify",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-address-profile\",\n    \"password-verify\"\n  ],\n  \"authData\": {\n    \"authMethods\": [\n      \"password\"\n    ],\n    \"password\": {\n      \"abhaAddress\": \"<ABHA_ADDRESS>\",\n      \"password\": \"{{encryptedData}}\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Verify OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Password › Verify Password - Update Password\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Verify ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Verify Aadhaar OTP - Link-DeLink"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Link ABHA number, ABHA OTP",
+      "item": [
+        {
+          "name": "1. Request profile OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/request/otp",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "request",
+                "otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-login\",\n    \"mobile-verify\"\n  ],\n  \"loginHint\": \"abha-number\",\n  \"loginId\": \"<ENCRYPTED_LOGIN_ID>\",\n  \"otpSystem\": \"abdm\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Send OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Send ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Send Aadhaar OTP - Link-DeLink"
+          }
+        },
+        {
+          "name": "2. Login profile verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/verify",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-login\",\n    \"mobile-verify\"\n  ],\n  \"authData\": {\n    \"authMethods\": [\n      \"otp\"\n    ],\n    \"otp\": {\n      \"txnId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\",\n      \"otpValue\": \"{{encryptedData}}\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Verify OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Password › Verify Password - Update Password\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Verify ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Verify Aadhaar OTP - Link-DeLink"
+          }
+        },
+        {
+          "name": "3. Link request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/link",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "link"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"LINK\",\n  \"transactionId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Link Request\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Link Request"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Link ABHA number, Aadhaar OTP",
+      "item": [
+        {
+          "name": "1. Request profile OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/request/otp",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "request",
+                "otp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-login\",\n    \"aadhaar-verify\"\n  ],\n  \"loginHint\": \"abha-number\",\n  \"loginId\": \"<ENCRYPTED_LOGIN_ID>\",\n  \"otpSystem\": \"aadhaar\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Send OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Send ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Send Aadhaar OTP - Link-DeLink"
+          }
+        },
+        {
+          "name": "2. Login profile verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/verify",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "verify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": [\n    \"abha-login\",\n    \"aadhaar-verify\"\n  ],\n  \"authData\": {\n    \"authMethods\": [\n      \"otp\"\n    ],\n    \"otp\": {\n      \"txnId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\",\n      \"otpValue\": \"<ENCRYPTED_OTP_VALUE>\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Mobile › Verify OTP - Update Mobile\n- P2-Consents Management › P2 -PHR Profile › P2 - Update Password › Verify Password - Update Password\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Verify ABHA OTP - Link-DeLink\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Verify Aadhaar OTP - Link-DeLink"
+          }
+        },
+        {
+          "name": "3. Link request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/link",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "link"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"LINK\",\n  \"transactionId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Flows:\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via ABHA OTP › Link Request\n- P2-Consents Management › P2 -PHR Profile › P2 - Link ABHA Number › P2 - via Aadhaar OTP › Link Request"
+          }
+        }
+      ]
+    },
+    {
+      "name": "PHR profile, switch profile",
+      "item": [
+        {
+          "name": "1. Switch profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/switch-profile",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "switch-profile"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "2. Verify user switch profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "T-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/verify/switch-profile/user",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "verify",
+                "switch-profile",
+                "user"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"abhaAddress\": \"<ABHA_ADDRESS>\",\n  \"txnId\": \"37d8d312-35a0-41e7-a6e4-1074eb18a5fa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "PHR profile, card, QR code and session",
+      "item": [
+        {
+          "name": "1. Get profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<X_AUTH_TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "2. Get QR code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<X_AUTH_TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/qrCode",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "qrCode"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "3. Get PHR card",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<X_AUTH_TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/phrCard",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "phrCard"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "4. Update profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/updateProfile",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "updateProfile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profilePhoto\": \"\",\n  \"firstName\": \"John\",\n  \"middleName\": \"\",\n  \"lastName\": \"Doe\",\n  \"dayOfBirth\": \"<DOB>\",\n  \"monthOfBirth\": \"<DOB>\",\n  \"yearOfBirth\": \"<DOB>\",\n  \"gender\": \"M\",\n  \"email\": \"<EMAIL>\",\n  \"mobile\": \"******0903\",\n  \"address\": \"<ADDRESS>\",\n  \"stateName\": \"Maharashtra\",\n  \"districtName\": \"<ADDRESS>\",\n  \"pinCode\": \"<PINCODE>\",\n  \"stateCode\": \"27\",\n  \"districtCode\": \"12\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "5. Refresh token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "R-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/request/token",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "request",
+                "token"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "6. Logout",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "X-token",
+                "value": "Bearer <JWT TOKEN>"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              }
+            ],
+            "url": {
+              "raw": "{{abhaUrl}}/abha/api/v3/phr/app/login/profile/request/logout",
+              "host": [
+                "{{abhaUrl}}"
+              ],
+              "path": [
+                "abha",
+                "api",
+                "v3",
+                "phr",
+                "app",
+                "login",
+                "profile",
+                "request",
+                "logout"
+              ]
+            },
+            "description": ""
+          }
+        }
+      ]
+    },
+    {
+      "name": "Quick OPD Registration",
+      "item": [
+        {
+          "name": "1. OPD token generation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "Bearer <TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/patient-share/v3/share",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "patient-share",
+                "v3",
+                "share"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"intent\": \"PROFILE_SHARE\",\n  \"metaData\": {\n    \"hipId\": \"HIP_1\",\n    \"context\": \"6\",\n    \"hprId\": \"<EMAIL>\",\n    \"latitude\": 20.5937,\n    \"longitude\": 78.9629\n  },\n  \"profile\": {\n    \"patient\": {\n      \"abhaNumber\": \"<ABHA_NUMBER>\",\n      \"abhaAddress\": \"<ABHA_ADDRESS>\",\n      \"name\": \"<NAME>\",\n      \"gender\": \"M\",\n      \"dayOfBirth\": \"<DOB>\",\n      \"monthOfBirth\": \"<DOB>\",\n      \"yearOfBirth\": \"9999\",\n      \"address\": {\n        \"line\": \"Address line 1\",\n        \"district\": \"Coimbatore\",\n        \"state\": \"Tamil Nadu\",\n        \"pincode\": \"<PINCODE>\"\n      },\n      \"phoneNumber\": \"<MOBILE_NUMBER>\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "This is an API will be invoked from the **PHR-HIU** to share the user/patient profile with HMIS/LIMS.\n\n **Header**\n\nAuthorisation will be provided by the gateway session API after the successful verification of client ID and Secret [ Example: ]\n\nREQUEST-ID unique UUID[ Example: 18235d89-cb13-479d-ad71-7a57d5f669a8 ]\n\nTIMESTAMP actual time of the requested was initiated[ Example: 2022-10-06T10:10:00.587Z ]\n\nX-AUTH-TOKEN JWT Authentication token which was issued by ABDM after successful validation of username and password[ Example: ]\n\nX-CM-ID consent manager ID[ Example: sbx ]\n\nX-HIU-ID HIU ID[ Example: HIU ]\n\n **Request Body**\n\nintent This is a key value pair which contains the purpose [ Example: {purpose: PROFILE_SHARE } ]\n\nmetaData This is a key value pair which contains the location longitude and latitude[ Example: {HIP_ID: ABDM_HIP, context: 123, lat: 20.5937 long: 78.9629} ]\n\nprofile which contains user details."
+          }
+        },
+        {
+          "name": "3. OPD Token History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "Bearer <TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/patient-share/v3/profile/getTokenDetails?limit=",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "patient-share",
+                "v3",
+                "profile",
+                "getTokenDetails"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "This is an API will be invoked get the historical token numbers of the patient.\n\n **Header**\n\nAUTHORIZATION will be provided by the gateway session API after the successful verification of client ID and Secret [ Example: ]\n\nREQUEST-ID unique UUID[ Example: 18235d89-cb13-479d-ad71-7a57d5f669a8 ]\n\nTIMESTAMP actual time of the requested was initiated[ Example: 2022-10-06T10:10:00.587Z ]"
+          }
+        }
+      ]
+    },
+    {
+      "name": "User initiated linking",
+      "item": [
+        {
+          "name": "1. Fetch the list of providers filtered by name",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/gateway/v3/providers",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "gateway",
+                "v3",
+                "providers"
+              ],
+              "query": [
+                {
+                  "key": "name",
+                  "value": "ABC Hospital",
+                  "disabled": true
+                },
+                {
+                  "key": "stateCode",
+                  "value": "-1",
+                  "disabled": true
+                },
+                {
+                  "key": "districtCode",
+                  "value": "-1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve a list of providers, filtered by their names. When invoked, it queries the system to fetch providers that match the specified name criteria. This functionality is particularly useful for narrowing down provider options based on specific naming conventions or patterns. By using this API, users can efficiently locate and manage providers within the network, ensuring they have access to the relevant provider information needed for various operational tasks."
+          }
+        },
+        {
+          "name": "2. Fetch the record for provider details for requested provider ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/gateway/v3/providers/:hip-id",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "gateway",
+                "v3",
+                "providers",
+                ":hip-id"
+              ],
+              "variable": [
+                {
+                  "key": "hip-id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Retrieve the details of a specific provider based on the provided provider ID. When invoked, it queries the system to fetch comprehensive information about the provider identified by the given ID."
+          }
+        },
+        {
+          "name": "3. Discover his/her health records",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/patient/care-context/discover",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "patient",
+                "care-context",
+                "discover"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hip\": {\n    \"id\": \"cowin_hip_01\"\n  },\n  \"unverifiedIdentifiers\": [\n    {\n      \"type\": \"MOBILE\",\n      \"value\": \"+9198765*****\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Be invoked by the patient or user through the Personal Health Record (PHR) application to discover their health records. By using this API, patients can initiate a search to locate and access their health information across various Health Information Providers (HIPs). This functionality empowers patients to have greater control and visibility over their health data, facilitating a more informed and engaged approach to managing their health. The API supports the seamless retrieval of health records, ensuring that patients can easily discover and review their care contexts."
+          }
+        },
+        {
+          "name": "5. Link his/her health records",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/link/care-context/init",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "link",
+                "care-context",
+                "init"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"f901b782-bfdf-4224-9f8d-da2cadc20c0d\",\n  \"patient\": [\n    {\n      \"referenceNumber\": \"<ABHA_ADDRESS>\",\n      \"display\": \"Test\",\n      \"careContexts\": [\n        {\n          \"referenceNumber\": \"abc123\",\n          \"display\": \"Sugar Test\"\n        }\n      ],\n      \"hiType\": \"OPConsultation\",\n      \"count\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Be invoked by the patient or user to link their health records. By using this API, patients can initiate the process of associating their health information with their ABHA (Ayushman Bharat Health Account) address. This functionality empowers patients to actively manage and consolidate their health records, ensuring that all relevant care contexts are accurately linked and accessible. The API supports a seamless and efficient health information exchange, enhancing the overall quality and continuity of care within the healthcare ecosystem."
+          }
+        },
+        {
+          "name": "7. Confirm his/her health records",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/user-initiated-linking/v3/link/care-context/confirm",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "user-initiated-linking",
+                "v3",
+                "link",
+                "care-context",
+                "confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": 123456,\n  \"linkRefNumber\": \"d353b782-bfdf-4224-9f8d-da2cadc20c0d\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Be invoked by the patient or user to confirm their health records. By using this API, patients can validate and confirm the linkage of their health information to their ABHA (Ayushman Bharat Health Account) address. This confirmation process ensures that all relevant care contexts are accurately linked and verified, providing patients with control over their health data. The API supports a seamless and efficient health information exchange, enhancing the overall quality and continuity of care within the healthcare ecosystem."
+          }
+        },
+        {
+          "name": "9. Fetch the list of govt programmes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/gateway/v3/govt-programs",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "gateway",
+                "v3",
+                "govt-programs"
+              ]
+            },
+            "description": "Retrieve a list of government programmes. When invoked, it queries the system to fetch comprehensive information about various government programmes available. This functionality is particularly useful for users who need to access detailed information about different programmes.\n **Note:**\n\nThis API will retrive the list of govt-programmes in the form of list."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consent manager, HIU and HIP",
+      "item": [
+        {
+          "name": "1. Link patient links",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<X_AUTH_TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/hip/v3/link/patient/links?limit=",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "hip",
+                "v3",
+                "link",
+                "patient",
+                "links"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Retrieve all linked care contexts for a patient from various Health Information Providers (HIPs). By invoking this API, users can obtain a comprehensive list of care contexts associated with a patient’s ABHA (Ayushman Bharat Health Account) address. This functionality is essential for ensuring that all relevant health records are accessible and consolidated, thereby supporting coordinated and efficient patient care. The API facilitates seamless health information exchange, enhancing the overall quality and continuity of care within the healthcare ecosystem."
+          }
+        },
+        {
+          "name": "2. Initiate the consent request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/init",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "init"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consent\": {\n    \"purpose\": {\n      \"text\": \"Care Management\",\n      \"code\": \"CAREMGT\",\n      \"refUri\": \"www.abc.com\"\n    },\n    \"patient\": {\n      \"id\": \"<ABHA_ADDRESS>\"\n    },\n    \"hip\": null,\n    \"hiu\": {\n      \"id\": \"cowin_hiu_01\"\n    },\n    \"careContexts\": [\n      {\n        \"patientReference\": \"batman@tmh\",\n        \"careContextReference\": \"Episode1\"\n      }\n    ],\n    \"requester\": {\n      \"name\": \"<ABHA_ADDRESS>\",\n      \"identifier\": {\n        \"value\": \"REG1\",\n        \"type\": \"MH1001\",\n        \"system\": \"https://www.sample.com\"\n      }\n    },\n    \"hiTypes\": [\n      \"Prescription\"\n    ],\n    \"permission\": {\n      \"accessMode\": \"VIEW\",\n      \"dateRange\": {\n        \"from\": \"2021-09-28T12:30:08.573Z\",\n        \"to\": \"2021-09-28T12:30:08.573Z\"\n      },\n      \"dataEraseAt\": \"2021-09-28T12:30:08.573Z\",\n      \"frequency\": {\n        \"unit\": \"HOUR\",\n        \"value\": 1,\n        \"repeats\": 0\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a consent request by a Health Information User (HIU) to access a patient’s health data. By invoking this API, the HIU initiates the process of obtaining the necessary permissions from the patient to retrieve their health information. This consent request is a critical component of the health information exchange framework, ensuring that patient data is accessed in a secure, authorised, and transparent manner. The API supports the establishment of trust and compliance with privacy regulations, facilitating seamless and ethical health information exchange."
+          }
+        },
+        {
+          "name": "3. Get consent request status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/status",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentRequestId\": \"5f7a535d-a3fd-416b-b069-c97d021fbacd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Retrieve the status of a previously initiated consent request. By invoking this API, users can check the current state of their consent request, whether it is pending, approved, denied, or expired. This functionality is essential for maintaining transparency and keeping users informed about the progress of their consent requests. The API supports efficient tracking and management of consent, ensuring that health information exchange processes are conducted in a secure and compliant manner."
+          }
+        },
+        {
+          "name": "4. Acknowledge the consent notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/hip/on-notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "hip",
+                "on-notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledgement\": {\n    \"status\": \"OK\",\n    \"consentId\": \"e3c74829-3f82-4f94-959e-e10f57bcd57b\"\n  },\n  \"response\": {\n    \"requestId\": \"6f0b4665-a915-4c92-aa36-65afb4a2cd71\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Notification of consents, in cases of consent approval, revocation and expiration. Notified by CM earlier via Gateway API - **/api/v3/consent/request/hip/notify**"
+          }
+        },
+        {
+          "name": "5. Acknowledge the consent notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/hiu/on-notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "hiu",
+                "on-notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledgement\": [\n    {\n      \"status\": \"OK\",\n      \"consentId\": \"e3c74829-3f82-4f94-959e-e10f57bcd57b\"\n    }\n  ],\n  \"error\": {\n    \"code\": \"ABDM-1001\",\n    \"message\": \"unable to connect database\"\n  },\n  \"response\": {\n    \"requestId\": \"6f0b4665-a915-4c92-aa36-65afb4a2cd71\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Consent notifications, specifically for cases when consent is APPROVED, DENIED, or REVOKED or EXPIRED. Notified by CM earlier via Gateway API - **/api/v3/hiu/consent/request/notify**"
+          }
+        },
+        {
+          "name": "6. Fetch the consent details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/fetch",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "fetch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentId\": \"5f7a535d-a3fd-416b-b069-c97d021fbacd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fetch the details of a consent using the consent artefact ID. By invoking this API, HIUs can retrieve comprehensive information about a specific consent, including its status, scope, and any associated conditions. This functionality is essential for ensuring that HIUs have access to accurate and up-to-date consent information, supporting secure and compliant health information exchange. The API facilitates efficient management and verification of consents, enhancing the overall integrity of the consent management process."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consent manager, fetch and manage consent requests",
+      "item": [
+        {
+          "name": "1. Setup an auto-approval policy for given HIU",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/auto/approve",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "auto",
+                "approve"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isApplicableForAllHIPs\": false,\n  \"hiu\": {\n    \"id\": \"cowin_hiu_01\",\n    \"name\": \"Cowin\",\n    \"type\": \"HIU\"\n  },\n  \"includedSources\": [\n    {\n      \"hiTypes\": [\n        \"Prescription\"\n      ],\n      \"purpose\": {\n        \"text\": \"Care Management\",\n        \"code\": \"CAREMGT\",\n        \"refUri\": \"www.abc.com\"\n      },\n      \"hip\": {\n        \"id\": \"cowin_hip_01\",\n        \"name\": \"Cowin\",\n        \"type\": \"HIP\"\n      },\n      \"period\": {\n        \"from\": \"2021-09-28T12:30:08.573Z\",\n        \"to\": \"2021-09-28T12:30:08.573Z\"\n      }\n    }\n  ],\n  \"excludedSources\": [\n    {\n      \"hiTypes\": [\n        \"Prescription\"\n      ],\n      \"purpose\": {\n        \"text\": \"Care Management\",\n        \"code\": \"CAREMGT\",\n        \"refUri\": \"www.abc.com\"\n      },\n      \"hip\": {\n        \"id\": \"cowin_hip_01\",\n        \"name\": \"Cowin\",\n        \"type\": \"HIP\"\n      },\n      \"period\": {\n        \"from\": \"2021-09-28T12:30:08.573Z\",\n        \"to\": \"2021-09-28T12:30:08.573Z\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set up an auto-approval policy for a specified Health Information User (HIU). By invoking this API, users can configure automatic approval of consent requests from the designated HIU, streamlining the process of granting access to health data. This functionality is essential for enhancing efficiency and reducing manual intervention in the consent management process. The API supports secure and compliant health information exchange, ensuring that auto-approval policies are implemented in accordance with user preferences and regulatory requirements."
+          }
+        },
+        {
+          "name": "2. Disable the auto-approval policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/auto/approve/:consentId/disable",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "auto",
+                "approve",
+                ":consentId",
+                "disable"
+              ],
+              "variable": [
+                {
+                  "key": "consentId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Disable an existing auto-approval policy. By invoking this API, users can deactivate the automatic approval of consent requests for the specified Health Information User (HIU). This functionality is essential for maintaining control over consent management, allowing users to modify or revoke auto-approval settings as needed."
+          }
+        },
+        {
+          "name": "3. Enable the auto-approval policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/auto/approve/:consentId/enable",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "auto",
+                "approve",
+                ":consentId",
+                "enable"
+              ],
+              "variable": [
+                {
+                  "key": "consentId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Enable an existing auto-approval policy. By invoking this API, users can activate the automatic approval of consent requests for the specified Health Information User (HIU). This functionality is essential for streamlining the consent management process, allowing consent requests to be automatically approved without manual intervention. The API supports secure and compliant health information exchange, ensuring that auto-approval policies are implemented in accordance with user preferences and regulatory requirements."
+          }
+        },
+        {
+          "name": "4. Fetch all the consent request details of a patient",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request?limit=",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Fetch all consent request details for a patient. By invoking this API, users can retrieve a comprehensive list of all consent requests associated with a patient’s health information. This functionality is essential for maintaining transparency and ensuring that users have access to complete and up-to-date consent information. The API supports efficient tracking and management of consent requests, facilitating secure and compliant health information exchange within the healthcare ecosystem."
+          }
+        },
+        {
+          "name": "5. Get the consent request details by REQUEST-ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/:consentRequestId",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                ":consentRequestId"
+              ],
+              "variable": [
+                {
+                  "key": "consentRequestId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Retrieve the details of a consent request using the REQUEST-ID. By invoking this API, users can obtain comprehensive information about a specific consent request, including its status, scope, and any associated conditions. This functionality is essential for ensuring that users have access to accurate and up-to-date consent information, supporting secure and compliant health information exchange. The API facilitates efficient management and verification of consent requests, enhancing the overall integrity of the consent management process."
+          }
+        },
+        {
+          "name": "6. Approve the consent request raised by HIU from PHR/mobile application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/:consentRequestId/approve",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                ":consentRequestId",
+                "approve"
+              ],
+              "variable": [
+                {
+                  "key": "consentRequestId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consents\": [\n    {\n      \"hiTypes\": [\n        \"Prescription\"\n      ],\n      \"hip\": {\n        \"id\": \"ABCD_12345\",\n        \"name\": \"ABCD Hospital\",\n        \"type\": \"HIP\"\n      },\n      \"careContexts\": [\n        {\n          \"patientReference\": \"batman@tmh\",\n          \"careContextReference\": \"Episode1\"\n        }\n      ],\n      \"permission\": {\n        \"dateRange\": {\n          \"from\": \"2021-09-28T12:30:08.573Z\",\n          \"to\": \"2021-09-28T12:30:08.573Z\"\n        },\n        \"frequency\": {\n          \"unit\": \"HOUR\",\n          \"value\": 1,\n          \"repeats\": 0\n        },\n        \"accessMode\": \"VIEW\",\n        \"dataEraseAt\": \"2021-09-28T12:30:08.573Z\"\n      }\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Approve a consent request, specifying their preferred data access parameters. By invoking this API, the user grants permission for the Health Information User (HIU) to access their health data under the defined conditions. This approval process is essential for ensuring that patient data is shared securely and in accordance with the user’s preferences, supporting a transparent and compliant health information exchange. The API facilitates the establishment of trust and adherence to privacy regulations, enabling ethical and efficient access to health information."
+          }
+        },
+        {
+          "name": "7. Deny the consent request raised by HIU from PHR/mobile application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/:consentRequestId/deny",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                ":consentRequestId",
+                "deny"
+              ],
+              "variable": [
+                {
+                  "key": "consentRequestId",
+                  "value": ""
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Not authorized\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Deny a consent request from the Personal Health Record (PHR) or mobile application. By invoking this API, users can reject a consent request, preventing the Health Information User (HIU) from accessing their health data. This functionality is essential for maintaining user control over their health information, ensuring that consents are managed according to the user’s preferences. The API supports secure and compliant health information exchange, enabling users to deny consent requests as needed."
+          }
+        },
+        {
+          "name": "8. Revoke the granted consent from PHR/mobile application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/revoke",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "revoke"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consents\": [\n    \"3fa85f64-5717-4562-b3fc-2c963f66afa6\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Revoke a previously approved consent from the Personal Health Record (PHR) or mobile application. By invoking this API, users can withdraw their consent, thereby terminating the permissions granted to access their health data. This functionality is essential for maintaining user control over their health information, ensuring that consents can be managed dynamically and in accordance with the user’s preferences. The API supports secure and compliant health information exchange, enabling users to revoke consent as needed."
+          }
+        },
+        {
+          "name": "9. Request artefact by consent REQUEST-ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/artefact/request/:consentRequestId",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "artefact",
+                "request",
+                ":consentRequestId"
+              ],
+              "variable": [
+                {
+                  "key": "consentRequestId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Fetch all consent artefact details associated with a specific consent REQUEST-ID. By invoking this API, users can retrieve comprehensive information about all consent artefacts linked to the given REQUEST-ID, including their status, scope, and any associated conditions. This functionality is essential for ensuring that users have access to accurate and up-to-date consent artefact information, supporting secure and compliant health information exchange. The API facilitates efficient management and verification of consent artefacts, enhancing the overall integrity of the consent management process."
+          }
+        },
+        {
+          "name": "10. Fetch the consent artefact details associated with the artefact-ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/artefact/:consentId",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "artefact",
+                ":consentId"
+              ],
+              "variable": [
+                {
+                  "key": "consentId",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Fetch the details of a consent artefact associated with a specific artefact ID. By invoking this API, users can retrieve comprehensive information about the consent artefact, including its status, scope, and any associated conditions. This functionality is essential for ensuring that users have access to accurate and up-to-date consent artefact information, supporting secure and compliant health information exchange. The API facilitates efficient management and verification of consent artefacts, enhancing the overall integrity of the consent management process."
+          }
+        },
+        {
+          "name": "11. Fetch all the consent artefact details of a patient",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-AUTH-TOKEN",
+                "value": "<TOKEN>"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/artefact?limit=",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "artefact"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": ""
+                },
+                {
+                  "key": "offset",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Fetch all consent artefact details for a patient. By invoking this API, users can retrieve comprehensive information about all consent artefacts associated with the patient’s health information. This functionality is essential for maintaining transparency and ensuring that users have access to complete and up-to-date consent artefact information. The API supports efficient tracking and management of consent artefacts, facilitating secure and compliant health information exchange within the healthcare ecosystem."
+          }
+        }
+      ]
+    }
+  ]
+}

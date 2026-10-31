@@ -467,3 +467,69 @@ class VisitSummary(Base):
     sections_json = Column(JSONType, default=dict)  # {"told": [...], "advice": [...], "next": [...], "urgent": [...]}
     engine = Column(String(20), default="rules")    # 'live' (your model) or 'rules'
     created_at = Column(DateTime(timezone=True), default=utc_now, index=True)
+
+
+class HiecmConsentRequest(Base):
+    """ABDM HIE-CM v3 Consent Request initiated by HIU and approved/denied by Patient."""
+    __tablename__ = "hiecm_consent_requests"
+
+    request_id = Column(String(64), primary_key=True)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=True, index=True)
+    patient_abha = Column(String(100), nullable=True, index=True)
+    status = Column(String(20), default="REQUESTED", index=True)  # REQUESTED, GRANTED, DENIED, EXPIRED, REVOKED
+    hiu_id = Column(String(50), default="cowin_hiu_01")
+    hip_id = Column(String(50), nullable=True)
+    purpose_code = Column(String(50), default="CAREMGT")
+    purpose_text = Column(String(255), default="Care Management")
+    purpose_ref_uri = Column(String(255), nullable=True)
+    requester_name = Column(String(150), nullable=True)
+    requester_type = Column(String(50), nullable=True)
+    requester_system = Column(String(255), nullable=True)
+    hi_types_json = Column(JSONType, default=list)
+    care_contexts_json = Column(JSONType, default=list)
+    access_mode = Column(String(20), default="VIEW")
+    date_range_from = Column(DateTime(timezone=True), nullable=True)
+    date_range_to = Column(DateTime(timezone=True), nullable=True)
+    data_erase_at = Column(DateTime(timezone=True), nullable=True)
+    frequency_json = Column(JSONType, default=dict)
+    denial_reason = Column(String(255), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    last_updated = Column(DateTime(timezone=True), default=utc_now)
+
+
+class HiecmConsentArtefact(Base):
+    """ABDM HIE-CM v3 Cryptographic Consent Artefact granted by the patient."""
+    __tablename__ = "hiecm_consent_artefacts"
+
+    artefact_id = Column(String(64), primary_key=True)
+    consent_request_id = Column(String(64), ForeignKey("hiecm_consent_requests.request_id"), nullable=False, index=True)
+    patient_id = Column(String(36), ForeignKey("patient_profiles.patient_id"), nullable=True, index=True)
+    patient_abha = Column(String(100), nullable=False, index=True)
+    status = Column(String(20), default="GRANTED", index=True)  # GRANTED, REVOKED, EXPIRED
+    hiu_id = Column(String(50), nullable=False)
+    hip_id = Column(String(50), nullable=False)
+    hip_name = Column(String(150), nullable=True)
+    care_contexts_json = Column(JSONType, default=list)
+    hi_types_json = Column(JSONType, default=list)
+    permission_json = Column(JSONType, default=dict)
+    signature = Column(Text, nullable=True)
+    signed_at = Column(DateTime(timezone=True), default=utc_now)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+
+
+class HiecmDataFlowTransaction(Base):
+    """ABDM HIE-CM v3 Data Flow transaction tracking transfer of health information between HIP and HIU."""
+    __tablename__ = "hiecm_data_flow_transactions"
+
+    transaction_id = Column(String(64), primary_key=True)
+    consent_id = Column(String(64), ForeignKey("hiecm_consent_artefacts.artefact_id"), nullable=False, index=True)
+    status = Column(String(20), default="INITIATED", index=True)  # INITIATED, TRANSFERRED, RECEIVED, FAILED
+    hiu_id = Column(String(50), nullable=True)
+    hip_id = Column(String(50), nullable=True)
+    data_push_url = Column(String(500), nullable=True)
+    key_material_json = Column(JSONType, nullable=True)
+    date_range_json = Column(JSONType, nullable=True)
+    status_notification_json = Column(JSONType, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now)
+

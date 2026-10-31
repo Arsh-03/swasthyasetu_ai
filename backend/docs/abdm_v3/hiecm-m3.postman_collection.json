@@ -1,0 +1,491 @@
+{
+  "info": {
+    "name": "ABDM HIE-CM M3 Health Information User",
+    "description": "Generated from the ABDM HIE-CM specifications. Import hiecm-sandbox.postman_environment.json beside it and fill in clientId and clientSecret: the collection fetches a gateway session token before a call when it needs one.\n\nFolders follow the order a journey is built in. Send the steps in order: each response keeps the txnId and the X-token it returns as collection variables, and the steps after it read them. Callbacks are not included: ABDM sends those to your bridge URL, so receiving them needs a public endpoint, not Postman.\n\nValues ABDM expects encrypted, such as an Aadhaar number or an OTP, are shown as the specification gives them. Encrypt your own values before sending.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Gets a gateway session token when there is none or it has expired.",
+          "(function () {",
+          "if (pm.request.url.getPath().endsWith('/api/hiecm/gateway/v3/sessions')) return;",
+          "const expiry = Number(pm.environment.get('accessTokenExpiry') || 0);",
+          "if (pm.environment.get('accessToken') && Date.now() < expiry) return;",
+          "pm.sendRequest({",
+          "  url: pm.variables.replaceIn('{{gatewayUrl}}/api/hiecm/gateway/v3/sessions'),",
+          "  method: 'POST',",
+          "  header: {",
+          "    'Content-Type': 'application/json',",
+          "    'REQUEST-ID': pm.variables.replaceIn('{{$guid}}'),",
+          "    'TIMESTAMP': new Date().toISOString(),",
+          "    'X-CM-ID': pm.variables.replaceIn('{{cmId}}'),",
+          "  },",
+          "  body: {",
+          "    mode: 'raw',",
+          "    raw: JSON.stringify({",
+          "      clientId: pm.variables.get('clientId'),",
+          "      clientSecret: pm.variables.get('clientSecret'),",
+          "      grantType: 'client_credentials',",
+          "    }),",
+          "  },",
+          "}, (error, response) => {",
+          "  if (error || response.code >= 300) {",
+          "    console.error('Session token request failed', error || response.text());",
+          "    return;",
+          "  }",
+          "  const {accessToken, expiresIn} = response.json();",
+          "  pm.environment.set('accessToken', accessToken);",
+          "  // A minute early, so a token never expires between this check and the call.",
+          "  pm.environment.set('accessTokenExpiry', Date.now() + (expiresIn - 60) * 1000);",
+          "});",
+          "})();"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Keeps what this response hands to the calls after it, such as the txnId an",
+          "// OTP request returns and the X-token a login returns, as collection variables.",
+          "(function () {",
+          "let body;",
+          "try { body = pm.response.json(); } catch (error) { return; }",
+          "function carriedValues(body) {",
+          "  const list = Array.isArray(body);",
+          "  const first = list ? body[0] : body;",
+          "  if (!first || typeof first !== \"object\") return {};",
+          "  const read = (path) => {",
+          "    let at = first;",
+          "    for (const key of path.split(\".\")) {",
+          "      if (!at || typeof at !== \"object\") return void 0;",
+          "      at = at[key];",
+          "    }",
+          "    return typeof at === \"string\" && at ? at : void 0;",
+          "  };",
+          "  const out = {};",
+          "  const txnId = read(\"txnId\");",
+          "  if (txnId) out[list ? \"searchTxnId\" : \"txnId\"] = txnId;",
+          "  const tokenAt = [\"tokens.token\", \"jwtResponse.token\", \"token\"].find((path) => read(path));",
+          "  if (tokenAt) {",
+          "    const token = read(tokenAt);",
+          "    out[\"X-token\"] = token;",
+          "    out.jwtToken = token;",
+          "    const refresh = read(tokenAt.replace(/token$/, \"refreshToken\"));",
+          "    if (refresh) out[\"R-jwtToken\"] = refresh;",
+          "  }",
+          "  return out;",
+          "}",
+          "const values = carriedValues(body);",
+          "Object.keys(values).forEach(function (key) { pm.collectionVariables.set(key, values[key]); });",
+          "})();"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "txnId",
+      "value": ""
+    },
+    {
+      "key": "searchTxnId",
+      "value": ""
+    },
+    {
+      "key": "X-token",
+      "value": ""
+    },
+    {
+      "key": "jwtToken",
+      "value": ""
+    },
+    {
+      "key": "R-jwtToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Consent and data flow",
+      "item": [
+        {
+          "name": "1. Initiate the consent request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/init",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "init"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consent\": {\n    \"purpose\": {\n      \"text\": \"Care Management\",\n      \"code\": \"CAREMGT\",\n      \"refUri\": \"www.abc.com\"\n    },\n    \"patient\": {\n      \"id\": \"<ABHA_ADDRESS>\"\n    },\n    \"hip\": null,\n    \"hiu\": {\n      \"id\": \"cowin_hiu_01\"\n    },\n    \"careContexts\": [\n      {\n        \"patientReference\": \"batman@tmh\",\n        \"careContextReference\": \"Episode1\"\n      }\n    ],\n    \"requester\": {\n      \"name\": \"<ABHA_ADDRESS>\",\n      \"identifier\": {\n        \"value\": \"REG1\",\n        \"type\": \"MH1001\",\n        \"system\": \"https://www.sample.com\"\n      }\n    },\n    \"hiTypes\": [\n      \"Prescription\"\n    ],\n    \"permission\": {\n      \"accessMode\": \"VIEW\",\n      \"dateRange\": {\n        \"from\": \"2021-09-28T12:30:08.573Z\",\n        \"to\": \"2021-09-28T12:30:08.573Z\"\n      },\n      \"dataEraseAt\": \"2021-09-28T12:30:08.573Z\",\n      \"frequency\": {\n        \"unit\": \"HOUR\",\n        \"value\": 1,\n        \"repeats\": 0\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create a consent request by a Health Information User (HIU) to access a patient’s health data. By invoking this API, the HIU initiates the process of obtaining the necessary permissions from the patient to retrieve their health information. This consent request is a critical component of the health information exchange framework, ensuring that patient data is accessed in a secure, authorised, and transparent manner. The API supports the establishment of trust and compliance with privacy regulations, facilitating seamless and ethical health information exchange."
+          }
+        },
+        {
+          "name": "2. Get consent request status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/status",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentRequestId\": \"5f7a535d-a3fd-416b-b069-c97d021fbacd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Retrieve the status of a previously initiated consent request. By invoking this API, users can check the current state of their consent request, whether it is pending, approved, denied, or expired. This functionality is essential for maintaining transparency and keeping users informed about the progress of their consent requests. The API supports efficient tracking and management of consent, ensuring that health information exchange processes are conducted in a secure and compliant manner."
+          }
+        },
+        {
+          "name": "3. Acknowledge the consent notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/request/hiu/on-notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "request",
+                "hiu",
+                "on-notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"acknowledgement\": [\n    {\n      \"status\": \"OK\",\n      \"consentId\": \"e3c74829-3f82-4f94-959e-e10f57bcd57b\"\n    }\n  ],\n  \"error\": {\n    \"code\": \"ABDM-1001\",\n    \"message\": \"unable to connect database\"\n  },\n  \"response\": {\n    \"requestId\": \"6f0b4665-a915-4c92-aa36-65afb4a2cd71\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Consent notifications, specifically for cases when consent is APPROVED, DENIED, or REVOKED or EXPIRED. Notified by CM earlier via Gateway API - **/api/v3/hiu/consent/request/notify**"
+          }
+        },
+        {
+          "name": "4. Fetch the consent details",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/consent/v3/fetch",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "consent",
+                "v3",
+                "fetch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consentId\": \"5f7a535d-a3fd-416b-b069-c97d021fbacd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fetch the details of a consent using the consent artefact ID. By invoking this API, HIUs can retrieve comprehensive information about a specific consent, including its status, scope, and any associated conditions. This functionality is essential for ensuring that HIUs have access to accurate and up-to-date consent information, supporting secure and compliant health information exchange. The API facilitates efficient management and verification of consents, enhancing the overall integrity of the consent management process."
+          }
+        },
+        {
+          "name": "5. Submit the health information data request from HIU",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "X-HIU-ID",
+                "value": "{{hiuId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/data-flow/v3/health-information/request",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "data-flow",
+                "v3",
+                "health-information",
+                "request"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hiRequest\": {\n    \"consent\": {\n      \"id\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\"\n    },\n    \"dateRange\": {\n      \"from\": \"2022-10-06T15:10:00.587Z\",\n      \"to\": \"2022-11-06T15:10:00.587Z\"\n    },\n    \"dataPushUrl\": \"https://live.ndhm.gov.in/api-hiu/data/notification\",\n    \"keyMaterial\": {\n      \"cryptoAlg\": \"ECDH\",\n      \"curve\": \"curve25519\",\n      \"dhPublicKey\": {\n        \"expiry\": \"2022-12-28T13:18:20.742Z\",\n        \"parameters\": \"Ephemeral public key\",\n        \"keyValue\": \"BFN7KTdOT0jIAExG2A8Jg+01wMPWxptiGqwHRVvtiVEsUq2FR7P2UdqZxJyPJSeR6muai21iQhasNxnhh8I5M+g=\"\n      },\n      \"nonce\": \"28236d89-cb13-479d-ad71-7a57d5f669a9\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Facilitates the exchange of health data between Health Information Providers (HIP) and Health Information Users (HIU) within the ABDM system. It ensures secure and efficient data transfer, enabling seamless communication and interoperability between different healthcare entities.\n1. **X-HIU-ID** if the requester is HIU (SERVICE-ID)."
+          }
+        },
+        {
+          "name": "6. Submit the notifications corresponding to events during data flow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/data-flow/v3/health-information/notify",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "data-flow",
+                "v3",
+                "health-information",
+                "notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notification\": {\n    \"consentId\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\",\n    \"transactionId\": \"18235d89-cb13-479d-ad71-7a57d5f669a8\",\n    \"doneAt\": \"2023-01-24T06:35:44.167Z\",\n    \"notifier\": {\n      \"type\": \"HIU\",\n      \"id\": \"100005\"\n    },\n    \"statusNotification\": {\n      \"sessionStatus\": \"RECEIVED\",\n      \"hipId\": \"IN2810014366\",\n      \"statusResponses\": [\n        {\n          \"careContextReference\": \"10004-20200001768-1\",\n          \"hiStatus\": \"OK\",\n          \"description\": \"Data received successfully\"\n        }\n      ]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "HIU and HIP during data transfer. HIP on the transfer of data would send sessionStatus - one of [TRANSFERRED, FAILED] HIP would also send hiStatus for each careContextReference - on of [DELIVERED, ERRORED] HIU on receipt of data would send sessionStatus - one of [RECEIVED, FAILED]. For example, FAILED when data was not sent or if invalid data was sent HIU would also send hiStatus for each careContextReference - one of [OK, ERRORED]"
+          }
+        },
+        {
+          "name": "7. Get the current status of the health information request",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "REQUEST-ID",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "TIMESTAMP",
+                "value": "{{$isoTimestamp}}"
+              },
+              {
+                "key": "X-CM-ID",
+                "value": "{{cmId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gatewayUrl}}/api/hiecm/data-flow/v3/health-information/request/status/:transaction-id",
+              "host": [
+                "{{gatewayUrl}}"
+              ],
+              "path": [
+                "api",
+                "hiecm",
+                "data-flow",
+                "v3",
+                "health-information",
+                "request",
+                "status",
+                ":transaction-id"
+              ],
+              "variable": [
+                {
+                  "key": "transaction-id",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "Allow Health Information Users (HIU) and Health Information Providers (HIP) to retrieve the current status of a specific Health Information Request. By providing the unique transaction ID, users can query the system to obtain real-time updates on the processing state of their request. This functionality is crucial for ensuring transparency and efficient communication between stakeholders in the health information exchange ecosystem. The API supports various status checks, including pending, in-progress, completed, and failed states."
+          }
+        }
+      ]
+    }
+  ]
+}

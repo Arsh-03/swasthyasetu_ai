@@ -23,11 +23,23 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
   const [records, setRecords] = useState<RecordSummary[]>([]);
   const [recordsStatus, setRecordsStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [selectedRecord, setSelectedRecord] = useState('');
+  const [purposeCode, setPurposeCode] = useState<'CAREMGT' | 'BTG' | 'PUBHLTH'>('CAREMGT');
+  const [selectedHiTypes, setSelectedHiTypes] = useState<string[]>([
+    'Prescription',
+    'DiagnosticReport',
+    'OPConsultation',
+  ]);
   const [clinicalPurpose, setClinicalPurpose] = useState('');
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sentSuccess, setSentSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleHiType = (type: string) => {
+    setSelectedHiTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  };
 
   // Load this patient's ABDM records whenever the modal opens
   useEffect(() => {
@@ -35,7 +47,7 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
     let cancelled = false;
     setRecordsStatus('loading');
     setError(null);
-    setClinicalPurpose(patient.complaint ? `Clinical evaluation of: ${patient.complaint}` : '');
+    setClinicalPurpose(patient.complaint ? `Clinical evaluation of: ${patient.complaint}` : 'Care Management');
     api
       .getPatientRecords(patient.patient_id)
       .then((rows) => {
@@ -67,6 +79,7 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
     setIsSubmitting(true);
     setError(null);
     try {
+      // 1. Dispatch clinical record lock-token request
       await api.requestConsent({
         patient_id: patient.patient_id,
         encounter_id: patient.encounter_id,
@@ -74,6 +87,21 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
         purpose: clinicalPurpose,
         duration_minutes: durationMinutes,
       });
+
+      // 2. Dispatch official ABDM HIE-CM v3 Consent Request
+      try {
+        await api.initiateHiecmConsent({
+          patient_id: patient.patient_id,
+          patient_abha: patient.abha_address,
+          purpose_code: purposeCode,
+          purpose_text: clinicalPurpose,
+          hi_types: selectedHiTypes.length ? selectedHiTypes : ['Prescription'],
+          duration_minutes: durationMinutes,
+        });
+      } catch (hiecmErr) {
+        console.warn('ABDM HIE-CM v3 gateway sync notice:', hiecmErr);
+      }
+
       setSentSuccess(true);
       setTimeout(() => {
         setSentSuccess(false);
@@ -158,6 +186,57 @@ export const ConsentRequestModal: React.FC<ConsentRequestModalProps> = ({
                   </option>
                 ))}
               </select>
+            </div>
+
+            {/* ABDM Purpose Code & HI Types */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor={`${uid}-purpose-code`} className="text-2xs font-semibold text-ink-muted uppercase tracking-wider">
+                  ABDM Purpose Code
+                </label>
+                <select
+                  id={`${uid}-purpose-code`}
+                  value={purposeCode}
+                  onChange={(e) => {
+                    const code = e.target.value as 'CAREMGT' | 'BTG' | 'PUBHLTH';
+                    setPurposeCode(code);
+                    if (code === 'BTG') setClinicalPurpose('Break-The-Glass Emergency Critical Access');
+                    else if (code === 'PUBHLTH') setClinicalPurpose('Public Health Reporting');
+                  }}
+                  className="w-full h-10 px-3 rounded-xl bg-card border border-[#728A97] text-xs font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+                >
+                  <option value="CAREMGT">CAREMGT — Care Management</option>
+                  <option value="BTG">BTG — Break The Glass (Emergency)</option>
+                  <option value="PUBHLTH">PUBHLTH — Public Health</option>
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-2xs font-semibold text-ink-muted uppercase tracking-wider">
+                  ABDM HI Types
+                </label>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { id: 'Prescription', label: 'Rx' },
+                    { id: 'DiagnosticReport', label: 'Lab/Diag' },
+                    { id: 'OPConsultation', label: 'OPD Note' },
+                    { id: 'DischargeSummary', label: 'Discharge' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleHiType(t.id)}
+                      className={`px-2 py-1 rounded-lg text-3xs font-semibold border transition-all ${
+                        selectedHiTypes.includes(t.id)
+                          ? 'bg-primary/10 text-primary border-primary'
+                          : 'bg-card text-ink-muted border-[#728A97]/40 hover:border-[#728A97]'
+                      }`}
+                    >
+                      {selectedHiTypes.includes(t.id) ? '✓ ' : '+ '}{t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Purpose Specificity (white fill, 1px #728A97 border, 2px focus ring) */}

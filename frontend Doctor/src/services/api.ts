@@ -267,6 +267,85 @@ class ApiService {
     });
   }
 
+  async initiateHiecmConsent(params: {
+    patient_id: string;
+    patient_abha?: string;
+    purpose_code?: string;
+    purpose_text?: string;
+    hi_types?: string[];
+    duration_minutes?: number;
+  }) {
+    const toDate = new Date();
+    const eraseDate = new Date(Date.now() + (params.duration_minutes || 60) * 60 * 1000);
+    return this.request('/hiecm/consent/v3/request/init', {
+      method: 'POST',
+      body: JSON.stringify({
+        consent: {
+          purpose: {
+            text: params.purpose_text || 'Care Management',
+            code: params.purpose_code || 'CAREMGT',
+            refUri: 'www.abc.com',
+          },
+          patient: {
+            id: params.patient_abha || params.patient_id,
+          },
+          hip: {
+            id: 'IN2810014366',
+            name: 'ABCD Hospital',
+            type: 'HIP',
+          },
+          hiu: {
+            id: 'cowin_hiu_01',
+            name: 'Cowin',
+            type: 'HIU',
+          },
+          careContexts: [
+            {
+              patientReference: params.patient_abha || 'batman@tmh',
+              careContextReference: 'Episode1',
+            },
+          ],
+          requester: {
+            name: 'Dr. Ananya Sharma',
+            identifier: {
+              value: 'REG1',
+              type: 'MH1001',
+              system: 'https://www.sample.com',
+            },
+          },
+          hiTypes: params.hi_types || ['Prescription', 'DiagnosticReport', 'OPConsultation'],
+          permission: {
+            accessMode: 'VIEW',
+            dateRange: {
+              from: '2021-09-28T12:30:08.573Z',
+              to: toDate.toISOString(),
+            },
+            dataEraseAt: eraseDate.toISOString(),
+            frequency: {
+              unit: 'HOUR',
+              value: 1,
+              repeats: 0,
+            },
+          },
+        },
+      }),
+    });
+  }
+
+  async getHiecmConsentStatus(consentRequestId: string) {
+    return this.request('/hiecm/consent/v3/request/status', {
+      method: 'POST',
+      body: JSON.stringify({ consentRequestId }),
+    });
+  }
+
+  async fetchHiecmArtefact(consentId: string) {
+    return this.request('/hiecm/consent/v3/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ consentId }),
+    });
+  }
+
   async getPatientRecords(patientId: string): Promise<RecordSummary[]> {
     return this.request<RecordSummary[]>(`/records/patient/${patientId}`);
   }

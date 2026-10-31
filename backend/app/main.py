@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.config import settings
 from app.seed_data import seed_database
-from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls, doctor, chat, vitals, asha, privacy, lab, partner, care
+from app.routers import auth, consents, records, encounters, cdss, scribe, fhir, audit, translate, patients, appointments, careplan, intellisense, terminology, calls, doctor, chat, vitals, asha, privacy, lab, partner, care, hiecm
+from app.routers.hiecm import ensure_hiecm_tables
 from app.services.connection_manager import ws_manager
 from app.services.auth_dependencies import decode_access_token
 from app.services.llm_completion import completion_service
@@ -39,6 +40,10 @@ async def lifespan(app: FastAPI):
         await ensure_care_network()
     except Exception as e:
         print(f"Startup notice: ensure_care_network skipped: {e}")
+    try:
+        await ensure_hiecm_tables()
+    except Exception as e:
+        print(f"Startup notice: ensure_hiecm_tables skipped: {e}")
     await completion_service.start()  # Tier 3 health checks (no-op when disabled)
     keepalive_task = asyncio.create_task(_pool_warmup_keepalive())
     yield
@@ -89,6 +94,8 @@ app.include_router(privacy.router, prefix=settings.API_V1_STR)
 app.include_router(lab.router, prefix=settings.API_V1_STR)
 app.include_router(partner.router, prefix=settings.API_V1_STR)
 app.include_router(care.router, prefix=settings.API_V1_STR)
+app.include_router(hiecm.router, prefix="/api/hiecm")
+app.include_router(hiecm.router, prefix=f"{settings.API_V1_STR}/hiecm")
 app.include_router(calls.ws_router)
 app.include_router(intellisense.ws_router)
 
