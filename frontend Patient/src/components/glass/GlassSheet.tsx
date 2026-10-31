@@ -153,6 +153,7 @@ const styles = StyleSheet.create({
   panelCenter: {
     width: '100%',
     maxWidth: 380,
+    maxHeight: '88%',
   },
   surface: {
     borderWidth: 1,

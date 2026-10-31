@@ -148,6 +148,117 @@ function cleanSpokenPhrase(raw: string): string {
   return s;
 }
 
+/** Masks personal identifiers (patient names to "Patient 1", exact age to range, phones to "[Phone masked]"). */
+export function maskPersonalDetails(text: string): string {
+  if (!text) return '';
+  let out = text;
+
+  const ageRange = (age: number) => {
+    if (age < 1) return 'under 1 year';
+    if (age < 10) return '1-9 years';
+    if (age < 18) return '10-17 years';
+    const start = Math.floor(age / 10) * 10;
+    return `${start}-${start + 9} years`;
+  };
+
+  // 1. Age masking: exact age to range
+  // "I am 21 years old" / "I'm 21 years old" / "he is 21 yrs old"
+  out = out.replace(/(?<![-–\d])\b(i\s*am|i'm|he\s*is|she\s*is|patient\s*is)\s+(\d{1,3})\s*(?:years?\s*old|yrs?\s*old|yr\s*old)\b/gi,
+    (_, prefix, n) => {
+      const a = parseInt(n, 10);
+      return a <= 120 ? `${prefix} ${ageRange(a)} old` : `${prefix} ${n} years old`;
+    });
+
+  // "I am 21" / "I'm 21" (without units and not already a range)
+  out = out.replace(/(?<![-–\d])\b(i\s*am|i'm|he\s*is|she\s*is)\s+(\d{1,2})\b(?!\s*[-–])(?!\s*(?:mg|ml|cm|kg|g|bpm|days?|weeks?|months?|hours?|hrs?|minutes?|mins?|times|tablets?|capsules?|pills?|percent|%|st|nd|rd|th|am|pm|\.|\d|years?|yrs?|yr))/gi,
+    (_, prefix, n) => {
+      const a = parseInt(n, 10);
+      return (a >= 1 && a <= 110) ? `${prefix} ${ageRange(a)} old` : `${prefix} ${n}`;
+    });
+
+  // "age 21" / "age is 21" / "my age is 21"
+  out = out.replace(/(?<![-–\d])\b((?:my\s+)?age(?:d)?\s*(?:is|:)?)\s*(\d{1,3})\s*(?:years?\s*(?:old)?)?\b/gi,
+    (_, prefix, n) => {
+      const a = parseInt(n, 10);
+      return a <= 120 ? `${prefix} ${ageRange(a)}` : `${prefix} ${n}`;
+    });
+
+  // "21 years old" / "21-year-old" / "21 yr old" / "21 yrs old"
+  out = out.replace(/(?<![-–\d])\b(\d{1,3})\s*[- ]\s*(?:years?|yrs?|yr)\s*[- ]\s*old\b/gi,
+    (_, n) => {
+      const a = parseInt(n, 10);
+      return a <= 120 ? `${ageRange(a)} old` : `${n} years old`;
+    });
+
+  // Hindi age: "21 साल की उम्र" / "21 साल का" / "21 साल की"
+  out = out.replace(/(?<![-–\d])\b(\d{1,3})\s*साल\s*(की\s*उम्र|का|की|के)\b/gi,
+    (_, n, post) => {
+      const a = parseInt(n, 10);
+      if (a <= 120) {
+        const start = Math.floor(a / 10) * 10;
+        return `${start}-${start + 9} साल ${post}`.trim();
+      }
+      return `${n} साल ${post}`;
+    });
+
+  // "उम्र 21 साल" / "आयु 21"
+  out = out.replace(/(?<![-–\d])\b(?:उम्र|आयु)\s*(?:है\s*|:\s*)?(\d{1,3})\s*(?:साल|वर्ष)?\b/gi,
+    (_, n) => {
+      const a = parseInt(n, 10);
+      if (a <= 120) {
+        const start = Math.floor(a / 10) * 10;
+        return `उम्र ${start}-${start + 9} वर्ष`;
+      }
+      return `उम्र ${n} वर्ष`;
+    });
+
+  // 2. Name masking: "My name is ...", "I am [Name]" -> "Patient 1"
+  const NON_NAMES = new Set([
+    'suffering', 'having', 'feeling', 'taking', 'allergic', 'experiencing', 'fine', 'okay',
+    'here', 'ready', 'sick', 'in', 'from', 'doctor', 'patient', 'not', 'unable', 'getting',
+    'facing', 'pregnant', 'diabetic', 'asthmatic', 'coughing', 'sneezing', 'vomiting', 'bleeding',
+    'hurting', 'talking', 'speaking', 'calling', 'visiting', 'coming', 'going', 'tired', 'weak',
+    'dizzy', 'nauseous', 'better', 'worse', 'healthy', 'sorry', 'asking', 'telling', 'waiting',
+    'looking', 'showing', 'trying', 'very', 'much', 'too', 'also', 'still', 'always', 'pain',
+    'chest', 'stomach', 'headache', 'fever', 'cough', 'cold', 'kidney', 'stone'
+  ]);
+
+  out = out.replace(/\b(?:my\s+name\s+is|name\s+is)\s+([A-Za-z]{2,}(?:\s+[A-Za-z]{2,})?)\b/gi,
+    (match, name) => {
+      const first = name.trim().split(/\s+/)[0].toLowerCase();
+      if (NON_NAMES.has(first)) return match;
+      return 'My name is Patient 1';
+    });
+
+  out = out.replace(/\b(?:i\s*am|i'm)\s+([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})?)\b/g,
+    (match, name) => {
+      const first = name.trim().split(/\s+/)[0].toLowerCase();
+      if (NON_NAMES.has(first)) return match;
+      return 'I am Patient 1';
+    });
+
+  out = out.replace(/(?:मेरा\s+नाम|नाम)\s+([ऀ-෿]{2,}(?:\s+[ऀ-෿]{2,})?)\s+(?:है)?/gi, 'मेरा नाम Patient 1 है');
+  out = out.replace(/(?:ನನ್ನ\s+ಹೆಸರು|ಹೆಸರು)\s+([ऀ-෿]{2,}(?:\s+[ऀ-෿]{2,})?)/gi, 'ನನ್ನ ಹೆಸರು Patient 1');
+
+  // Replace placeholder "[PATIENT]" and "the patient" with "Patient 1"
+  out = out.replace(/\[PATIENT\]('s)?/gi, (_, s) => `Patient 1${s || ''}`);
+  out = out.replace(/\bthe patient('s)?\b/gi, (_, s) => `Patient 1${s || ''}`);
+
+  // 3. Phone numbers masking
+  out = out.replace(/(?<!\d)(?:\+?91[\s-]?)?[6-9]\d{4}[\s-]?\d{5}(?!\d)/g, '[Phone masked]');
+  out = out.replace(/\b(?:(?:zero|oh|one|two|three|four|five|six|seven|eight|nine|double|triple)[\s,-]+){6,}(?:zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/gi, '[Phone masked]');
+  out = out.replace(/\[PHONE(?:_\d+)?\]/gi, '[Phone masked]');
+
+  // 4. Aadhaar / 12-digit IDs masking
+  out = out.replace(/(?<!\d)\d{4}[\s-]\d{4}[\s-]\d{4}(?!\d)/g, '[ID masked]');
+  out = out.replace(/\[ID(?:_\d+)?\]/gi, '[ID masked]');
+  out = out.replace(/\[ABHA(?:_\d+)?\]/gi, '[ABHA masked]');
+  out = out.replace(/\[EMAIL(?:_\d+)?\]/gi, '[Email masked]');
+  out = out.replace(/\[PIN(?:_\d+)?\]/gi, '[PIN masked]');
+
+  return out;
+}
+
 /** Strict clinical gate: determines whether an utterance has genuine medical value or is acoustic noise/nonsense. */
 function isMeaningfulPhrase(text: string): boolean {
   if (!text) return false;
@@ -366,7 +477,7 @@ export function LabScreen() {
         }
       }
       const cleanLive = cleanSpokenPhrase(live);
-      setInterim(isMeaningfulPhrase(cleanLive) ? cleanLive : '');
+      setInterim(isMeaningfulPhrase(cleanLive) ? maskPersonalDetails(cleanLive) : '');
     };
     rec.onerror = (e) => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
@@ -516,9 +627,9 @@ export function LabScreen() {
                 {state.transcript.length === 0 && !interim && <p className="text-ink-muted">Start talking…</p>}
                 {state.transcript.map((l, i) => (
                   <p key={i}><span className={cx('mr-1 text-xs font-bold', l.speaker === 'doctor' ? 'text-primary' : 'text-success')}>
-                    {l.speaker === 'doctor' ? 'Doctor' : 'Patient'}</span>{l.text}</p>
+                    {l.speaker === 'doctor' ? 'Doctor' : 'Patient'}</span>{maskPersonalDetails(l.text)}</p>
                 ))}
-                {interim && <p className="italic text-ink-muted">{interim}…</p>}
+                {interim && <p className="italic text-ink-muted">{maskPersonalDetails(interim)}…</p>}
               </div>
             </Card>
 
@@ -569,7 +680,7 @@ export function LabScreen() {
             <ClinicalNotepad
               key={state.encounter_id}
               encounterId={state.encounter_id}
-              patientName="Test Patient"
+              patientName="Patient 1"
               callMinutes={minutes}
               autoApplyCall={autoWrite}
               onTextChange={t => { noteRef.current = t; }}

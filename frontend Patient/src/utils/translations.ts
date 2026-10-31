@@ -5,6 +5,13 @@ export const LANGUAGE_NAMES: Record<SupportedLanguage, string> = { en: 'English'
 /** Short form for the language pill on narrow screens. */
 export const LANGUAGE_SHORT: Record<SupportedLanguage, string> = { en: 'EN', kn: 'ಕನ್ನಡ', hi: 'हिं' };
 
+/** Dropdown options matching Doctor portal exactly */
+export const LANGUAGE_DROPDOWN_OPTIONS: { id: SupportedLanguage; label: string }[] = [
+  { id: 'en', label: 'English' },
+  { id: 'kn', label: 'ಕನ್ನಡ (Kannada)' },
+  { id: 'hi', label: 'हिन्दी (Hindi)' },
+];
+
 /** Full month and weekday names (no reliance on device Intl / ICU data). */
 export const MONTHS: Record<SupportedLanguage, string[]> = {
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
@@ -324,11 +331,11 @@ const en = {
   recordSought: 'Record Sought',
   explicitPurpose: 'Explicit Purpose',
   tokenValidity: 'Token Validity',
-  tokenValidityValue: '{minutes} Minutes (Cryptographic Token)',
+  tokenValidityValue: '{minutes} Minutes Access',
   consentOtpLabel: 'Enter 6-digit consent OTP',
   consentOtpHint: 'Simulated OTP pre-filled for instant verification',
   decline: 'Decline',
-  authorizeAccess: 'Authorize Access',
+  authorizeAccess: 'Authorize',
   timeRemaining: 'Time remaining',
 
   // Records locker
@@ -974,11 +981,11 @@ const kn: Record<TranslationKey, string> = {
   recordSought: 'ಕೋರಿದ ದಾಖಲೆ',
   explicitPurpose: 'ಸ್ಪಷ್ಟ ಉದ್ದೇಶ',
   tokenValidity: 'ಟೋಕನ್ ಅವಧಿ',
-  tokenValidityValue: '{minutes} ನಿಮಿಷಗಳು (ಕ್ರಿಪ್ಟೋಗ್ರಾಫಿಕ್ ಟೋಕನ್)',
+  tokenValidityValue: '{minutes} ನಿಮಿಷಗಳ ಪ್ರವೇಶ',
   consentOtpLabel: '6-ಅಂಕಿಯ ಒಪ್ಪಿಗೆ OTP ನಮೂದಿಸಿ',
   consentOtpHint: 'ತಕ್ಷಣ ಪರಿಶೀಲನೆಗೆ ಡೆಮೊ OTP ತುಂಬಲಾಗಿದೆ',
   decline: 'ತಿರಸ್ಕರಿಸಿ',
-  authorizeAccess: 'ಪ್ರವೇಶ ಅನುಮತಿಸಿ',
+  authorizeAccess: 'ಅನುಮತಿಸಿ',
   timeRemaining: 'ಉಳಿದ ಸಮಯ',
 
   healthRecords: 'ಆರೋಗ್ಯ ದಾಖಲೆಗಳು',
@@ -1615,11 +1622,11 @@ const hi: Record<TranslationKey, string> = {
   recordSought: 'मांगा गया रिकॉर्ड',
   explicitPurpose: 'स्पष्ट उद्देश्य',
   tokenValidity: 'टोकन वैधता',
-  tokenValidityValue: '{minutes} मिनट (क्रिप्टोग्राफ़िक टोकन)',
+  tokenValidityValue: '{minutes} मिनट की पहुँच',
   consentOtpLabel: '6-अंकीय सहमति OTP दर्ज करें',
   consentOtpHint: 'तुरंत सत्यापन के लिए डेमो OTP भरा गया है',
   decline: 'अस्वीकार करें',
-  authorizeAccess: 'पहुँच की अनुमति दें',
+  authorizeAccess: 'अनुमति दें',
   timeRemaining: 'शेष समय',
 
   healthRecords: 'स्वास्थ्य रिकॉर्ड',

@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
   },
   button: {
     minHeight: MIN_HEIGHT,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.md,
     flexDirection: 'row',

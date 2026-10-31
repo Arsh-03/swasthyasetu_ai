@@ -47,19 +47,28 @@ def test_agent_memory_and_masking():
             s = cm.create_session("enc_test", deidentifier_for("Ramesh Gowda", "Dr. Ananya Sharma"))
             st = agent.agent_of(s)
             cm.add_segments(s, [Segment("patient", 0, 1, t, t) for t in (
-                "I am Ramesh Gowda, I have fever for three days, worse at night",
-                "I am allergic to penicillin", "My phone is 98450 12345")])
+                "I am Ramesh Gowda, I am 21 years old, I have fever for three days, worse at night. My phone is 98450 12345",
+                "I am allergic to penicillin")])
             await agent.run_turn(s)
             assert "Ramesh" not in seen_prompts[0] and "98450" not in seen_prompts[0], seen_prompts[0]
-            assert st.memory.startswith("[PATIENT]")                      # memory stays masked internally
-            assert agent.view(s)["memory"].startswith("Ramesh Gowda")     # ...and real on the doctor's screen
+            assert "21 years" not in seen_prompts[0], "exact age must not be in model prompt"
+            assert "20-29 years" in seen_prompts[0], "age range must be sent to model"
+            assert "Ramesh" not in st.memory                               # memory never stores patient personal details
+            assert "21" not in st.memory                                   # exact age never in memory
+            assert agent.view(s)["memory"].startswith("Patient 1")         # ...and displays as Patient 1 on doctor's screen
+            assert "98450" not in agent.view(s)["memory"]                  # phone never revealed in CHIBI's memory
+            transcript_line = agent.view(s)["transcript"][0]["text"]
+            assert "Patient 1" in transcript_line
+            assert "20-29 years old" in transcript_line
+            assert "[Phone masked]" in transcript_line
             cm.add_segments(s, [Segment("patient", 2, 3, "Sometimes chest pain when I climb stairs", "Sometimes chest pain when I climb stairs")])
             await agent.run_turn(s)
             assert "fever for 3 days" in seen_prompts[1], "previous memory must be sent with the next batch"
             assert any("Chest pain on climbing stairs" == f["text"] for f in st.facts)
             assert any(a["title"].startswith("Chest pain") for a in st.alerts)
             final = await agent.finish(s)
-            assert final["engine"] == "ai" and final["summary"].startswith("Ramesh Gowda"), final
+            assert final["engine"] == "ai" and final["summary"].startswith("Patient 1"), final
+            assert "Ramesh" not in final["summary"]
             keys = {f["key"] for f in st.facts}
             assert {"complaints", "allergies"} <= keys, keys
         finally:
@@ -91,8 +100,37 @@ def test_restated_lines_update_in_place():
     assert len(texts) == 2 and texts[1] == "Rash" and "difficulty swallowing" in texts[0], texts
 
 
+def test_patient_pii_masked_in_chibi_memory_and_transcript():
+    """Verify that name, exact age, and phone number are masked as Patient 1, age range, and [Phone masked] in transcript and CHIBI memory."""
+    d = deidentifier_for(None, "Dr. Rao")
+    # 1. Exact phrases from the user's screenshot
+    line1 = d.mask_patient_details("Patient I am suffering from kidney stone from past four years")
+    assert line1 == "Patient I am suffering from kidney stone from past four years" # symptom duration preserved
+
+    line2 = d.mask_patient_details("Patient I am 21 years old.")
+    assert "20-29 years old" in line2 and "21" not in line2
+
+    line3 = d.mask_patient_details("Patient I am 21 years old, दिखा रहा हूँ जाता हूँ")
+    assert "20-29 years old" in line3 and "21" not in line3
+
+    # 2. Spoken introduction, age, and phone number
+    line4 = d.mask_patient_details("My name is Ramesh Gowda, I am 21 years old. Call me at 9845012345")
+    assert "Patient 1" in line4 and "Ramesh" not in line4
+    assert "20-29 years old" in line4 and "21" not in line4
+    assert "[Phone masked]" in line4 and "9845012345" not in line4
+
+    # 3. CHIBI memory masking
+    mem_input = "Ramesh Gowda is 21 years old with kidney stone. Phone: 9845012345."
+    mem_masked = d.mask_patient_details(mem_input)
+    assert "Patient 1" in mem_masked and "Ramesh" not in mem_masked
+    assert "20-29 years old" in mem_masked and "21" not in mem_masked
+    assert "[Phone masked]" in mem_masked and "9845012345" not in mem_masked
+
+
 if __name__ == "__main__":
     test_agent_memory_and_masking()
     print("ok  test_agent_memory_and_masking")
     test_restated_lines_update_in_place()
     print("ok  test_restated_lines_update_in_place")
+    test_patient_pii_masked_in_chibi_memory_and_transcript()
+    print("ok  test_patient_pii_masked_in_chibi_memory_and_transcript")

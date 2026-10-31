@@ -133,6 +133,9 @@ def add_segments(session: CallSession, segments) -> List[TranscriptLine]:
         is_en = (seg.language or "").lower()[:2] == "en"
         seg.text = clean_speech(seg.text, english=is_en)
         seg.english = clean_speech(seg.english, english=True)
+        if hasattr(session.deid, "mask_patient_details"):
+            seg.text = session.deid.mask_patient_details(seg.text)
+            seg.english = session.deid.mask_patient_details(seg.english)
         if not is_meaningful_speech(seg.english or seg.text):
             continue
         valid_segments.append(seg)

@@ -114,9 +114,19 @@ def agent_of(session: cm.CallSession) -> AgentState:
 
 
 def _show(shield: pg.Shield, text: str) -> str:
-    """Real names back for the doctor; labels the AI used on its own ("[PATIENT]" with no name) read naturally."""
-    out = shield.restore(text or "") or ""
-    out = re.sub(r"\[PATIENT\]('s)?", lambda m: "the patient" + (m.group(1) or ""), out)
+    """Masks patient details for screen display & CHIBI memory: Patient 1, age range, phones masked."""
+    if not text:
+        return ""
+    if hasattr(shield, "restore_masked"):
+        out = shield.restore_masked(text) or ""
+    elif hasattr(shield, "deid") and hasattr(shield.deid, "restore"):
+        out = shield.deid.restore(text, mask_patient=True) or ""
+    else:
+        out = shield.restore(text) or ""
+    if hasattr(shield, "deid") and hasattr(shield.deid, "mask_patient_details"):
+        out = shield.deid.mask_patient_details(out)
+    out = re.sub(r"\[PATIENT\]('s)?", lambda m: "Patient 1" + (m.group(1) or ""), out)
+    out = re.sub(r"\bthe patient('s)?\b", lambda m: "Patient 1" + (m.group(1) or ""), out, flags=re.I)
     out = re.sub(r"\[DOCTOR\]('s)?", lambda m: "the doctor" + (m.group(1) or ""), out)
     out = re.sub(r"(^|[.!?]\s+)the (patient|doctor)", lambda m: m.group(1) + "The " + m.group(2), out)
     return out
@@ -301,7 +311,8 @@ async def run_turn(session: cm.CallSession, notify: Optional[Notify] = None, for
                                 for m in (data.get("missed") or [])[:3] if isinstance(m, dict) and m.get("text")]
             memory = str(data.get("memory") or "").strip()
             if memory:
-                st.memory = " ".join(memory.split()[:MEMORY_WORDS + 40])
+                clean_mem = session.deid.mask_patient_details(memory) if hasattr(session.deid, "mask_patient_details") else memory
+                st.memory = " ".join(clean_mem.split()[:MEMORY_WORDS + 40])
         # Rules always run too: they catch what the model skipped and keep working with no AI at all.
         for it in cm.extract_items(new_lines):
             key = KIND_TO_KEY.get(it.kind, "history")
@@ -410,17 +421,23 @@ async def finish(session: cm.CallSession) -> Dict[str, Any]:
     final.setdefault("gaps", gaps)
     final["engine"] = engine
     final["memory"] = _show(shield, st.memory)
+    if "summary" in final and hasattr(session.deid, "mask_patient_details"):
+        final["summary"] = session.deid.mask_patient_details(final["summary"])
     st.final = final
     return final
 
 
 def view(session: cm.CallSession) -> Dict[str, Any]:
-    """Everything the screen needs (real names restored for the doctor)."""
+    """Everything the screen needs (patient details masked as 'Patient 1', age range, etc.)."""
     st = agent_of(session)
     shield = pg.shield_for_session(session)
+    def _display_line(text: str) -> str:
+        if hasattr(session.deid, "mask_patient_details"):
+            return session.deid.mask_patient_details(text)
+        return text
     return {
         "session_id": session.id, "encounter_id": session.encounter_id,
-        "transcript": [{"speaker": l.segment.speaker, "text": l.segment.text, "at_ms": l.segment.start_ms} for l in session.lines],
+        "transcript": [{"speaker": l.segment.speaker, "text": _display_line(l.segment.text), "at_ms": l.segment.start_ms} for l in session.lines],
         "pending_lines": len(session.lines) - st.processed, "busy": st.running,
         "memory": _show(shield, st.memory), "facts": st.facts, "missed": missed(session),
         "suggestions": st.suggestions[-8:], "alerts": st.alerts, "turns": st.turns[-20:], "final": st.final,

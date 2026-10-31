@@ -9,6 +9,7 @@ import { navigate, routeForLink } from '../router';
 import { addDays } from '../time';
 import { Button, Card, Empty, ErrorNote, Field, Loading, PageHeader, Pill, SelectInput, TextInput, shortName } from '../ui';
 import type { StringKey } from '../i18n';
+import { maskPersonalDetails } from './LabScreen';
 
 const PAGE = 50;
 
@@ -232,7 +233,7 @@ function AuditRow({ item }: { item: AuditItem }) {
           {item.problem && <Pill tone="danger" label={item.outcome.toLowerCase()} />}
         </span>
         <span className="block text-xs text-ink-muted truncate">
-          {[shortName(item.actor_name), item.patient_name && item.patient_name !== item.actor_name ? `${t('patient')}: ${shortName(item.patient_name)}` : null, item.detail]
+          {[shortName(item.actor_name), item.patient_name && item.patient_name !== item.actor_name ? `${t('patient')}: ${shortName(item.patient_name === 'Test Patient' ? 'Patient 1' : item.patient_name)}` : null, item.detail ? maskPersonalDetails(item.detail) : null]
             .filter(Boolean).join(' · ')}
         </span>
       </span>

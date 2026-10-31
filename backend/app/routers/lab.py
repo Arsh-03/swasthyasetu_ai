@@ -121,7 +121,12 @@ async def add_lines(session_id: str, req: LinesIn, current_doctor: Dict[str, Any
     if req.note is not None:
         st.note = req.note
     at = int((time.time() - getattr(s, "lab_started", time.time())) * 1000)
-    segs = [Segment("doctor" if l.speaker == "doctor" else "patient", at, at + 3000, l.text.strip(), l.text.strip(),
+    def _clean_l(txt: str) -> str:
+        clean = txt.strip()
+        if hasattr(s.deid, "mask_patient_details"):
+            clean = s.deid.mask_patient_details(clean)
+        return clean
+    segs = [Segment("doctor" if l.speaker == "doctor" else "patient", at, at + 3000, _clean_l(l.text), _clean_l(l.text),
                     (l.language or "en")[:2]) for l in req.lines if l.text.strip() and is_clinically_relevant(l.text.strip())]
     if segs:
         cm.add_segments(s, segs)

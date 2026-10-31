@@ -10,6 +10,7 @@ import { PaperPlaneRightIcon } from 'phosphor-react-native/src/icons/PaperPlaneR
 import { BrainIcon } from 'phosphor-react-native/src/icons/Brain';
 import { BuildingsIcon } from 'phosphor-react-native/src/icons/Buildings';
 import { CalendarBlankIcon } from 'phosphor-react-native/src/icons/CalendarBlank';
+import { CaretDownIcon } from 'phosphor-react-native/src/icons/CaretDown';
 import { CaretLeftIcon } from 'phosphor-react-native/src/icons/CaretLeft';
 import { CaretRightIcon } from 'phosphor-react-native/src/icons/CaretRight';
 import { CellSignalHighIcon } from 'phosphor-react-native/src/icons/CellSignalHigh';
@@ -100,6 +101,7 @@ const REGISTRY = {
   send: PaperPlaneRightIcon,
   chevronLeft: CaretLeftIcon,
   chevronRight: CaretRightIcon,
+  chevronDown: CaretDownIcon,
   close: XIcon,
   translate: TranslateIcon,
   signIn: SignInIcon,

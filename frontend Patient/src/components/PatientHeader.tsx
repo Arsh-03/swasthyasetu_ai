@@ -3,9 +3,10 @@ import { StyleSheet, View, useWindowDimensions } from 'react-native';
 import { colors, radii, spacing } from '../theme/tokens';
 import type { PatientUser } from '../services/api';
 import { useLanguage } from '../i18n/LanguageContext';
-import { LANGUAGE_NAMES, LANGUAGE_SHORT, t as translate } from '../utils/translations';
+import { t as translate } from '../utils/translations';
 import { GlassToolbar } from './glass';
-import { AppText, Avatar, BrandMark, Icon, IconButton, NeuPressable, StableLabel } from './ui';
+import { AppText, Avatar, BrandMark, IconButton, NeuPressable, StableLabel } from './ui';
+import { LanguageDropdown } from './LanguageDropdown';
 import { useScripts } from '../speech';
 
 interface PatientHeaderProps {
@@ -45,7 +46,7 @@ interface HeaderBarProps extends PatientHeaderProps {
 
 /** Toolbar contents: brand group (flex, ellipsis) + controls (fixed). */
 export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLogout, onBrandLongPress, availableWidth }) => {
-  const { lang, t, cycleLang } = useLanguage();
+  const { t } = useLanguage();
   const scripts = useScripts();
   const window = useWindowDimensions();
   const layout = headerLayout(availableWidth ?? window.width, window.fontScale);
@@ -76,21 +77,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLog
       </View>
 
       <View style={styles.actions}>
-        {/* Language pill: icon + full name, or icon + short code below 400pt */}
-        <NeuPressable
-          onPress={cycleLang}
-          atomic
-          speech={() => scripts.header.language(LANGUAGE_NAMES[lang])}
-          radius={radii.md}
-          compact
-          haptics="selection"
-          hitSlop={4}
-          accessibilityLabel={`${t('switchLanguage')}: ${LANGUAGE_NAMES[lang]}`}
-          style={[styles.langPill, layout.shortLanguage && styles.langPillShort]}
-        >
-          <Icon name="translate" size={18} color={colors.primary} active />
-          <StableLabel text={(l) => (layout.shortLanguage ? LANGUAGE_SHORT[l] : LANGUAGE_NAMES[l])} variant="subhead" weight={600} compact />
-        </NeuPressable>
+        {/* Language dropdown matching Doctor portal */}
+        <LanguageDropdown compact={layout.shortLanguage} />
 
         {/* Monogram avatar → profile / symptom intake */}
         <NeuPressable

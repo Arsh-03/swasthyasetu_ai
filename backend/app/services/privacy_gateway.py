@@ -100,8 +100,8 @@ def age_band(age: Any) -> Optional[str]:
 
 # Ages written in free text: "54M", "54 y/M", "54 yrs F", "54-year-old", "aged 54", "age: 54".
 _AGE_TEXT = [
-    re.compile(r"\b(\d{1,3})(\s?(?:y|yr|yrs|years?)?\s?/?\s?)([MF])\b"),
-    re.compile(r"\b(\d{1,3})([\s-]*(?:years?|yrs?)[\s-]*old)\b", re.I),
+    re.compile(r"(?<![-–\d])\b(\d{1,3})(\s?(?:y|yr|yrs|years?)?\s?/?\s?)([MF])\b"),
+    re.compile(r"(?<![-–\d])\b(\d{1,3})([\s-]*(?:years?|yrs?)[\s-]*old)\b", re.I),
     re.compile(r"\b((?:aged|age)\s*[:\-]?\s*)(\d{1,3})\b()", re.I),
 ]
 
@@ -324,6 +324,9 @@ class Shield:
     # ---- S7 restore --------------------------------------------------------------------------------------
     def restore(self, text: Optional[str]) -> Optional[str]:
         return self.deid.restore(text) if text else text
+
+    def restore_masked(self, text: Optional[str]) -> Optional[str]:
+        return self.deid.restore(text, mask_patient=True) if text else text
 
 
 def shield_for_session(session: Any, extra_identifiers: Iterable[str] = ()) -> Shield:
