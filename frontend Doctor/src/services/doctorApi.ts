@@ -1,6 +1,6 @@
 // Doctor portal API (backend/app/routers/doctor.py and /audit/events). Uses the same session token as api.ts.
 import { API_BASE_URL, api, type PatientSummary } from './api';
-import type { PatientFullRecord } from '../data/patientRecords';
+import type { PatientFullRecord, MedicationItem } from '../data/patientRecords';
 
 export type VisitStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
 
@@ -331,6 +331,41 @@ export const doctorApi = {
     start?: string; end?: string; category?: string; outcome?: string; patient_id?: string; q?: string;
     limit?: number; offset?: number;
   }) => call<AuditPage>(`/audit/events?${qs(filters)}`),
+  updatePrescription: (patientId: string, rxId: string, data: Partial<MedicationItem> & { meal_relation?: string; dose_amount?: string }) =>
+    call<MedicationItem>(`/doctor/patients/${encodeURIComponent(patientId)}/prescriptions/${encodeURIComponent(rxId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  addPrescription: (patientId: string, data: Partial<MedicationItem> & { meal_relation?: string; dose_amount?: string }) =>
+    call<MedicationItem>(`/doctor/patients/${encodeURIComponent(patientId)}/prescriptions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  deletePrescription: (patientId: string, rxId: string) =>
+    call<{ status: string; id: string }>(`/doctor/patients/${encodeURIComponent(patientId)}/prescriptions/${encodeURIComponent(rxId)}`, {
+      method: 'DELETE',
+    }),
+  signAndPushLabReport: (sessionId: string, data: {
+    patient_id?: string;
+    note?: string;
+    doctor_signature_name?: string;
+    prescription_overrides?: any[];
+  }) =>
+    call<{
+      status: string;
+      signature: string;
+      signed_at: string;
+      record_id: string;
+      encounter_id: string;
+      patient_id: string;
+      patient_name: string;
+      pushed_prescriptions_count: number;
+      structured: StructuredNote;
+      final: any;
+    }>(`/lab/sessions/${encodeURIComponent(sessionId)}/sign_and_push`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ---------------------------------------------------------------------------------------------- Chat

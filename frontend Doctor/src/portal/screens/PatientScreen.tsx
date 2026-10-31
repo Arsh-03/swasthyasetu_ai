@@ -11,7 +11,8 @@ import { BookAppointment } from '../BookAppointment';
 import { AppointmentRow } from '../Schedule';
 import { Conversation } from '../Conversation';
 import { ReadingsCard } from '../Readings';
-import { Avatar, Button, Card, CardHeader, Empty, ErrorNote, Facts, Loading, Pill, Tabs } from '../ui';
+import { Avatar, Button, Card, CardHeader, Dialog, Empty, ErrorNote, Facts, Field, Loading, Pill, SelectInput, Tabs, TextInput } from '../ui';
+import type { MedicationItem } from '../../data/patientRecords';
 
 type Tab = 'overview' | 'visits' | 'messages' | 'records' | 'history';
 const TABS: Tab[] = ['overview', 'visits', 'messages', 'records', 'history'];
@@ -118,6 +119,321 @@ function PatientHeader({ detail, onBook }: { detail: PatientDetail; onBook: () =
   );
 }
 
+// ------------------------------------------------------------------------------------------ Prescription Edit & Prescribe Modal
+
+function PrescriptionModal({
+  open,
+  onClose,
+  patientId,
+  prescription,
+  onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patientId: string;
+  prescription: MedicationItem | null;
+  onSaved: () => void;
+}) {
+  const { toast } = usePortal();
+  const [name, setName] = useState(prescription?.name ?? '');
+  const [dosage, setDosage] = useState(prescription?.dosage ?? '650 mg');
+  const [frequency, setFrequency] = useState(prescription?.frequency ?? 'Twice a day');
+  const [timing, setTiming] = useState(prescription?.timing ?? 'After food');
+  const [duration, setDuration] = useState(prescription?.duration ?? '5 days');
+  const [status, setStatus] = useState<string>(prescription?.status ?? 'Active');
+  const [schedule, setSchedule] = useState({
+    morning: prescription?.schedule?.morning ?? true,
+    afternoon: prescription?.schedule?.afternoon ?? false,
+    night: prescription?.schedule?.night ?? true,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (prescription) {
+      setName(prescription.name);
+      setDosage(prescription.dosage || '650 mg');
+      setFrequency(prescription.frequency || 'Twice a day');
+      setTiming(prescription.timing || 'After food');
+      setDuration(prescription.duration || '5 days');
+      setStatus(prescription.status || 'Active');
+      setSchedule({
+        morning: prescription.schedule?.morning ?? true,
+        afternoon: prescription.schedule?.afternoon ?? false,
+        night: prescription.schedule?.night ?? true,
+      });
+    } else {
+      setName('');
+      setDosage('650 mg');
+      setFrequency('Twice a day');
+      setTiming('After food');
+      setDuration('5 days');
+      setStatus('Active');
+      setSchedule({ morning: true, afternoon: false, night: true });
+    }
+    setError(null);
+  }, [prescription, open]);
+
+  const save = async () => {
+    if (!name.trim()) {
+      setError('Medication name is required.');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const payload = {
+        name: name.trim(),
+        dosage: dosage.trim(),
+        frequency: frequency.trim(),
+        timing: timing.trim(),
+        duration: duration.trim(),
+        meal_relation: timing.toLowerCase().includes('before')
+          ? 'before_food'
+          : timing.toLowerCase().includes('bedtime')
+          ? 'bedtime'
+          : 'after_food',
+        dose_amount: dosage.trim() || '1 tablet',
+        schedule,
+        status: status as 'Active' | 'Discontinued',
+      };
+
+      if (prescription?.id) {
+        await doctorApi.updatePrescription(patientId, prescription.id, payload);
+        toast('Prescription updated. Changes reflect on patient app immediately.', 'success');
+      } else {
+        await doctorApi.addPrescription(patientId, payload);
+        toast('Prescription added. Patient care plan refreshed.', 'success');
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save prescription.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const discontinue = async () => {
+    if (!prescription?.id) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await doctorApi.deletePrescription(patientId, prescription.id);
+      toast('Medication marked as Discontinued.', 'warning');
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to discontinue prescription.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={prescription ? 'Edit Prescription' : 'Prescribe Medication'}
+      description="Updates will immediately sync with the patient's daily medication schedule in their app."
+      footer={
+        <div className="flex items-center justify-between w-full">
+          {prescription ? (
+            <Button size="sm" variant="danger" onClick={discontinue} disabled={submitting}>
+              Discontinue
+            </Button>
+          ) : <span />}
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={onClose} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="primary" onClick={save} disabled={submitting}>
+              {submitting ? 'Saving…' : prescription ? 'Save Changes' : 'Prescribe'}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 py-2">
+        {error && (
+          <div className="p-3 rounded-xl bg-danger/10 border border-danger/20 text-xs text-danger font-semibold">
+            {error}
+          </div>
+        )}
+
+        <Field label="Medicine / Tablet Name *">
+          {(id) => (
+            <TextInput
+              id={id}
+              placeholder="e.g. Tab Paracetamol, Pantocid, Dolo"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+        </Field>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="Dose / Strength">
+            {(id) => (
+              <div className="flex flex-col gap-1.5">
+                <TextInput
+                  id={id}
+                  placeholder="e.g. 650 mg, 500 mg, 1 tablet"
+                  value={dosage}
+                  onChange={(e) => setDosage(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-1">
+                  {['650 mg', '500 mg', '40 mg', '10 mg', '1 tab'].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setDosage(d)}
+                      className="px-1.5 py-0.5 rounded text-3xs font-semibold bg-base text-ink-muted hover:text-ink border border-hairline cursor-pointer"
+                    >
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Field>
+
+          <Field label="When to Take (Timing)">
+            {(id) => (
+              <div className="flex flex-col gap-1.5">
+                <SelectInput
+                  id={id}
+                  value={timing}
+                  onChange={(e) => setTiming(e.target.value)}
+                >
+                  <option value="After food">After food</option>
+                  <option value="Before food">Before food (Empty stomach)</option>
+                  <option value="With food">With food</option>
+                  <option value="At bedtime">At bedtime (Night)</option>
+                  <option value="As directed">As directed</option>
+                </SelectInput>
+                <div className="flex flex-wrap gap-1">
+                  {['After food', 'Before food', 'At bedtime'].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTiming(t)}
+                      className="px-1.5 py-0.5 rounded text-3xs font-semibold bg-base text-ink-muted hover:text-ink border border-hairline cursor-pointer"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Field label="How Often (Frequency)">
+            {(id) => (
+              <SelectInput
+                id={id}
+                value={frequency}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setFrequency(val);
+                  if (val.includes('Three') || val.includes('TDS')) {
+                    setSchedule({ morning: true, afternoon: true, night: true });
+                  } else if (val.includes('Twice') || val.includes('BD')) {
+                    setSchedule({ morning: true, afternoon: false, night: true });
+                  } else if (val.includes('Once') || val.includes('OD')) {
+                    setSchedule({ morning: true, afternoon: false, night: false });
+                  } else if (val.includes('bedtime') || val.includes('HS')) {
+                    setSchedule({ morning: false, afternoon: false, night: true });
+                  }
+                }}
+              >
+                <option value="Three times a day">Three times a day (TDS - Morning, Afternoon, Night)</option>
+                <option value="Twice a day">Twice a day (BD - Morning & Night)</option>
+                <option value="Once a day">Once a day (OD - Morning)</option>
+                <option value="At bedtime">At bedtime (HS - Night)</option>
+                <option value="Only when needed">Only when needed (SOS / PRN)</option>
+              </SelectInput>
+            )}
+          </Field>
+
+          <Field label="Duration">
+            {(id) => (
+              <div className="flex flex-col gap-1.5">
+                <TextInput
+                  id={id}
+                  placeholder="e.g. 5 days, 10 days, 1 month"
+                  value={duration}
+                  onChange={(e) => setDuration(e.target.value)}
+                />
+                <div className="flex flex-wrap gap-1">
+                  {['3 days', '5 days', '7 days', '14 days', '1 month'].map((dur) => (
+                    <button
+                      key={dur}
+                      type="button"
+                      onClick={() => setDuration(dur)}
+                      className="px-1.5 py-0.5 rounded text-3xs font-semibold bg-base text-ink-muted hover:text-ink border border-hairline cursor-pointer"
+                    >
+                      {dur}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <div>
+          <label className="text-2xs font-semibold uppercase tracking-wider text-ink-muted block mb-1.5">
+            Daily Routine Slots (Patient App Alarms)
+          </label>
+          <div className="flex items-center gap-3">
+            {[
+              { id: 'morning', label: 'Morning (8:00 AM)', checked: schedule.morning },
+              { id: 'afternoon', label: 'Afternoon (1:30 PM)', checked: schedule.afternoon },
+              { id: 'night', label: 'Night (8:30 PM)', checked: schedule.night },
+            ].map((slot) => (
+              <label
+                key={slot.id}
+                className={cx(
+                  'flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-colors',
+                  slot.checked
+                    ? 'bg-primary/10 text-primary border-primary'
+                    : 'bg-card text-ink-muted border-hairline hover:border-[#728A97]'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={slot.checked}
+                  onChange={(e) =>
+                    setSchedule((prev) => ({ ...prev, [slot.id]: e.target.checked }))
+                  }
+                  className="rounded text-primary focus:ring-primary h-3.5 w-3.5"
+                />
+                {slot.label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <Field label="Status">
+          {(id) => (
+            <SelectInput
+              id={id}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="Active">Active (Appears in patient daily plan)</option>
+              <option value="Discontinued">Discontinued (Stopped / Completed)</option>
+            </SelectInput>
+          )}
+        </Field>
+      </div>
+    </Dialog>
+  );
+}
+
 // ------------------------------------------------------------------------------------------ Overview
 
 function OverviewTab({ detail, onOpenVisits, onChanged }: { detail: PatientDetail; onOpenVisits: () => void; onChanged: () => void }) {
@@ -127,6 +443,9 @@ function OverviewTab({ detail, onOpenVisits, onChanged }: { detail: PatientDetai
   const meds = (chart.prescriptions ?? []).filter((m) => m.status !== 'Discontinued');
   const last = detail.past_visits[0];
   const vitals = chart.lastAppointment?.vitals;
+  const [editingRx, setEditingRx] = useState<MedicationItem | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
       <div className="flex flex-col gap-5">
@@ -209,18 +528,114 @@ function OverviewTab({ detail, onOpenVisits, onChanged }: { detail: PatientDetai
           </div>
         </Card>
         <Card>
-          <CardHeader icon="medication" title={t('currentMedicines')} />
-          <ul className="px-5 pb-5 flex flex-col gap-2">
+          <CardHeader
+            icon="medication"
+            title={t('currentMedicines')}
+            subtitle="Synced live with patient app care plan"
+            action={
+              <Button
+                size="sm"
+                icon="add"
+                onClick={() => {
+                  setEditingRx(null);
+                  setModalOpen(true);
+                }}
+              >
+                Prescribe
+              </Button>
+            }
+          />
+          <ul className="px-5 pb-5 flex flex-col gap-3">
             {meds.length === 0 && <li className="text-sm text-ink-muted">{t('noneRecorded')}</li>}
             {meds.map((m) => (
-              <li key={m.id} className="text-sm">
-                <span className="font-semibold text-ink">{m.name} {m.dosage}</span>
-                <span className="block text-xs text-ink-muted">{[m.frequency, m.timing, m.duration].filter(Boolean).join(' · ')}</span>
+              <li
+                key={m.id}
+                className="flex items-start justify-between gap-3 p-3 rounded-xl border border-hairline bg-card hover:border-primary/40 transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-ink text-sm">{m.name}</span>
+                    {m.dosage && (
+                      <span className="px-2 py-0.5 rounded-md text-2xs font-bold bg-primary/10 text-primary">
+                        {m.dosage}
+                      </span>
+                    )}
+                    <span
+                      className={`px-2 py-0.5 rounded-md text-3xs font-semibold ${
+                        m.status === 'Active'
+                          ? 'bg-success/10 text-success-deep'
+                          : 'bg-ink-tint text-ink-muted'
+                      }`}
+                    >
+                      {m.status || 'Active'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-ink-muted mt-1">
+                    {[m.frequency, m.timing, m.duration].filter(Boolean).join(' · ')}
+                  </p>
+                  {m.schedule && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-3xs font-semibold ${
+                          m.schedule.morning
+                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                            : 'bg-ink-tint/50 text-ink-muted line-through'
+                        }`}
+                      >
+                        Morning
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-3xs font-semibold ${
+                          m.schedule.afternoon
+                            ? 'bg-orange-100 text-orange-900 border border-orange-300'
+                            : 'bg-ink-tint/50 text-ink-muted line-through'
+                        }`}
+                      >
+                        Afternoon
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-3xs font-semibold ${
+                          m.schedule.night
+                            ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                            : 'bg-ink-tint/50 text-ink-muted line-through'
+                        }`}
+                      >
+                        Night
+                      </span>
+                    </div>
+                  )}
+                  {m.prescribedBy && (
+                    <p className="text-3xs text-ink-muted mt-1">
+                      Prescribed by: {m.prescribedBy}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon="edit"
+                    onClick={() => {
+                      setEditingRx(m);
+                      setModalOpen(true);
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>
         </Card>
       </div>
+
+      <PrescriptionModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        patientId={p.patient_id}
+        prescription={editingRx}
+        onSaved={onChanged}
+      />
     </div>
   );
 }

@@ -63,6 +63,7 @@ import { Microphone } from '@phosphor-icons/react/dist/csr/Microphone';
 import { MicrophoneSlash } from '@phosphor-icons/react/dist/csr/MicrophoneSlash';
 import { Notepad } from '@phosphor-icons/react/dist/csr/Notepad';
 import { PaperPlaneTilt } from '@phosphor-icons/react/dist/csr/PaperPlaneTilt';
+import { PencilSimple } from '@phosphor-icons/react/dist/csr/PencilSimple';
 import { Smiley } from '@phosphor-icons/react/dist/csr/Smiley';
 import { Phone } from '@phosphor-icons/react/dist/csr/Phone';
 import { PhoneSlash } from '@phosphor-icons/react/dist/csr/PhoneSlash';
@@ -203,6 +204,7 @@ export const REGISTRY = {
   drag: DotsSixVertical,
   speaker: SpeakerHigh,
   trash: Trash,
+  edit: PencilSimple,
   external: ArrowSquareOut,
   pip: PictureInPicture,
 } satisfies Record<string, ComponentType<PhosphorProps>>;

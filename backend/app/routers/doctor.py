@@ -12,8 +12,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+import re
 from sqlalchemy import desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.database import get_db
 from app.models.models import (
@@ -849,3 +851,232 @@ async def save_settings(req: SettingsIn, current_doctor: Dict[str, Any] = Depend
                           resource_id=doctor.practitioner_id, outcome="SUCCESS", purpose="Changed " + ", ".join(changed)))
     await db.commit()
     return _settings_out(doctor, row)
+
+
+# ---------------------------------------------------------------------------
+# Prescription Management (Doctor Portal edit/add/discontinue)
+# ---------------------------------------------------------------------------
+
+class PrescriptionIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    dosage: Optional[str] = Field(None, max_length=100)
+    frequency: Optional[str] = Field(None, max_length=100)
+    timing: Optional[str] = Field(None, max_length=100)
+    duration: Optional[str] = Field(None, max_length=100)
+    meal_relation: Optional[str] = Field("after_food", max_length=50)
+    dose_amount: Optional[str] = Field("1 tablet", max_length=50)
+    route: Optional[str] = Field("Oral", max_length=50)
+    schedule: Optional[Dict[str, bool]] = None
+    status: Optional[str] = Field("Active", max_length=50)
+    instructions: Optional[Dict[str, Any]] = None
+
+
+def _clean_short_name(full_name: str) -> str:
+    s = re.sub(r"\b(Tablet|Oral Solution|Solution|Syrup|Capsule|Injection|Suspension|Drops|Ointment|Gel|Cream|SR|ER|CR|XL|OD|BD|TDS|IP|BP|USP)\b", "", full_name, flags=re.IGNORECASE)
+    s = re.sub(r"\bHydrochloride\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b\d+(\.\d+)?\s*(mg|ml|mcg|g|iu)\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s or full_name.split()[0]
+
+
+@router.put("/patients/{patient_id}/prescriptions/{prescription_id}")
+async def update_patient_prescription(
+    patient_id: str,
+    prescription_id: str,
+    req: PrescriptionIn,
+    current_doctor: Dict[str, Any] = Depends(require_doctor),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Clinician edit gate: Allows the doctor to modify a patient's prescription (dosage, timing, schedule, status)
+    so that it immediately updates the patient's daily care plan and medicine ledger under DPDP compliance.
+    """
+    me = current_doctor["user_id"]
+    profile = await db.get(PatientProfile, patient_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    chart = dict(profile.chart_json or {})
+    prescriptions = list(chart.get("prescriptions", []))
+    target_idx = next((i for i, r in enumerate(prescriptions) if r.get("id") == prescription_id), None)
+    if target_idx is None:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    rx = dict(prescriptions[target_idx])
+    doctor = await db.get(Practitioner, me)
+    doctor_name = doctor.display_name if doctor else "Treating Physician"
+
+    rx["name"] = req.name.strip()
+    rx["short_name"] = _clean_short_name(req.name.strip())
+    if req.dosage is not None:
+        rx["dosage"] = req.dosage.strip()
+    if req.frequency is not None:
+        rx["frequency"] = req.frequency.strip()
+    if req.timing is not None:
+        rx["timing"] = req.timing.strip()
+    if req.duration is not None:
+        rx["duration"] = req.duration.strip()
+    if req.route is not None:
+        rx["route"] = req.route.strip()
+    if req.status is not None:
+        rx["status"] = req.status.strip()
+
+    meal_rel = req.meal_relation or "after_food"
+    dose_amt = req.dose_amount or rx.get("dosage") or "1 tablet"
+    timing_label = req.timing or rx.get("timing") or "As advised"
+
+    instructions = dict(rx.get("instructions") or {})
+    instructions.update({
+        "dose_amount": dose_amt,
+        "meal_relation": meal_rel,
+        "intake_method": instructions.get("intake_method") or "with_water",
+        "timing_label": timing_label,
+    })
+    rx["instructions"] = instructions
+
+    if req.schedule is not None:
+        rx["schedule"] = req.schedule
+    elif not rx.get("schedule"):
+        freq_up = (req.frequency or rx.get("frequency") or "").upper()
+        if any(w in freq_up for w in ("TDS", "TID", "THRICE", "THREE TIMES")):
+            rx["schedule"] = {"morning": True, "afternoon": True, "night": True}
+        elif any(w in freq_up for w in ("BD", "BID", "TWICE")):
+            rx["schedule"] = {"morning": True, "afternoon": False, "night": True}
+        elif any(w in freq_up for w in ("BEDTIME", "HS", "NIGHT")):
+            rx["schedule"] = {"morning": False, "afternoon": False, "night": True}
+        elif any(w in freq_up for w in ("OD", "ONCE", "DAILY")):
+            rx["schedule"] = {"morning": True, "afternoon": False, "night": False}
+        else:
+            rx["schedule"] = {"morning": True, "afternoon": False, "night": False}
+
+    rx["prescribedBy"] = doctor_name
+    rx["lastModified"] = now_utc().isoformat()
+
+    prescriptions[target_idx] = rx
+    chart["prescriptions"] = prescriptions
+    profile.chart_json = chart
+    flag_modified(profile, "chart_json")
+
+    invalidate_doctor_caches(me)
+    db.add(AuditEvent(actor_id=me, action="PRESCRIPTION_EDITED_BY_DOCTOR",
+                      resource_id=prescription_id, outcome="SUCCESS",
+                      purpose=f"Updated medication {rx['name']} for patient {patient_id}"))
+    await db.commit()
+    return rx
+
+
+@router.post("/patients/{patient_id}/prescriptions")
+async def add_patient_prescription(
+    patient_id: str,
+    req: PrescriptionIn,
+    current_doctor: Dict[str, Any] = Depends(require_doctor),
+    db: AsyncSession = Depends(get_db),
+):
+    """Adds a new prescription directly to the patient's care plan."""
+    me = current_doctor["user_id"]
+    profile = await db.get(PatientProfile, patient_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    doctor = await db.get(Practitioner, me)
+    doctor_name = doctor.display_name if doctor else "Treating Physician"
+
+    chart = dict(profile.chart_json or {})
+    prescriptions = list(chart.get("prescriptions", []))
+
+    rx_id = f"rx_{uuid.uuid4().hex[:8]}"
+    now = now_utc()
+    short_name = _clean_short_name(req.name.strip())
+    freq = req.frequency or "Once a day"
+    timing = req.timing or "After food"
+    meal_rel = req.meal_relation or "after_food"
+    dose_amt = req.dose_amount or req.dosage or "1 tablet"
+
+    schedule = req.schedule
+    if not schedule:
+        freq_up = freq.upper()
+        if any(w in freq_up for w in ("TDS", "TID", "THRICE", "THREE TIMES")):
+            schedule = {"morning": True, "afternoon": True, "night": True}
+        elif any(w in freq_up for w in ("BD", "BID", "TWICE")):
+            schedule = {"morning": True, "afternoon": False, "night": True}
+        elif any(w in freq_up for w in ("BEDTIME", "HS", "NIGHT")):
+            schedule = {"morning": False, "afternoon": False, "night": True}
+        elif any(w in freq_up for w in ("OD", "ONCE", "DAILY")):
+            schedule = {"morning": True, "afternoon": False, "night": False}
+        else:
+            schedule = {"morning": True, "afternoon": False, "night": False}
+
+    new_rx = {
+        "id": rx_id,
+        "name": req.name.strip(),
+        "short_name": short_name,
+        "purpose_patient": {
+            "en": f"Prescribed by {doctor_name}",
+            "kn": f"{doctor_name} ಅವರು ಸೂಚಿಸಿದ ಔಷಧಿ",
+            "hi": f"{doctor_name} द्वारा सुझाई गई दवा",
+        },
+        "form": "tablet",
+        "dosage": req.dosage or "1 tablet",
+        "route": req.route or "Oral",
+        "frequency": freq,
+        "timing": timing,
+        "duration": req.duration or "As advised",
+        "purpose": "Prescribed during consultation",
+        "schedule": schedule,
+        "instructions": {
+            "dose_amount": dose_amt,
+            "meal_relation": meal_rel,
+            "intake_method": "with_water",
+            "timing_label": timing,
+        },
+        "refillsRemaining": 0,
+        "prescribedBy": doctor_name,
+        "prescribedDate": now.strftime("%d %b %Y"),
+        "status": req.status or "Active",
+        "createdAt": now.isoformat(),
+    }
+
+    prescriptions.insert(0, new_rx)
+    chart["prescriptions"] = prescriptions
+    profile.chart_json = chart
+    flag_modified(profile, "chart_json")
+
+    invalidate_doctor_caches(me)
+    db.add(AuditEvent(actor_id=me, action="PRESCRIPTION_ADDED_BY_DOCTOR",
+                      resource_id=rx_id, outcome="SUCCESS",
+                      purpose=f"Prescribed {new_rx['name']} for patient {patient_id}"))
+    await db.commit()
+    return new_rx
+
+
+@router.delete("/patients/{patient_id}/prescriptions/{prescription_id}")
+async def discontinue_patient_prescription(
+    patient_id: str,
+    prescription_id: str,
+    current_doctor: Dict[str, Any] = Depends(require_doctor),
+    db: AsyncSession = Depends(get_db),
+):
+    """Marks a prescription as Discontinued in the patient's care plan."""
+    me = current_doctor["user_id"]
+    profile = await db.get(PatientProfile, patient_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    chart = dict(profile.chart_json or {})
+    prescriptions = list(chart.get("prescriptions", []))
+    target_rx = next((r for r in prescriptions if r.get("id") == prescription_id), None)
+    if not target_rx:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
+    target_rx["status"] = "Discontinued"
+    target_rx["discontinuedAt"] = now_utc().isoformat()
+    profile.chart_json = chart
+    flag_modified(profile, "chart_json")
+
+    invalidate_doctor_caches(me)
+    db.add(AuditEvent(actor_id=me, action="PRESCRIPTION_DISCONTINUED_BY_DOCTOR",
+                      resource_id=prescription_id, outcome="SUCCESS",
+                      purpose=f"Discontinued {target_rx.get('name')} for patient {patient_id}"))
+    await db.commit()
+    return {"status": "Discontinued", "id": prescription_id}
+
