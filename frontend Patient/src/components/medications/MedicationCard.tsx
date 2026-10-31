@@ -1,18 +1,17 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useId } from 'react';
+import { StyleSheet, View } from 'react-native';
 import { colors, radii, spacing, tints } from '../../theme/tokens';
 import type { CarePlanMedication, DoseSlot } from '../../services/api';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { resolveMedicationInfo, getMedicationSpeechText } from '../../utils/medicationInfo';
-import { speak, stopSpeaking } from '../../utils/speech';
+import { Speakable, speakFor, stopSpeech, useSpeechSelector } from '../../speech';
 import { haptic } from '../../utils/haptics';
 import { doctorShortName } from '../../utils/departments';
 import { AppText } from '../ui/AppText';
 import { Badge } from '../ui/Badge';
 import { Icon } from '../ui/Icon';
 import { NeuPressable } from '../ui/Neu';
-import { DoubleTapSpeakable } from '../ui/DoubleTapSpeakable';
-import { DoseButton } from '../CarePlanView';
+import { DoseButton } from './DoseButton';
 import { DepartmentBadge } from '../doctors/DoctorParts';
 import { MedicationFormTile } from './MedicationFormVisual';
 
@@ -32,31 +31,29 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
   onPress,
 }) => {
   const { lang, t } = useLanguage();
-  const [isPlaying, setIsPlaying] = useState(false);
+  // Listen button shares the double-tap engine (one reading at a time)
+  const listenId = useId();
+  const isPlaying = useSpeechSelector((st) => st.speakingId === listenId);
 
   const info = resolveMedicationInfo(med, lang);
 
   const handleSpeakerPress = () => {
     haptic.tap();
     if (isPlaying) {
-      stopSpeaking();
-      setIsPlaying(false);
+      stopSpeech();
       return;
     }
-    const text = getMedicationSpeechText(med, slot, lang);
-    const started = speak(text, lang, () => setIsPlaying(false));
-    setIsPlaying(started);
+    speakFor(listenId, getMedicationSpeechText(med, slot, lang));
   };
 
   const prescriberName = doctorShortName(med.prescriber?.name || med.prescribedBy || '');
   const department = med.prescriber?.department || '';
 
   return (
-    <DoubleTapSpeakable
+    <Speakable
       onPress={onPress}
-      speechText={() => getMedicationSpeechText(med, slot, lang)}
+      speech={() => getMedicationSpeechText(med, slot, lang)}
       radius={radii.lg}
-      accessibilityRole="button"
       accessibilityLabel={`${info.purposePatient}, ${info.shortName}. ${t('tapForDetails')}`}
       style={({ pressed }) => [
         styles.cardContainer,
@@ -97,6 +94,7 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
             taken={taken}
             label={taken ? t('taken') : t('take')}
             accessibilityLabel={t('markDoseTaken', { name: info.shortName })}
+            speechName={info.shortName}
             onPress={onToggleDose}
             lang={lang}
           />
@@ -141,6 +139,7 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
         {/* Small Speaker Read-Aloud Button */}
         <NeuPressable
           onPress={handleSpeakerPress}
+          atomic
           haptics="none"
           selected={isPlaying}
           fill={isPlaying ? colors.primary : colors.audioBg}
@@ -163,7 +162,7 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
           </AppText>
         </NeuPressable>
       </View>
-    </DoubleTapSpeakable>
+    </Speakable>
   );
 };
 

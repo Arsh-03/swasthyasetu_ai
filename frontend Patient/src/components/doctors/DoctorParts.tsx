@@ -8,18 +8,29 @@ import { formatDate, localCalendarDate, parseDateLabel } from '../../utils/dates
 import { MONTHS, WEEKDAYS } from '../../utils/translations';
 import { localized } from '../../utils/localized';
 import { GlassSheet } from '../glass';
+import { appointmentFacts, cleanForSpeech, departmentIdFrom, spokenDepartment, spokenDoctor, Speakable, useScripts } from '../../speech';
 import { AppText, Badge, DestructiveButton, Icon, SecondaryButton, TertiaryButton } from '../ui';
 
 /** Initials on the doctor's department colour (no stock photos: every doctor looks distinct). */
 export const DoctorAvatar: React.FC<{ name: string; department?: string; size?: number }> = ({ name, department, size = 52 }) => {
   const tone = tones[departmentInfo(department).tone];
+  const { lang } = useLanguage();
   return (
     <View
       style={[styles.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: tone.bg, borderColor: tone.ring }]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
-      <AppText variant="headline" weight={700} color={tone.text} lang="en" compact style={{ fontSize: Math.round(size * 0.36) }}>
+      <AppText
+        variant="headline"
+        weight={700}
+        color={tone.text}
+        lang="en"
+        compact
+        style={{ fontSize: Math.round(size * 0.36) }}
+        // Initials mean nothing spoken: say the doctor's name
+        speech={() => `${spokenDoctor(name, lang)}.`}
+      >
         {doctorInitials(name)}
       </AppText>
     </View>
@@ -29,10 +40,12 @@ export const DoctorAvatar: React.FC<{ name: string; department?: string; size?: 
 /** Department pill: icon + localised name, in the department's colour. */
 export const DepartmentBadge: React.FC<{ department?: string; fallback?: string; size?: 'sm' | 'md' }> = ({ department, fallback, size = 'sm' }) => {
   const { lang } = useLanguage();
+  const scripts = useScripts();
   const info = departmentInfo(department);
   const label = departmentName(department, lang) || fallback;
   if (!label) return null;
-  return <Badge label={label} tone={info.tone} icon={info.icon} size={size} />;
+  const topic = spokenDepartment(departmentIdFrom(department, fallback), lang)?.topic;
+  return <Badge label={label} tone={info.tone} icon={info.icon} size={size} speech={() => scripts.appointment.department(label, topic)} />;
 };
 
 /** "Thu, 29 October" style date for an appointment (clinic date label) plus its time. */
@@ -79,16 +92,21 @@ interface AppointmentRowProps {
 /** One appointment: date/time block, doctor + department, visit type, agenda, and a cancel action. */
 export const AppointmentRow: React.FC<AppointmentRowProps> = ({ apt, showDoctor = true, onCancel, onPress, muted }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
+  const facts = () => appointmentFacts(apt, lang);
   const box = dateBoxLines(apt.date, lang, t);
   const video = isVideo(apt.mode);
   const agenda = localized(apt.agenda, lang);
   const cancelled = apt.visitStatus === 'cancelled' || apt.visitStatus === 'no_show';
   const body = (
     <View style={styles.aptRow}>
-      <View
+      <Speakable
+        atomic
         style={[styles.when, muted && styles.whenMuted]}
-        accessible
-        accessibilityLabel={`${appointmentWhen(apt, lang).date}, ${apt.time}`}
+        speech={() => {
+          const f = facts();
+          return scripts.appointment.time(f.time, f.when);
+        }}
       >
         {box.top ? (
           <AppText variant="caption" weight={600} color={muted ? 'inkMuted' : 'primaryDeep'} align="center" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
@@ -101,16 +119,17 @@ export const AppointmentRow: React.FC<AppointmentRowProps> = ({ apt, showDoctor 
         <AppText variant="subhead" weight={700} color={muted ? 'inkMuted' : 'ink'} align="center" lang="en" compact numberOfLines={1} adjustsFontSizeToFit>
           {apt.time}
         </AppText>
-      </View>
+      </Speakable>
       <View style={styles.flex}>
         {showDoctor ? (
-          <AppText variant="subhead" weight={700} numberOfLines={1}>
+          <AppText variant="subhead" weight={700} numberOfLines={1} speech={apt.doctorName ? () => scripts.appointment.doctor(facts().doctor) : undefined}>
             {doctorShortName(apt.doctorName || t('yourDoctor'))}
           </AppText>
         ) : null}
         <View style={styles.badges}>
           {showDoctor ? <DepartmentBadge department={apt.department} fallback={localized(apt.specialty, lang)} /> : null}
           <Badge
+            speech={() => scripts.appointment.mode(video)}
             label={video ? t('visitVideo') : t('visitInPerson')}
             tone={video ? 'primary' : 'teal'}
             icon={video ? 'video' : 'hospital'}
@@ -119,26 +138,45 @@ export const AppointmentRow: React.FC<AppointmentRowProps> = ({ apt, showDoctor 
           {apt.visitStatus === 'completed' ? <Badge label={t('visitDone')} tone="success" icon="checkCircle" /> : null}
         </View>
         {agenda ? (
-          <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
+          <AppText variant="footnote" color="inkMuted" numberOfLines={2} speech={() => scripts.appointment.agenda(agenda)}>
             {agenda}
           </AppText>
         ) : null}
         {!video && !muted && apt.facility ? (
           <View style={styles.inline}>
             <Icon name="mapPin" size={14} color={colors.inkMuted} />
-            <AppText variant="caption" color="inkMuted" numberOfLines={1} style={styles.flex}>
+            <AppText
+              variant="caption"
+              color="inkMuted"
+              numberOfLines={1}
+              style={styles.flex}
+              speech={() => scripts.appointment.place(cleanForSpeech(localized(apt.facility, lang), lang))}
+            >
               {localized(apt.facility, lang)}
             </AppText>
           </View>
         ) : null}
         {onCancel ? (
-          <TertiaryButton label={t('cancelAppointment')} icon="calendarX" size="sm" onPress={onCancel} style={styles.cancelBtn} />
+          <TertiaryButton
+            label={t('cancelAppointment')}
+            icon="calendarX"
+            size="sm"
+            onPress={onCancel}
+            style={styles.cancelBtn}
+            speech={scripts.appointment.cancel}
+          />
         ) : null}
       </View>
       {onPress ? <Icon name="chevronRight" size={18} color={colors.inkMuted} /> : null}
     </View>
   );
-  return body;
+
+  // Row level: when, with whom, what kind of visit (agenda and place are read when tapped directly)
+  return (
+    <Speakable speech={() => scripts.appointment.row(facts())} onPress={onPress}>
+      {body}
+    </Speakable>
+  );
 };
 
 /** Centered yes / no dialog (React Native's Alert does nothing on the web). */

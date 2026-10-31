@@ -5,9 +5,10 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { EmptyAppointments } from './illustrations';
 import { parseDateLabel, parseTimeLabel, relativeDay, formatLongDate, daysAgoKey, inDaysKey } from '../utils/dates';
 import { localized, type LocalizedText } from '../utils/localized';
-import { departmentName } from '../utils/departments';
+import { doctorQualifications, doctorShortName } from '../utils/departments';
 import { DepartmentBadge, DoctorAvatar } from './doctors/DoctorParts';
-import { AppText, AudioListenButton, Badge, CriticalButton, DoubleTapSpeakable, ExpandableText, Groove, Icon, IconDisc, type IconName, NeuInset, NeuPanel } from './ui';
+import { appointmentFacts, cleanForSpeech, parseQualification, Speakable, spokenDate, useScripts, type SpeechSource } from '../speech';
+import { AppText, AudioListenButton, Badge, CriticalButton, ExpandableText, Groove, Icon, IconDisc, type IconName, NeuInset, NeuPanel } from './ui';
 
 export interface PatientAppointmentInfo {
   date: string;
@@ -46,13 +47,16 @@ const DOCTOR_PHOTO_URL =
  */
 export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoinCall, appointment, status }) => {
   const { lang, t } = useLanguage();
-  const join = <CriticalButton tone="primary" label={t('joinConsultationCall')} icon="video" onPress={onJoinCall} />;
+  const scripts = useScripts();
+  const join = (
+    <CriticalButton tone="primary" label={t('joinConsultationCall')} icon="video" onPress={onJoinCall} speech={scripts.appointment.joinCall} />
+  );
   const inPersonVisit = !!appointment?.mode && !appointment.mode.toLowerCase().includes('video');
 
   if (!appointment) {
     return (
       <NeuPanel radius={radii.xl} style={styles.card}>
-        <AppText variant="eyebrow" color="inkMuted" compact>
+        <AppText variant="eyebrow" color="inkMuted" compact speech={scripts.appointment.eyebrow}>
           {t('nextAppointment')}
         </AppText>
         <View style={styles.emptyBody} accessibilityLiveRegion="polite">
@@ -60,19 +64,19 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
           {status === 'loading' ? (
             <View style={styles.inline}>
               <ActivityIndicator color={colors.primary} />
-              <AppText variant="subhead" weight={600}>
+              <AppText variant="subhead" weight={600} speech={scripts.appointment.loading}>
                 {t('loading')}
               </AppText>
             </View>
           ) : status === 'error' ? (
             <View style={styles.inline} accessibilityRole="alert">
               <Icon name="network" size={20} color={colors.warningDeep} active />
-              <AppText variant="subhead" weight={600} color="warningDeep" style={styles.shrink}>
+              <AppText variant="subhead" weight={600} color="warningDeep" style={styles.shrink} speech={scripts.appointment.error}>
                 {t('appointmentError')}
               </AppText>
             </View>
           ) : (
-            <AppText variant="headline" align="center">
+            <AppText variant="headline" align="center" speech={scripts.appointment.none}>
               {t('noAppointment')}
             </AppText>
           )}
@@ -85,40 +89,61 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
     );
   }
 
-  const doctor = appointment.doctorName || t('noDoctorAssigned');
+  const doctorFull = appointment.doctorName || t('noDoctorAssigned');
+  // Name and degrees are shown (and spoken) separately: "Dr. Farah Khan" / "MD Dermatology"
+  const doctor = doctorShortName(doctorFull);
+  const qualification = doctorQualifications(doctorFull);
   // Parsed calendar date → full localised date; unparsable labels are shown as sent
   const calendar = parseDateLabel(appointment.date);
   const dateText = calendar ? formatLongDate(calendar, lang) : appointment.date || '—';
-  const dept = departmentName(appointment.department, lang);
-  const inPerson = !!appointment.mode && !appointment.mode.toLowerCase().includes('video');
   const clinic = localized(appointment.facility, lang) || localized(appointment.specialty, lang);
   const agenda = localized(appointment.agenda, lang);
-  const spoken = () =>
-    [t('appointmentSpoken', { time: appointment.time, date: dateText, doctor }), dept, clinic, agenda]
-      .filter(Boolean)
-      .join('. ');
+  const facility = localized(appointment.facility, lang) || t('theClinic');
+
+  // One card-level script, used by a double tap on the card AND by its Listen button
+  const facts = () => appointmentFacts(appointment, lang);
+  const cardSpeech = () => scripts.appointment.card(facts());
+  const doctorSpeech = () => scripts.appointment.doctor(facts().doctor);
+  const qualificationSpeech = () => {
+    const q = parseQualification(doctorFull);
+    return scripts.appointment.qualification(facts().doctor, q?.degrees ?? [], q?.subject ?? '', facts().specialist);
+  };
 
   return (
-    <DoubleTapSpeakable speechText={spoken} radius={radii.xl}>
+    <Speakable speech={cardSpeech} radius={radii.xl}>
       <NeuPanel radius={radii.xl} style={styles.card}>
         <View style={styles.topRow}>
-          <AppText variant="eyebrow" color="inkMuted" compact style={styles.shrink}>
+          <AppText variant="eyebrow" color="inkMuted" compact style={styles.shrink} speech={scripts.appointment.eyebrow}>
             {t('nextAppointment')}
           </AppText>
-          <AudioListenButton text={spoken} />
+          <AudioListenButton text={cardSpeech} speech={scripts.appointment.listen} />
         </View>
 
         {/* Time + doctor */}
         <View style={styles.header}>
           {/* The demo portrait belongs to Dr. Ananya; every other doctor gets their initials */}
-          {/ananya/i.test(doctor) ? <DoctorPortrait /> : <DoctorAvatar name={doctor} department={appointment.department} size={72} />}
+          {/ananya/i.test(doctor) ? (
+            <DoctorPortrait speech={doctorSpeech} />
+          ) : (
+            <DoctorAvatar name={doctor} department={appointment.department} size={72} />
+          )}
           <View style={styles.headerText}>
-            <AppointmentTime label={appointment.time} />
-            <AppText variant="callout" numberOfLines={2}>
+            <AppointmentTime label={appointment.time} speech={() => scripts.appointment.time(facts().time, facts().when)} />
+            <AppText variant="callout" numberOfLines={2} speech={doctorSpeech}>
               {doctor}
             </AppText>
+            {qualification ? (
+              <AppText variant="footnote" color="inkMuted" numberOfLines={1} speech={qualificationSpeech}>
+                {qualification}
+              </AppText>
+            ) : null}
             {clinic ? (
-              <AppText variant="footnote" color="inkMuted" numberOfLines={2}>
+              <AppText
+                variant="footnote"
+                color="inkMuted"
+                numberOfLines={2}
+                speech={() => scripts.appointment.place(cleanForSpeech(clinic, lang))}
+              >
                 {clinic}
               </AppText>
             ) : null}
@@ -129,22 +154,29 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
         <View style={styles.badges}>
           <RelativeBadge date={appointment.date} time={appointment.time} fallback={localized(appointment.relativeTime, lang)} />
           {appointment.department ? <DepartmentBadge department={appointment.department} size="md" /> : null}
-          {inPerson ? <Badge label={t('visitInPerson')} tone="teal" icon="hospital" size="md" /> : null}
+          {inPersonVisit ? (
+            <Badge label={t('visitInPerson')} tone="teal" icon="hospital" size="md" speech={scripts.appointment.mode(false)} />
+          ) : null}
           {appointment.isRescheduled ? (
             <>
-              <Badge label={t('rescheduledByClinician')} tone="primary" icon="rescheduled" size="md" />
-              <Badge label={t('newTime')} tone="success" icon="clock" size="md" />
+              <Badge label={t('rescheduledByClinician')} tone="primary" icon="rescheduled" size="md" speech={scripts.appointment.rescheduled} />
+              <Badge label={t('newTime')} tone="success" icon="clock" size="md" speech={scripts.appointment.rescheduled} />
             </>
           ) : null}
         </View>
 
         {/* Date and agenda as icon rows on the panel (labels go to screen readers) */}
         <View>
-          <DetailRow icon="calendar" label={t('appointmentDate')} value={dateText} />
+          <DetailRow
+            icon="calendar"
+            label={t('appointmentDate')}
+            value={dateText}
+            speech={() => scripts.appointment.date(spokenDate(appointment.date, lang, appointment.time))}
+          />
           {agenda ? (
             <>
               <Groove inset={48} />
-              <DetailRow icon="clipboard" label={t('agenda')} value={agenda} expandable />
+              <DetailRow icon="clipboard" label={t('agenda')} value={agenda} expandable speech={() => scripts.appointment.agenda(agenda)} />
             </>
           ) : null}
         </View>
@@ -152,57 +184,70 @@ export const HeroAppointmentCard: React.FC<HeroAppointmentCardProps> = ({ onJoin
         {inPersonVisit ? (
           <View style={styles.inline}>
             <Icon name="mapPin" size={18} color={colors.inkMuted} />
-            <AppText variant="footnote" color="inkMuted" style={styles.shrink}>
-              {t('inPersonAt', { place: localized(appointment.facility, lang) || t('theClinic') })}
+            <AppText
+              variant="footnote"
+              color="inkMuted"
+              style={styles.shrink}
+              speech={() => scripts.appointment.inPersonAt(cleanForSpeech(facility, lang))}
+            >
+              {t('inPersonAt', { place: facility })}
             </AppText>
           </View>
         ) : (
           join
         )}
       </NeuPanel>
-    </DoubleTapSpeakable>
+    </Speakable>
   );
 };
 
 /** Doctor photo in an inset frame (falls back to a stethoscope glyph). */
-const DoctorPortrait: React.FC = () => {
+const DoctorPortrait: React.FC<{ speech?: SpeechSource }> = ({ speech }) => {
   const [failed, setFailed] = useState(false);
   return (
-    <NeuInset radius={36} strength="soft" style={styles.portrait}>
+    <Speakable speech={speech} atomic>
+      <NeuInset radius={36} strength="soft" style={styles.portrait}>
       {failed ? (
         <Icon name="doctor" size={30} color={colors.primary} active />
       ) : (
         <Image source={{ uri: DOCTOR_PHOTO_URL }} style={styles.portraitImage} onError={() => setFailed(true)} accessibilityIgnoresInvertColors />
       )}
-    </NeuInset>
+      </NeuInset>
+    </Speakable>
   );
 };
 
-const DetailRow: React.FC<{ icon: IconName; label: string; value: string; expandable?: boolean }> = ({ icon, label, value, expandable }) => (
-  <View style={styles.detailRow} accessible={!expandable} accessibilityLabel={expandable ? undefined : `${label}: ${value}`}>
+const DetailRow: React.FC<{ icon: IconName; label: string; value: string; expandable?: boolean; speech?: SpeechSource }> = ({
+  icon,
+  label,
+  value,
+  expandable,
+  speech,
+}) => (
+  <Speakable style={styles.detailRow} speech={speech} accessibilityLabel={expandable ? undefined : `${label}: ${value}`}>
     <IconDisc icon={icon} size={36} variant="inset" />
     {expandable ? (
       // No silent truncation: 3 lines + Read more / Show less (Listen reads the full text)
-      <ExpandableText variant="subhead" weight={600} accessibilityLabel={`${label}: ${value}`}>
+      <ExpandableText variant="subhead" weight={600} accessibilityLabel={`${label}: ${value}`} speech={speech}>
         {value}
       </ExpandableText>
     ) : (
-      <AppText variant="subhead" weight={600} style={styles.shrink}>
+      <AppText variant="subhead" weight={600} style={styles.shrink} speech={speech}>
         {value}
       </AppText>
     )}
-  </View>
+  </Speakable>
 );
 
 /**
  * "10:30 AM" on one line in the display serif (Fraunces in every language: it is a Latin run)
  * with the zone as a smaller suffix; shrinks to fit rather than wrapping.
  */
-export const AppointmentTime: React.FC<{ label: string }> = ({ label }) => {
+export const AppointmentTime: React.FC<{ label: string; speech?: SpeechSource }> = ({ label, speech }) => {
   const { t } = useLanguage();
   const parsed = parseTimeLabel(label);
   return (
-    <View style={styles.timeRow} accessible accessibilityLabel={`${t('nextAppointment')}: ${label}`}>
+    <Speakable atomic style={styles.timeRow} speech={speech} accessibilityLabel={`${t('nextAppointment')}: ${label}`}>
       <AppText variant="metric" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={styles.shrink}>
         {parsed ? parsed.clock : label || '—'}
       </AppText>
@@ -211,7 +256,7 @@ export const AppointmentTime: React.FC<{ label: string }> = ({ label }) => {
           {parsed.zone}
         </AppText>
       ) : null}
-    </View>
+    </Speakable>
   );
 };
 
@@ -221,9 +266,11 @@ export const AppointmentTime: React.FC<{ label: string }> = ({ label }) => {
  * the date label cannot be parsed.
  */
 export const RelativeBadge: React.FC<{ date: string; time?: string; fallback?: string; now?: Date }> = ({ date, time, fallback, now }) => {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const scripts = useScripts();
   const calendar = parseDateLabel(date);
-  if (!calendar) return fallback ? <Badge label={fallback} tone="primary" icon="clock" size="md" /> : null;
+  const speech = () => scripts.appointment.relative(spokenDate(date, lang, time, now));
+  if (!calendar) return fallback ? <Badge label={fallback} tone="primary" icon="clock" size="md" speech={speech} /> : null;
   const rel = relativeDay(calendar, parseTimeLabel(time), now);
   switch (rel.kind) {
     case 'past':
@@ -232,15 +279,15 @@ export const RelativeBadge: React.FC<{ date: string; time?: string; fallback?: s
           label={rel.daysAgo > 0 ? `${t('pastAppointment')} · ${t(daysAgoKey(rel.daysAgo), { n: rel.daysAgo })}` : t('pastAppointment')}
           tone="neutral"
           icon="rescheduled"
-          size="md"
+          size="md" speech={speech}
         />
       );
     case 'today':
-      return <Badge label={t('relToday')} tone="success" icon="clock" size="md" />;
+      return <Badge label={t('relToday')} tone="success" icon="clock" size="md" speech={speech} />;
     case 'tomorrow':
-      return <Badge label={t('relTomorrow')} tone="primary" icon="clock" size="md" />;
+      return <Badge label={t('relTomorrow')} tone="primary" icon="clock" size="md" speech={speech} />;
     default:
-      return <Badge label={t(inDaysKey(rel.days), { n: rel.days })} tone="primary" icon="calendar" size="md" />;
+      return <Badge label={t(inDaysKey(rel.days), { n: rel.days })} tone="primary" icon="calendar" size="md" speech={speech} />;
   }
 };
 

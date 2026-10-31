@@ -5,6 +5,7 @@ import { patientApi, type HealthRecord, type UploadDocumentInput } from '../serv
 import { useLanguage } from '../i18n/LanguageContext';
 import { pickHealthReportDocument } from '../utils/documentPicker';
 import { GlassSheet } from './glass';
+import { useScripts } from '../speech';
 import {
   AppText,
   Badge,
@@ -33,6 +34,7 @@ export const UploadReportModal: React.FC<UploadReportModalProps> = ({
   onUploadSuccess,
 }) => {
   const { t } = useLanguage();
+  const scripts = useScripts();
   const [selectedFile, setSelectedFile] = useState<UploadDocumentInput | null>(null);
   const [customTitle, setCustomTitle] = useState('');
   const [status, setStatus] = useState<UploadState>('idle');
@@ -153,6 +155,7 @@ export const UploadReportModal: React.FC<UploadReportModalProps> = ({
             <PrimaryButton
               label={t('close')}
               icon="check"
+              speech={scripts.common.close}
               onPress={handleClose}
             />
           </View>
@@ -181,6 +184,7 @@ export const UploadReportModal: React.FC<UploadReportModalProps> = ({
                   <SecondaryButton
                     label={t('changeReportFile')}
                     size="sm"
+                    speech={scripts.records.uploadPickFile}
                     onPress={handlePickFile}
                     disabled={status === 'uploading'}
                   />
@@ -199,6 +203,7 @@ export const UploadReportModal: React.FC<UploadReportModalProps> = ({
                   <PrimaryButton
                     label={t('selectReportFile')}
                     icon="upload"
+                    speech={scripts.records.uploadPickFile}
                     onPress={handlePickFile}
                   />
                 </View>
@@ -242,10 +247,12 @@ export const UploadReportModal: React.FC<UploadReportModalProps> = ({
                     <PrimaryButton
                       label={t('saveToLocker')}
                       icon="sparkle"
+                      speech={scripts.records.uploadSubmit(!!selectedFile)}
                       onPress={handleUpload}
                     />
                     <SecondaryButton
                       label={t('cancel')}
+                      speech={scripts.common.cancel}
                       onPress={handleClose}
                     />
                   </View>

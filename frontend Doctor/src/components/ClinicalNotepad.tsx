@@ -56,6 +56,12 @@ const STEP_NAMES: Record<string, string> = {
   S1: 'Minimise', S2: 'Mask', S3: 'Generalise', S4: 'Unlink', S5: 'Verify', S6: 'Record', S7: 'Restore',
 };
 
+export interface SpeakerControl {
+  speaker: 'doctor' | 'patient';
+  onSpeakerChange: (speaker: 'doctor' | 'patient') => void;
+  disabled?: boolean;
+}
+
 interface ClinicalNotepadProps {
   encounterId: string;
   patientName?: string;
@@ -71,6 +77,10 @@ interface ClinicalNotepadProps {
   docked?: boolean;
   /** CHIBI's quiet hints: on an empty line, offer what was said but isn't under that heading yet. */
   quietHints?: boolean;
+  /** Active speaker toggle control (e.g. Doctor / Patient turn taking in test lab) */
+  speakerControl?: SpeakerControl;
+  /** Extra toolbar items to render before spacer */
+  toolbarExtra?: React.ReactNode;
 }
 
 const IDENTIFIER_LABELS: Record<string, string> = {
@@ -100,10 +110,30 @@ const SECTION_LABELS: Record<NoteSection, string> = {
   assessment: 'Diagnosis', labs: 'Investigations', plan: 'Rx',
 };
 
-const HEADING_LINE = /^\s*([A-Za-z][A-Za-z /&-]{0,40}?)\s*:\s*$/;
+const CANONICAL_SECTIONS: Record<string, string> = {
+  'chief complaints': 'complaints', 'complaints': 'complaints', 'c/c': 'complaints', 'symptoms': 'complaints',
+  'history': 'history', 'past history': 'history', 'medical history': 'history', 'family history': 'history',
+  'allergies': 'allergies', 'allergy': 'allergies',
+  'current medications': 'medications', 'medications': 'medications', 'current meds': 'medications', 'medication': 'medications',
+  'vitals': 'vitals', 'vital signs': 'vitals', 'vital': 'vitals',
+  'examination': 'exam', 'exam': 'exam', 'o/e': 'exam', 'findings': 'exam',
+  'diagnosis': 'diagnosis', 'assessment': 'diagnosis', 'impression': 'diagnosis',
+  'investigations': 'investigations', 'investigation': 'investigations', 'labs': 'investigations', 'tests': 'investigations',
+  'rx': 'rx', 'prescription': 'rx', 'prescriptions': 'rx', 'treatment': 'rx',
+  'advice': 'advice', 'plan': 'advice', 'instructions': 'advice',
+  'follow-up': 'follow_up', 'follow up': 'follow_up', 'review': 'follow_up',
+};
+
+function toCanonicalSection(label: string): string {
+  const clean = label.trim().toLowerCase().replace(/[:\s_-]+/g, ' ');
+  return CANONICAL_SECTIONS[clean] ?? clean;
+}
+
+const HEADING_LINE = /^\s*([A-Za-z][A-Za-z /&-]{0,40}?)\s*:(.*)$/;
 
 /** End of the last line under `heading` (where a new line for that heading goes), or null without the heading. */
-function headingInsertionPoint(text: string, heading: string): number | null {
+function headingInsertionPoint(text: string, headingOrKey: string): number | null {
+  const targetKey = toCanonicalSection(headingOrKey);
   const lines = text.split('\n');
   let pos = 0;
   let found = false;
@@ -112,7 +142,10 @@ function headingInsertionPoint(text: string, heading: string): number | null {
     const end = pos + line.length;
     const m = HEADING_LINE.exec(line);
     if (!found) {
-      if (m && m[1].trim().toLowerCase() === heading.toLowerCase()) { found = true; insertAt = end; }
+      if (m && toCanonicalSection(m[1]) === targetKey) {
+        found = true;
+        insertAt = end;
+      }
     } else {
       if (m) break;
       if (line.trim()) insertAt = end;
@@ -166,11 +199,32 @@ const SafetyRow: React.FC<{ alert: SafetyAlert }> = ({ alert: a }) => (
 
 export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
   encounterId, patientName, callMinutes = null, autoApplyCall = false, onTextChange, insertRequest = null, docked = false,
-  quietHints = true,
+  quietHints = true, speakerControl, toolbarExtra,
 }) => {
   const [lexicon, setLexicon] = useState<Lexicon | null>(null);
   const engine = useMemo(() => (lexicon ? new LocalEngine(lexicon) : null), [lexicon]);
   const autoThreshold = lexicon?.auto_convert_threshold ?? AUTO_THRESHOLD_DEFAULT;
+
+  const handleSpeakerClick = (target: 'doctor' | 'patient') => {
+    if (!speakerControl || speakerControl.disabled) return;
+    if (speakerControl.speaker === target) {
+      speakerControl.onSpeakerChange(target === 'doctor' ? 'patient' : 'doctor');
+    } else {
+      speakerControl.onSpeakerChange(target);
+    }
+  };
+
+  useEffect(() => {
+    if (!speakerControl) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        speakerControl.onSpeakerChange(speakerControl.speaker === 'doctor' ? 'patient' : 'doctor');
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [speakerControl]);
 
   const [text, setText] = useState('');
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -356,10 +410,19 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
 
   const addCallFinding = useCallback((f: CallFinding) => {
     if (!engine || callAppliedRef.current[f.id]) return;
+
+    // Filter out fake or generic filler findings like "Something (patient-reported)" or noises
+    const lowerText = f.text.toLowerCase().trim();
+    if (lowerText.includes('something (patient-reported)') ||
+        /^(?:something|anything|none|shibi|chibi|shaaba|shaba|ooh|aah)$/i.test(lowerText)) {
+      return;
+    }
+
     const text = textRef.current;
     const section = (['complaints', 'history', 'exam', 'assessment', 'labs', 'plan'].includes(f.section)
       ? f.section : 'history') as NoteSection;
-    const at = (f.heading ? headingInsertionPoint(text, f.heading) : null) ?? engine.sectionInsertionPoint(text, section);
+    const targetHeading = f.heading || f.kind || '';
+    const at = (targetHeading ? headingInsertionPoint(text, targetHeading) : null) ?? engine.sectionInsertionPoint(text, section);
     const draft: CodedDraft = {
       kind: 'call', original: '', name: f.text, codes: [], category: `From the call · ${f.kind}`,
       severity: f.severity === 'urgent' ? 'critical' : 'routine', confidence: 1, alternatives: [], auto: true,
@@ -1273,6 +1336,50 @@ export const ClinicalNotepad: React.FC<ClinicalNotepadProps> = ({
             </div>
           )}
         </div>
+        {speakerControl && (
+          <div
+            className={`np-speaker-toggle is-${speakerControl.speaker}${speakerControl.disabled ? ' is-disabled' : ''}`}
+            role="radiogroup"
+            aria-label="Speaking turn toggle"
+            title={`Speaking turn: ${speakerControl.speaker === 'doctor' ? 'Doctor' : 'Patient'} (Click to toggle · Alt+S)`}
+            onClick={() => handleSpeakerClick(speakerControl.speaker === 'doctor' ? 'patient' : 'doctor')}
+          >
+            <div className="np-speaker-thumb" aria-hidden="true" />
+            <button
+              type="button"
+              role="radio"
+              aria-checked={speakerControl.speaker === 'doctor'}
+              className={`np-speaker-option ${speakerControl.speaker === 'doctor' ? 'active-doctor' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSpeakerClick('doctor');
+              }}
+              disabled={speakerControl.disabled}
+              title="Doctor's turn to speak (Alt+S)"
+            >
+              <Icon name="doctor" size={14} />
+              <span>Doctor</span>
+              <span className="np-speaker-dot" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={speakerControl.speaker === 'patient'}
+              className={`np-speaker-option ${speakerControl.speaker === 'patient' ? 'active-patient' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSpeakerClick('patient');
+              }}
+              disabled={speakerControl.disabled}
+              title="Patient's turn to speak (Alt+S)"
+            >
+              <Icon name="person" size={14} />
+              <span>Patient</span>
+              <span className="np-speaker-dot" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        {toolbarExtra}
         {section && <span className="np-where" title="The heading you are writing under">{SECTION_LABELS[section]}</span>}
         <span className="np-toolbar-spacer" />
         {saveMsg && (

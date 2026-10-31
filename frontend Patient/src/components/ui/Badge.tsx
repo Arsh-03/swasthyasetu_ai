@@ -4,6 +4,7 @@ import { colors, domains, radii, spacing, tones, touch, type Domain, type Tone }
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { NeuPressable } from './Neu';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 interface BadgeProps {
   label: string;
@@ -15,6 +16,8 @@ interface BadgeProps {
   size?: 'sm' | 'md';
   solid?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** Spoken on double tap (default: the label, cleaned up). */
+  speech?: SpeechSource;
 }
 
 /**
@@ -29,6 +32,7 @@ export const Badge: React.FC<BadgeProps> = ({
   size = 'sm',
   solid = false,
   style,
+  speech,
 }) => {
   const d = domain ? domains[domain] : null;
   const c = tones[tone];
@@ -39,7 +43,10 @@ export const Badge: React.FC<BadgeProps> = ({
 
   const isSm = size === 'sm';
   const pill = (
-    <View
+    <Speakable
+      atomic
+      speech={speech}
+      accessibilityLabel={label}
       style={[
         styles.badge,
         isSm ? styles.badgeSm : styles.badgeMd,
@@ -58,7 +65,7 @@ export const Badge: React.FC<BadgeProps> = ({
       >
         {label}
       </AppText>
-    </View>
+    </Speakable>
   );
   return solid ? <View style={[styles.solidBase, style]}>{pill}</View> : pill;
 };
@@ -72,12 +79,15 @@ interface ChipProps {
   onPress: () => void;
   icon?: IconName;
   style?: StyleProp<ViewStyle>;
+  speech?: string;
 }
 
 /** Selectable chip: white card pill; selected = tonal ice fill + primary label + check. */
-export const Chip: React.FC<ChipProps> = ({ label, selected, onPress, icon, style }) => (
+export const Chip: React.FC<ChipProps> = ({ label, selected, onPress, icon, style, speech }) => (
   <NeuPressable
     onPress={onPress}
+    atomic
+    speech={speech}
     selected={selected}
     radius={radii.md}
     compact

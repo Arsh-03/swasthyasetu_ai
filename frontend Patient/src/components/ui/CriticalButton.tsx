@@ -1,11 +1,12 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { colors, critical, elevation, radii, spacing } from '../../theme/tokens';
 import { usePressScale } from '../../hooks/usePressScale';
 import { haptic } from '../../utils/haptics';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 export type CriticalTone = keyof Pick<typeof critical, 'primary' | 'success' | 'danger'>;
 
@@ -21,6 +22,8 @@ interface CriticalButtonProps {
   fullWidth?: boolean;
   style?: StyleProp<ViewStyle>;
   accessibilityHint?: string;
+  /** Spoken on double tap (default: label and sublabel). A double tap never presses it. */
+  speech?: SpeechSource;
 }
 
 const MIN_HEIGHT = 52;
@@ -40,6 +43,7 @@ export const CriticalButton: React.FC<CriticalButtonProps> = ({
   fullWidth = true,
   style,
   accessibilityHint,
+  speech,
 }) => {
   const press = usePressScale(0.98);
   const inactive = disabled || loading;
@@ -47,7 +51,9 @@ export const CriticalButton: React.FC<CriticalButtonProps> = ({
 
   return (
     <Animated.View style={[press.style, fullWidth && styles.fullWidth, style]}>
-      <Pressable
+      <Speakable
+        atomic
+        speech={speech}
         onPress={() => {
           haptic.heavy();
           onPress();
@@ -94,7 +100,7 @@ export const CriticalButton: React.FC<CriticalButtonProps> = ({
             </AppText>
           ) : null}
         </View>
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };

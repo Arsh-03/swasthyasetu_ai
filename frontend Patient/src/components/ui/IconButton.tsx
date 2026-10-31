@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { colors, elevation, tints, touch } from '../../theme/tokens';
 import { usePressScale } from '../../hooks/usePressScale';
 import { haptic } from '../../utils/haptics';
 import { Icon, type IconName } from './Icon';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 export type IconButtonTone = 'neutral' | 'danger' | 'night' | 'nightOff';
 
@@ -20,6 +21,8 @@ interface IconButtonProps {
   haptics?: boolean;
   selected?: boolean;
   style?: StyleProp<ViewStyle>;
+  /** Spoken on double tap (default: the accessibility label). */
+  speech?: SpeechSource;
 }
 
 const NIGHT = {
@@ -37,6 +40,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
   haptics = false,
   selected = false,
   style,
+  speech,
 }) => {
   const press = usePressScale(0.95);
   const slop = Math.max(0, (touch.min - size) / 2);
@@ -46,7 +50,9 @@ export const IconButton: React.FC<IconButtonProps> = ({
     const isDanger = tone === 'danger';
     return (
       <Animated.View style={[press.style, style]}>
-        <Pressable
+        <Speakable
+          atomic
+          speech={speech}
           onPress={() => {
             if (haptics) haptic.tap();
             onPress();
@@ -89,7 +95,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
               active={selected || pressed}
             />
           )}
-        </Pressable>
+        </Speakable>
       </Animated.View>
     );
   }
@@ -97,7 +103,9 @@ export const IconButton: React.FC<IconButtonProps> = ({
   const look = NIGHT[tone];
   return (
     <Animated.View style={[press.style, style]}>
-      <Pressable
+      <Speakable
+          atomic
+          speech={speech}
         onPress={() => {
           if (haptics) haptic.tap();
           onPress();
@@ -121,7 +129,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
         ]}
       >
         <Icon name={icon} size={glyph} color={colors.onNight} active={selected} />
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };

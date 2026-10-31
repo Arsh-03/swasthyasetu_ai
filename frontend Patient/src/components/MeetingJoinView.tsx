@@ -6,6 +6,7 @@ import type { ConsultationCallApi } from '../services/call/useConsultationCall';
 import { useLanguage } from '../i18n/LanguageContext';
 import { formatClock, formatTimestamp } from '../utils/dates';
 import { AppText, Card, Icon, NavBar, PrimaryButton, ScreenScroll, SecondaryButton, TextField } from './ui';
+import { useScripts } from '../speech';
 
 /**
  * Join a consultation like a Google Meet: by its link or code. Joining opens 10 minutes before the start;
@@ -21,6 +22,7 @@ export const MeetingJoinView: React.FC<{
   onRequestCall: () => void;
 }> = ({ code: initialCode, call, callRoomEncounterId, onRoom, onBack, onRequestCall }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [code, setCode] = useState(initialCode ?? '');
   const [typed, setTyped] = useState('');
   const [info, setInfo] = useState<MeetingInfo | null>(null);
@@ -68,7 +70,12 @@ export const MeetingJoinView: React.FC<{
         <Card style={styles.gap}>
           <TextField label={t('meetCodeLabel')} icon="video" value={typed} onChangeText={setTyped} autoCapitalize="none" autoCorrect={false}
             hint={t('meetCodeHint')} />
-          <PrimaryButton label={t('meetFind')} onPress={() => setCode(typed.trim().toLowerCase())} disabled={typed.trim().length < 6} />
+          <PrimaryButton
+            label={t('meetFind')}
+            speech={scripts.meet.find}
+            onPress={() => setCode(typed.trim().toLowerCase())}
+            disabled={typed.trim().length < 6}
+          />
         </Card>
       )}
 
@@ -100,8 +107,18 @@ export const MeetingJoinView: React.FC<{
 
           {info.state === 'open' && !asking && (
             <>
-              <PrimaryButton label={t('meetAskToJoin')} icon="video" onPress={() => void askToJoin(true)} />
-              <SecondaryButton label={t('meetAskAudio')} icon="call" onPress={() => void askToJoin(false)} />
+              <PrimaryButton
+                label={t('meetAskToJoin')}
+                icon="video"
+                speech={scripts.meet.askToJoin(true, info.doctor_name)}
+                onPress={() => void askToJoin(true)}
+              />
+              <SecondaryButton
+                label={t('meetAskAudio')}
+                icon="call"
+                speech={scripts.meet.askToJoin(false, info.doctor_name)}
+                onPress={() => void askToJoin(false)}
+              />
             </>
           )}
           {asking && call.knockState !== 'denied' && (
@@ -110,7 +127,7 @@ export const MeetingJoinView: React.FC<{
               <AppText variant="subhead" weight={600} align="center">
                 {waiting ? t('meetWaitingForDoctor', { name: info.doctor_name }) : t('meetConnecting')}
               </AppText>
-              <SecondaryButton label={t('meetCancel')} onPress={cancel} />
+              <SecondaryButton label={t('meetCancel')} speech={scripts.meet.cancelKnock} onPress={cancel} />
             </View>
           )}
           {call.knockState === 'denied' && <AppText variant="subhead" color="dangerDeep">{t('meetDenied')}</AppText>}

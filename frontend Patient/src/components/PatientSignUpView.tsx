@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import type { TranslationKey } from '../utils/translations';
 import { pickHealthReportDocument } from '../utils/documentPicker';
 import { AppText, AudioListenButton, Badge, Icon, NeuPanel, PrimaryButton, SecondaryButton, SegmentedControl, TextField, Well } from './ui';
+import { useScripts } from '../speech';
 
 interface PatientSignUpViewProps {
   onSignUpSuccess: (user: PatientUser) => void;
@@ -30,6 +31,7 @@ const normaliseAbha = (abha: string, mobile: string) => {
 /** Create-account form panel. Shown in place of the sign-in panel on the login screen. */
 export const PatientSignUpView: React.FC<PatientSignUpViewProps> = ({ onSignUpSuccess, onBackToSignIn }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [fullName, setFullName] = useState('');
   const [mobile, setMobile] = useState('');
   const [abha, setAbha] = useState('');
@@ -292,10 +294,17 @@ export const PatientSignUpView: React.FC<PatientSignUpViewProps> = ({ onSignUpSu
         <PrimaryButton
           label={loading ? t('creatingAccount') : t('createAccount')}
           icon="personAdd"
+          speech={scripts.auth.signUpSubmit}
           onPress={handleSubmit}
           loading={loading}
         />
-        <SecondaryButton label={t('haveAccountSignIn')} icon="signIn" onPress={onBackToSignIn} disabled={loading} />
+        <SecondaryButton
+          label={t('haveAccountSignIn')}
+          icon="signIn"
+          speech={scripts.auth.backToSignIn}
+          onPress={onBackToSignIn}
+          disabled={loading}
+        />
       </View>
     </NeuPanel>
   );

@@ -7,6 +7,7 @@ import { useFontsLoaded } from '../../theme/FontsProvider';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { useSurface } from './SurfaceContext';
 import type { SupportedLanguage } from '../../utils/translations';
+import { TextNesting, speakingTextStyle, useSpeakableText, type SpeechSource } from '../../speech/Speakable';
 
 export interface AppTextProps extends TextProps {
   variant?: TypeVariant;
@@ -17,6 +18,10 @@ export interface AppTextProps extends TextProps {
   lang?: SupportedLanguage;
   /** Tighter Latin line-height for single-line UI labels. Kannada / Hindi keep their safe line-height. */
   compact?: boolean;
+  /** Spoken on double tap instead of the visible text (see speech/scripts). */
+  speech?: SpeechSource;
+  /** Not double-tappable on its own (e.g. a label that is part of a larger control). */
+  speakable?: boolean;
 }
 
 const RN_WEIGHT: Record<FontWeight, TextStyle['fontWeight']> = { 400: '400', 500: '500', 600: '600', 700: '700' };
@@ -47,11 +52,18 @@ export const AppText: React.FC<AppTextProps> = ({
   align,
   lang: langOverride,
   compact = false,
+  speech,
+  speakable = true,
   style,
   children,
+  onPress,
   ...rest
 }) => {
   const { lang: appLang } = useLanguage();
+  // Double tap reads this text (or `speech`); a single tap goes to the parent's action
+  const { speaking, textProps } = useSpeakableText(children, speech, !speakable, onPress);
+  const tapProps = textProps.onPress ? textProps : onPress ? { onPress } : {};
+  const speakStyle = speaking ? speakingTextStyle : null;
   const fontsLoaded = useFontsLoaded();
   const surface = useSurface();
   const role: ColorRole = surface === 'glass' && color === 'inkMuted' ? 'ink' : color;
@@ -62,8 +74,8 @@ export const AppText: React.FC<AppTextProps> = ({
 
   if (spec.mono) {
     return (
-      <Text style={[{ fontFamily: MONO_FAMILY, fontSize: spec.fontSize, fontWeight: '500' }, base, style]} maxFontSizeMultiplier={1.6} {...rest}>
-        {children}
+      <Text style={[{ fontFamily: MONO_FAMILY, fontSize: spec.fontSize, fontWeight: '500' }, base, style, speakStyle]} maxFontSizeMultiplier={1.6} {...rest} {...tapProps}>
+        <TextNesting.Provider value>{children}</TextNesting.Provider>
       </Text>
     );
   }
@@ -92,14 +104,16 @@ export const AppText: React.FC<AppTextProps> = ({
   };
 
   return (
-    <Text style={[outer, base, style]} maxFontSizeMultiplier={1.6} {...rest}>
-      {text === null || runs.length === 1
-        ? children
-        : runs.map((r, i) => (
-            <Text key={i} style={runStyle(r.script)}>
-              {r.text}
-            </Text>
-          ))}
+    <Text style={[outer, base, style, speakStyle]} maxFontSizeMultiplier={1.6} {...rest} {...tapProps}>
+      <TextNesting.Provider value>
+        {text === null || runs.length === 1
+          ? children
+          : runs.map((r, i) => (
+              <Text key={i} style={runStyle(r.script)}>
+                {r.text}
+              </Text>
+            ))}
+      </TextNesting.Provider>
     </Text>
   );
 };

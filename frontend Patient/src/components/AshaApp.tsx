@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radii, spacing, tints } from '../theme/tokens';
 import { patientApi, type AshaPatient, type AshaReadingItem, type AshaTask, type AshaVisit, type PatientUser, type ReadingKind } from '../services/api';
@@ -9,6 +9,7 @@ import type { TranslationKey } from '../utils/translations';
 import { formatTimestamp } from '../utils/dates';
 import { haptic } from '../utils/haptics';
 import { AppText, Badge, Card, Icon, PrimaryButton, SecondaryButton, SegmentedControl, TextField } from './ui';
+import { Speakable } from '../speech';
 
 /**
  * ASHA worker app (same app, health-worker sign-in): doctors' requests for home-visit readings,
@@ -50,16 +51,16 @@ export const AshaApp: React.FC<{ user: PatientUser & { worker_code?: string; are
           <AppText variant="headline" numberOfLines={1}>{user.full_name}</AppText>
           <AppText variant="caption" color="inkMuted" numberOfLines={1}>{t('ashaRole')} · {user.worker_code} · {user.area}</AppText>
         </View>
-        <Pressable onPress={onLogout} accessibilityRole="button" accessibilityLabel={t('signOut')} hitSlop={8}>
+        <Speakable atomic onPress={onLogout} accessibilityRole="button" accessibilityLabel={t('signOut')} hitSlop={8}>
           <Icon name="signOut" size={22} color={colors.dangerDeep} />
-        </Pressable>
+        </Speakable>
       </View>
       {(waiting > 0 || syncError) && (
-        <Pressable onPress={() => void sync()} style={styles.syncBar} accessibilityRole="button">
+        <Speakable atomic onPress={() => void sync()} style={styles.syncBar} accessibilityRole="button">
           <Icon name="network" size={16} color={colors.warningDeep} />
           <AppText variant="footnote" color="warningDeep" style={styles.flex}>{t('ashaWaitingToSend', { n: waiting })}</AppText>
           <AppText variant="footnote" weight={700} color="primary">{t('ashaRetry')}</AppText>
-        </Pressable>
+        </Speakable>
       )}
       {screen.name === 'home' ? (
         <AshaHome refreshKey={refreshKey} onOpen={(patientId, taskId) => setScreen({ name: 'visit', patientId, taskId })} />
@@ -100,7 +101,7 @@ const AshaHome: React.FC<{ refreshKey: number; onOpen: (patientId: string, taskI
       {!tasks && <ActivityIndicator color={colors.primary} />}
       {tasks && tasks.length === 0 && <Card><AppText variant="body" color="inkMuted">{t('ashaNoTasks')}</AppText></Card>}
       {tasks?.map((task) => (
-        <Pressable key={task.task_id} onPress={() => onOpen(task.patient_id, task.task_id)} accessibilityRole="button">
+        <Speakable key={task.task_id} onPress={() => onOpen(task.patient_id, task.task_id)} accessibilityRole="button">
           <Card style={styles.taskCard}>
             <View style={styles.row}>
               <AppText variant="headline" style={styles.flex} numberOfLines={1}>{task.patient?.full_name}</AppText>
@@ -118,20 +119,20 @@ const AshaHome: React.FC<{ refreshKey: number; onOpen: (patientId: string, taskI
               {task.doctor_name} · {t('ashaDue')} {task.due_at ? formatTimestamp(task.due_at, lang) : '—'}
             </AppText>
           </Card>
-        </Pressable>
+        </Speakable>
       ))}
 
       <AppText variant="title" style={styles.top}>{t('ashaOtherPatient')}</AppText>
       <TextField label={t('ashaSearch')} icon="person" value={q} onChangeText={setQ} hint={t('ashaSearchHint')} autoCorrect={false} />
       {found.map((p) => (
-        <Pressable key={p.patient_id} onPress={() => onOpen(p.patient_id, null)} accessibilityRole="button" style={styles.foundRow}>
+        <Speakable key={p.patient_id} onPress={() => onOpen(p.patient_id, null)} accessibilityRole="button" style={styles.foundRow}>
           <Icon name="person" size={22} color={colors.primary} />
           <View style={styles.flex}>
             <AppText variant="body" weight={600}>{p.full_name}</AppText>
             <AppText variant="caption" color="inkMuted">{[p.age && `${p.age} ${t('ashaYears')}`, p.district].filter(Boolean).join(' · ')}</AppText>
           </View>
           <Icon name="chevronRight" size={18} color={colors.inkMuted} />
-        </Pressable>
+        </Speakable>
       ))}
     </ScrollView>
   );
@@ -180,10 +181,10 @@ const AshaVisitScreen: React.FC<{ patientId: string; taskId?: string | null; onB
 
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Pressable onPress={onBack} accessibilityRole="button" style={styles.back} hitSlop={8}>
+      <Speakable atomic onPress={onBack} accessibilityRole="button" style={styles.back} hitSlop={8}>
         <Icon name="chevronLeft" size={24} color={colors.primary} />
         <AppText variant="body" color="primary">{t('ashaTasksTitle')}</AppText>
-      </Pressable>
+      </Speakable>
       {!visit && !error && <ActivityIndicator color={colors.primary} />}
       {error && <AppText variant="subhead" color="dangerDeep">{error}</AppText>}
       {visit && (

@@ -29,6 +29,8 @@ import {
   TextField,
 } from '../ui';
 import { appointmentWhen, DepartmentBadge, DoctorAvatar, isVideo, slotDayLabel } from './DoctorParts';
+import { useScripts } from '../../speech';
+import { spokenDoctor } from '../../speech/format';
 
 type Step = 'issue' | 'doctor' | 'slot' | 'done';
 type Mode = 'video' | 'in_person';
@@ -52,6 +54,7 @@ interface AddDoctorFlowProps {
  */
 export const AddDoctorFlow: React.FC<AddDoctorFlowProps> = ({ initialDoctorId, existingAppointments, onExit, onBooked, onOpenDoctor }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [step, setStep] = useState<Step>(initialDoctorId ? 'slot' : 'issue');
   const [catalog, setCatalog] = useState<{ departments: DepartmentSummary[]; issues: HealthIssue[] } | null>(null);
   const [issue, setIssue] = useState<HealthIssue | null>(null);
@@ -239,7 +242,15 @@ export const AddDoctorFlow: React.FC<AddDoctorFlowProps> = ({ initialDoctorId, e
               {catalog.issues.map((it) => {
                 const tone = tones[departmentInfo(it.department).tone];
                 return (
-                  <NeuPressable key={it.id} onPress={() => chooseIssue(it)} radius={radii.lg} containerStyle={styles.gridCell} style={styles.issueTile} fillHeight>
+                  <NeuPressable
+                    key={it.id}
+                    onPress={() => chooseIssue(it)}
+                    radius={radii.lg}
+                    containerStyle={styles.gridCell}
+                    style={styles.issueTile}
+                    speech={scripts.doctors.issue(label(it.label), departmentName(it.department, lang))}
+                    fillHeight
+                  >
                     <View style={[styles.issueIcon, { backgroundColor: tone.bg }]}>
                       <Icon name={ISSUE_ICONS[it.id] ?? departmentInfo(it.department).icon} size={24} color={tone.icon} active />
                     </View>
@@ -269,7 +280,14 @@ export const AddDoctorFlow: React.FC<AddDoctorFlowProps> = ({ initialDoctorId, e
             {showAllDepartments && (
               <Card padded={false}>
                 {catalog.departments.map((d) => (
-                  <NeuPressable key={d.id} onPress={() => chooseDepartment(d.id)} flatAtRest radius={0} style={styles.deptRow}>
+                  <NeuPressable
+                    key={d.id}
+                    onPress={() => chooseDepartment(d.id)}
+                    flatAtRest
+                    radius={0}
+                    style={styles.deptRow}
+                    speech={`${departmentName(d.id, lang) || label(d.name)}. ${label(d.about)}. ${t('doctorCount', { n: d.doctor_count })}.`}
+                  >
                     <Icon name={departmentInfo(d.id).icon} size={22} color={tones[departmentInfo(d.id).tone].icon} active />
                     <View style={styles.flex}>
                       <AppText variant="subhead" weight={700}>
@@ -354,7 +372,13 @@ export const AddDoctorFlow: React.FC<AddDoctorFlowProps> = ({ initialDoctorId, e
               ) : (
                 <View style={styles.times}>
                   {daySlots.map((s) => (
-                    <Chip key={s.start} label={s.time} selected={slot?.start === s.start} onPress={() => setSlot(s)} />
+                    <Chip
+                      key={s.start}
+                      label={s.time}
+                      selected={slot?.start === s.start}
+                      speech={scripts.doctors.slot(slotDayLabel(day ?? '', lang, t), s.time, mode)}
+                      onPress={() => setSlot(s)}
+                    />
                   ))}
                 </View>
               )}
@@ -390,6 +414,11 @@ export const AddDoctorFlow: React.FC<AddDoctorFlowProps> = ({ initialDoctorId, e
               <PrimaryButton
                 label={slot ? t('confirmBooking', { day: slotDayLabel(day ?? '', lang, t), time: slot.time }) : t('pickATime')}
                 icon="calendarCheck"
+                speech={
+                  slot && doctor
+                    ? scripts.doctors.confirmBooking(spokenDoctor(doctor.name, lang), `${slotDayLabel(day ?? '', lang, t)} at ${slot.time}`)
+                    : undefined
+                }
                 disabled={!slot}
                 loading={booking}
                 onPress={confirm}
@@ -444,8 +473,9 @@ const DirectoryRow: React.FC<{ doctor: DirectoryDoctor; onPress: () => void }> =
     .filter(Boolean)
     .join(', ');
   const meta = [doctor.experience_years ? t('yearsExperience', { n: doctor.experience_years }) : '', langs].filter(Boolean).join(' • ');
+  const speechText = `${spokenDoctor(doctor.name, lang)}.${doctor.specialty ? ` ${doctor.specialty}.` : ''}${doctor.facility ? ` ${doctor.facility}.` : ''}${doctor.next_free ? ` ${t('nextFreeShort', { date: slotDayLabel(doctor.next_free.date, lang, t), time: doctor.next_free.time })}.` : ''}`;
   return (
-    <NeuPressable onPress={onPress} radius={radii.lg} style={styles.dirCard} accessibilityLabel={doctor.name}>
+    <NeuPressable onPress={onPress} radius={radii.lg} style={styles.dirCard} accessibilityLabel={doctor.name} speech={speechText}>
       <View style={styles.dirTop}>
         <DoctorAvatar name={doctor.name} department={doctor.department} size={48} />
         <View style={styles.flex}>
@@ -494,6 +524,7 @@ const DayChip: React.FC<{ date: string; count: number; selected: boolean; lang: 
   const d = parseDateLabel(date);
   const weekday = d ? WEEKDAYS[lang][new Date(Date.UTC(d.year, d.month, d.day)).getUTCDay()] : '';
   const disabled = count === 0;
+  const chipSpeech = `${slotDayLabel(date, lang, t)}: ${disabled ? t('dayFull') : t('slotsFree', { n: count })}.`;
   return (
     <NeuPressable
       onPress={onPress}
@@ -502,6 +533,7 @@ const DayChip: React.FC<{ date: string; count: number; selected: boolean; lang: 
       radius={radii.md}
       haptics="selection"
       style={styles.dayChip}
+      speech={chipSpeech}
       accessibilityLabel={`${slotDayLabel(date, lang, t)}: ${t('slotsFree', { n: count })}`}
     >
       <AppText variant="caption" weight={600} color={selected ? 'primary' : 'inkMuted'} compact numberOfLines={1}>

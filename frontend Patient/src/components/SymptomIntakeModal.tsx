@@ -15,6 +15,7 @@ import {
   SheetHeader,
   TextField,
 } from './ui';
+import { useScripts } from '../speech';
 
 interface SymptomIntakeModalProps {
   visible: boolean;
@@ -36,6 +37,7 @@ const SYMPTOMS: { value: string; label: TranslationKey; icon: IconName }[] = [
 
 export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible, onClose, onSubmit, doctorName }) => {
   const { t } = useLanguage();
+  const scripts = useScripts();
   const [isRepresentative, setIsRepresentative] = useState(false);
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([SYMPTOMS[0].value]);
   const [notes, setNotes] = useState('Severe flank colic on right side for 3 days');
@@ -95,6 +97,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
                 label={t(sym.label)}
                 icon={sym.icon}
                 selected={selectedSymptoms.includes(sym.value)}
+                speech={scripts.symptoms.symptomToggle(t(sym.label), selectedSymptoms.includes(sym.value))}
                 onPress={() => toggleSymptom(sym.value)}
               />
             ))}
@@ -110,6 +113,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
                 icon={isRecording ? 'stop' : 'mic'}
                 size={52}
                 iconSize={24}
+                speech={scripts.symptoms.voiceInput(isRecording)}
                 accessibilityLabel={isRecording ? t('stopVoiceInput') : t('startVoiceInput')}
                 onPress={handleVoiceInput}
                 selected={isRecording}
@@ -140,6 +144,7 @@ export const SymptomIntakeModal: React.FC<SymptomIntakeModalProps> = ({ visible,
         <CriticalButton
           tone="primary"
           label={t('joinVideoConsultation')}
+          speech={scripts.symptoms.submit(doctorName ? doctorName : undefined)}
           icon="video"
           onPress={() => onSubmit(selectedSymptoms, isRepresentative, notes)}
         />

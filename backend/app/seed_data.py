@@ -10,7 +10,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.database import AsyncSessionLocal, Base, migration_engine
 from app.models.models import (
@@ -81,7 +81,16 @@ async def seed_database():
         async with AsyncSessionLocal() as session:
             check = await session.execute(select(User).limit(1))
             if check.scalars().first() is not None:
-                return  # Database is already initialized; skip startup delay
+                # Already initialized: skip the slow schema scan unless a newer column is missing.
+                try:
+                    await session.execute(text("SELECT reactions FROM chat_messages LIMIT 0"))
+                except Exception:
+                    await session.rollback()
+                    async with migration_engine.begin() as conn:
+                        added = await conn.run_sync(add_missing_columns)
+                        if added:
+                            print("Added database columns:", ", ".join(added))
+                return
     except Exception:
         pass  # Fresh database without tables yet
 

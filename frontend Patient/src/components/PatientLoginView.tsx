@@ -26,6 +26,7 @@ import {
   TextField,
   Well,
 } from './ui';
+import { useScripts } from '../speech';
 
 interface PatientLoginViewProps {
   onLoginSuccess: (user: PatientUser) => void;
@@ -75,6 +76,7 @@ export const SignInError: React.FC<{ kind: SignInErrorKind; lang?: SupportedLang
  */
 export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSuccess, onBrandLongPress }) => {
   const { lang, t, cycleLang } = useLanguage();
+  const scripts = useScripts();
   const insets = useSafeAreaInsets();
   const [authMode, setAuthMode] = useState<'abha' | 'mobile'>('abha');
   const [identifier, setIdentifier] = useState(DEMO_ABHA);
@@ -257,13 +259,15 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
             <PrimaryButton
               label={loading ? t('signingIn') : showOtpField ? t('verifyAndSignIn') : t('continueWithAbha')}
               icon="signIn"
+              speech={showOtpField ? scripts.auth.verifyAndSignIn : scripts.auth.continueWithAbha}
               onPress={handleContinue}
               loading={loading}
             />
-            <SecondaryButton label={t('demoLogin')} icon="bolt" onPress={handleQuickDemoFill} />
+            <SecondaryButton label={t('demoLogin')} icon="bolt" speech={scripts.auth.demoFill} onPress={handleQuickDemoFill} />
             <SecondaryButton
               label={t('newHereCreateAccount')}
               icon="personAdd"
+              speech={scripts.auth.createAccount}
               onPress={() => {
                 setMode('signUp');
                 setErrorKind(null);
@@ -273,6 +277,7 @@ export const PatientLoginView: React.FC<PatientLoginViewProps> = ({ onLoginSucce
             <SecondaryButton
               label={t('ashaSignInLink')}
               icon="people"
+              speech={scripts.auth.ashaSignIn}
               onPress={() => {
                 setMode('asha');
                 setErrorKind(null);

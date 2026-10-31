@@ -346,6 +346,8 @@ export interface ChatMessage {
   urgent: boolean;
   created_at: string;
   read: boolean;
+  /** One emoji per side, e.g. { doctor: '👍', patient: '🙏' }. */
+  reactions?: Partial<Record<'patient' | 'doctor', string>>;
 }
 
 export interface ChatStatus {
@@ -381,5 +383,7 @@ export const chatApi = {
   send: (patientId: string, body: string) =>
     call<ChatMessage & { emergency: boolean }>(`/chat/threads/${encodeURIComponent(patientId)}/messages`, { method: 'POST', body: JSON.stringify({ body, lang: 'en' }) }),
   markRead: (patientId: string) => call<{ marked: number }>(`/chat/threads/${encodeURIComponent(patientId)}/read`, { method: 'POST' }),
+  react: (patientId: string, messageId: string, emoji: string | null) =>
+    call<ChatMessage>(`/chat/threads/${encodeURIComponent(patientId)}/messages/${encodeURIComponent(messageId)}/reaction`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   unread: () => call<{ count: number }>('/chat/unread'),
 };

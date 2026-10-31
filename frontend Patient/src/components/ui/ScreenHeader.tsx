@@ -1,5 +1,8 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Speakable } from '../../speech/Speakable';
+import { SCRIPTS } from '../../speech/scripts';
+import { useLanguage } from '../../i18n/LanguageContext';
 import { colors, spacing, touch } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
@@ -15,7 +18,8 @@ interface NavBarProps {
 /** iOS back row ("‹ Home") with an optional trailing action. */
 export const NavBar: React.FC<NavBarProps> = ({ backLabel, onBack, right }) => (
   <View style={styles.navBar}>
-    <Pressable
+    <BackSpeakable
+      to={backLabel}
       onPress={onBack}
       hitSlop={8}
       accessibilityRole="button"
@@ -26,10 +30,16 @@ export const NavBar: React.FC<NavBarProps> = ({ backLabel, onBack, right }) => (
       <AppText variant="body" color="primary" compact numberOfLines={1}>
         {backLabel}
       </AppText>
-    </Pressable>
+    </BackSpeakable>
     {right}
   </View>
 );
+
+/** Back button: "Go back to Home." on double tap. */
+const BackSpeakable: React.FC<React.ComponentProps<typeof Speakable> & { to?: string }> = ({ to, ...props }) => {
+  const { lang } = useLanguage();
+  return <Speakable atomic speech={() => SCRIPTS[lang].common.back(to)} {...props} />;
+};
 
 interface PageHeaderProps {
   title: string;
@@ -44,7 +54,8 @@ interface PageHeaderProps {
 export const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, backLabel, right }) => (
   <View style={styles.pageHeader}>
     {onBack ? (
-      <Pressable
+      <BackSpeakable
+        to={backLabel}
         onPress={onBack}
         hitSlop={8}
         accessibilityRole="button"
@@ -57,7 +68,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ title, onBack, backLabel
             {backLabel}
           </AppText>
         ) : null}
-      </Pressable>
+      </BackSpeakable>
     ) : (
       <View style={{ width: 28 }} />
     )}

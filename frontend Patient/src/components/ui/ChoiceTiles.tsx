@@ -7,6 +7,7 @@ import type { SupportedLanguage } from '../../utils/translations';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { NeuPressable } from './Neu';
+import { useScripts } from '../../speech/scripts';
 
 export interface ChoiceTileOption<V extends string> {
   value: V;
@@ -42,6 +43,7 @@ const MAX_FONT_SCALE = 1.6;
  */
 export function ChoiceTiles<V extends string>({ options, value, onChange, accessibilityLabel, style, lang: langOverride }: ChoiceTilesProps<V>) {
   const { lang: appLang } = useLanguage();
+  const scripts = useScripts();
   const lang = langOverride ?? appLang;
   const { fontScale } = useWindowDimensions();
   const [rowWidth, setRowWidth] = useState(0);
@@ -65,6 +67,8 @@ export function ChoiceTiles<V extends string>({ options, value, onChange, access
           return (
             <NeuPressable
               key={opt.value}
+              atomic
+              speech={selected ? () => scripts.common.selected(opt.label) : undefined}
               onPress={() => onChange(opt.value)}
               selected={selected}
               radius={radii.lg}

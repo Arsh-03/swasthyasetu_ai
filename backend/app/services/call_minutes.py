@@ -23,8 +23,7 @@ import httpx
 
 from app.services import privacy_gateway as pg
 
-from app.config import ai_headers, settings
-from app.services.asr import Segment, asr
+from app.services.asr import Segment, asr, is_noise_or_hallucination, is_meaningful_speech, is_clinically_relevant
 from app.services.deidentify import Deidentifier
 from app.services.safety_engine import find_medicines
 
@@ -124,11 +123,20 @@ async def add_audio(session: CallSession, speaker: str, audio: bytes, mime: str,
 
 
 def add_segments(session: CallSession, segments) -> List[TranscriptLine]:
-    """Clean, de-identify and keep transcribed speech (from a call, or a practice run)."""
+    """Clean, de-identify and keep transcribed speech (from a call, or a practice run). Filters out noise and hallucinations."""
+    valid_segments = []
     for seg in segments:
-        seg.text = clean_speech(seg.text)
+        if is_noise_or_hallucination(seg.text) or is_noise_or_hallucination(seg.english):
+            continue
+        if not is_clinically_relevant(seg.english or seg.text):
+            continue
+        is_en = (seg.language or "").lower()[:2] == "en"
+        seg.text = clean_speech(seg.text, english=is_en)
         seg.english = clean_speech(seg.english, english=True)
-    new = [TranscriptLine(seg, session.deid.redact(punctuate(seg.english))) for seg in segments if seg.english.strip()]
+        if not is_meaningful_speech(seg.english or seg.text):
+            continue
+        valid_segments.append(seg)
+    new = [TranscriptLine(seg, session.deid.redact(punctuate(seg.english))) for seg in valid_segments if seg.english.strip()]
     session.lines.extend(new)
     session.last_activity = time.time()
     return new
@@ -139,15 +147,21 @@ def add_segments(session: CallSession, segments) -> List[TranscriptLine]:
 # ---------------------------------------------------------------------------
 # English-letter fillers plus the Kannada / Hindi "umm" sounds (ಅಂ, ಅಮ್, ಹ್ಮ್, अं, अम्, हम्म).
 _FILLERS_ANY = re.compile(r"(?i)(?<![\wऀ-෿])(?:u+h+m*|u+m+|h+m+|e+r+m*|a+h+|a{2,}|e{2,}|m{2,}|ಅಂ+|ಅಮ್|ಹ್ಮ್|अं+|अम्|हम्म)(?![\wऀ-෿])[,.]?\s*")
-_FILLERS_EN = re.compile(r"(?i)\b(?:you know|i mean|kind of|sort of|basically|actually|like,)\s*")
+_FILLERS_EN = re.compile(r"(?i)\b(?:you know|i mean|kind of|sort of|basically|actually|like,|you see|as in|i guess|i think)\s*")
 _REPEATS = re.compile(r"(?i)(?<![\wऀ-෿])([\wऀ-෿]+)(?:[\s,]+\1)+(?![\wऀ-෿])")
+_UI_META = re.compile(
+    r"\b(?:it'?s\s+)?(?:whisper\s+server\s+online|auto-?write\s+notes?|chibi\s+test\s+lab|"
+    r"start\s+test\s+consultation|finish\s+(?:and|&)\s+summarise|clinical\s+notepad)\b[,.]?\s*",
+    re.I
+)
 
 
 def clean_speech(text: str, english: bool = False) -> str:
-    """Remove "umm", "uh", "you know", stutters ("the the") and extra spaces; keep everything clinical."""
+    """Remove "umm", "uh", "you know", UI labels, stutters ("the the") and extra spaces; keep everything clinical."""
     if not text:
         return text
-    out = _FILLERS_ANY.sub("", text)
+    out = _UI_META.sub("", text)
+    out = _FILLERS_ANY.sub("", out)
     if english:
         out = _FILLERS_EN.sub("", out)
     out = _REPEATS.sub(r"\1", out)
@@ -179,8 +193,33 @@ SYMPTOMS: Dict[str, Tuple[str, ...]] = {
     "weakness": ("weakness", "fatigue", "tiredness"), "burning urination": ("burning", "dysuria"),
     "rash": ("rash",), "itching": ("itching", "pruritus"), "joint pain": ("joint pain", "arthralgia"),
     "back pain": ("back pain", "backache"), "loss of appetite": ("appetite", "anorexia"), "palpitations": ("palpitation",),
+    "skin infection": ("skin infection", "skin", "infection", "dermatitis"),
+    "infection": ("infection", "infect"),
+    "feeling cold": ("feeling cold", "cold", "chills", "shivering"),
+    "pain": ("pain", "ache", "body pain", "body ache"),
 }
 _SYMPTOM_RE = re.compile(r"\b(" + "|".join(re.escape(s) for s in sorted(SYMPTOMS, key=len, reverse=True)) + r")s?\b", re.I)
+
+NON_ALLERGENS = {
+    "something", "some", "anything", "any", "nothing", "no", "none", "medicine", "medicines",
+    "drugs", "drug", "tablet", "tablets", "syrup", "food", "kind", "type", "sort", "have",
+    "having", "severe", "mild", "terrible", "bad", "lot", "all", "dusty", "also", "like",
+    "yeah", "yes", "yep", "ok", "okay", "doctor", "patient", "not", "dont", "know", "think"
+}
+
+INVESTIGATION_KEYWORDS = re.compile(
+    r"\b(?:blood\s+test\w*|urine\s+test\w*|stool\s+test\w*|cbc|complete\s+blood\s+count|lft|liver\s+function|kft|kidney\s+function|rft|"
+    r"lipid\s+profile|thyroid\s+profile|tsh|t3|t4|hba1c|blood\s+sugar|fasting\s+sugar|ppbs|fbs|creatinine|urea|"
+    r"hemoglobin|haemoglobin|hb|platelet\w*|wbc|rbc|esr|crp|widal|dengue\s+serology|malaria\s+smear|"
+    r"x\-?ray|radiograph\w*|ultrasound|usg|sonography|scan|ct\s+scan|mri|ecg|ekg|echo|echocardiogram|"
+    r"endoscopy|biopsy|culture|sensitivity|swab|covid\s+test|rt\-?pcr)\b",
+    re.I
+)
+
+FOLLOWUP_RE = re.compile(
+    r"\b(?:come\s+back|return|review|follow\s*[-]?\s*up|revisit|next\s+visit)\b",
+    re.I
+)
 
 ALLERGY_RES = [
     re.compile(r"\b(?:allergic|allergy)\s+(?:to|from|with)\s+([a-z][a-z \-]{2,30}?)(?=[.,;]|\s+(?:and|but|so)\b|$)", re.I),
@@ -202,7 +241,7 @@ CONDITION_ALIASES = {
     "heart attack": ("heart attack", "myocardial", "mi", "ihd", "cad"), "asthma": ("asthma", "dama"),
     "tuberculosis": ("tuberculosis", "tb", "koch"),
 }
-MED_CONTEXT_RE = re.compile(r"\b(take|taking|takes|took|on|using|use|been given|prescribed)\b", re.I)
+MED_CONTEXT_RE = re.compile(r"\b(take|taking|takes|took|on|using|use|been given|prescribed|medicines?|meds?|tablets?|pills?|painkiller\w*)\b", re.I)
 FREQUENCY_RE = re.compile(r"\b(every (?:morning|night|evening|day)|daily|once a day|twice a day|thrice a day|at night|in the morning|when needed)\b", re.I)
 ADVICE_RE = re.compile(r"^(?:please\s+)?(take|drink|avoid|come back|return|review|get|do|start|stop|continue|rest|apply|use|check|monitor|eat)\b", re.I)
 STOP_WORDS = {"the", "and", "with", "your", "you", "are", "for", "this", "that", "after", "before", "plenty", "some",
@@ -211,7 +250,7 @@ STOP_WORDS = {"the", "and", "with", "your", "you", "are", "for", "this", "that",
 
 @dataclass
 class Item:
-    kind: str                    # symptom | allergy | medication | family | advice | other
+    kind: str                    # symptom | allergy | medication | family | advice | investigations | rx | follow_up | other
     section: str                 # complaints | history | plan | exam | labs
     text: str                    # what would be added to the note
     keys: List[Tuple[str, ...]]  # each group: at least one of these must be in the note for "present"
@@ -294,15 +333,17 @@ def extract_items(lines: Sequence[TranscriptLine]) -> List[Item]:
                 allergy_found = False
                 for rx in ALLERGY_RES:
                     for m in rx.finditer(sentence):
-                        allergen = (m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(1)).strip()
-                        if allergen.lower() in ("any", "anything", "nothing", "no", "medicine", "medicines"):
+                        raw_allergen = (m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(1)).strip()
+                        allergen = re.sub(r"^(?:all\s+of\s+a|kind\s+of|sort\s+of|type\s+of|some|a|an|the)\s+", "", raw_allergen, flags=re.I).strip()
+                        if not allergen or allergen.lower() in NON_ALLERGENS or len(allergen) < 3:
                             continue
                         reaction = REACTION_RE.search(sentence)
                         meds = find_medicines(allergen)
                         name = display.get(meds[0].drugs[0], allergen) if meds else allergen
+                        name_clean = name.title() if name.islower() else name
                         items.append(Item(
                             "allergy", "history",
-                            f"Allergy: {name.title() if name.islower() else name}"
+                            f"Allergy: {name_clean}"
                             + (f" ({reaction.group(1).lower()})" if reaction else "") + " (patient-reported).",
                             [(name.lower(), allergen.lower()), ("allerg",)], line, severity="urgent"))
                         allergy_found = True
@@ -313,12 +354,18 @@ def extract_items(lines: Sequence[TranscriptLine]) -> List[Item]:
                                       [aliases, ("family", "father", "mother", "brother", "sister", "parent", relation)], line))
                 if MED_CONTEXT_RE.search(sentence) and not allergy_found:
                     freq = FREQUENCY_RE.search(sentence)
-                    for mention in find_medicines(sentence):
-                        for drug in mention.drugs:
-                            name = display.get(drug, drug.title())
-                            items.append(Item("medication", "history",
-                                              f"Current medication: {name}" + (f", {freq.group(1).lower()}" if freq else "") + ".",
-                                              [(name.lower(), mention.text.lower())], line))
+                    med_mentions = find_medicines(sentence)
+                    if med_mentions:
+                        for mention in med_mentions:
+                            for drug in mention.drugs:
+                                name = display.get(drug, drug.title())
+                                items.append(Item("medication", "history",
+                                                  f"Current medication: {name}" + (f", {freq.group(1).lower()}" if freq else "") + ".",
+                                                  [(name.lower(), mention.text.lower())], line))
+                    elif re.search(r"\b(?:taking|take|took|on)\s+(?:some\s+)?(?:medicines?|meds?|tablets?|pills?|painkiller\w*)\b", sentence, re.I):
+                        med_label = "Taking medication for pain" if re.search(r"\bpain\b", sentence, re.I) else "Taking regular medication"
+                        items.append(Item("medication", "history", f"Current medication: {med_label} (patient-reported).",
+                                          [("medication", "medicine", "taking")], line))
                 if not allergy_found:
                     duration = _duration(sentence)          # "fever, sore throat and cough for 3 days": applies to all
                     for clause in re.split(r",\s*(?:and\s+)?|\s+and\s+", sentence):
@@ -333,16 +380,51 @@ def extract_items(lines: Sequence[TranscriptLine]) -> List[Item]:
                             items.append(Item("symptom", "complaints", text + ".", keys, line))
             else:  # doctor
                 if sentence.rstrip().endswith("?"):
-                    continue                                  # a question, not advice
+                    continue                                  # a question, not advice/prescription
+
                 for clause in re.split(r",\s*(?:and\s+)?|\s+and\s+", sentence):
                     clause = clause.strip(" .")
-                    if not ADVICE_RE.match(clause) or QUESTION_RE.match(clause):
+                    if not clause:
                         continue
-                    words = [w for w in re.findall(r"[a-z]{4,}|\d+", clause.lower()) if w not in STOP_WORDS]
-                    keys = [tuple({w, w.rstrip("s")}) for w in words[:3]] or [(clause.lower(),)]
-                    if re.search(r"come back|return|review", clause, re.I):
-                        keys = [("review", "follow", "come back", "revisit")]
-                    items.append(Item("advice", "plan", f"Advised: {clause[0].lower() + clause[1:]}.", keys, line))
+
+                    # 1. Investigations / Lab orders (e.g. "Get blood test", "Check CBC and urine test")
+                    inv_match = INVESTIGATION_KEYWORDS.search(clause)
+                    if inv_match:
+                        inv_text = re.sub(r"^(?:please\s+)?(?:get|do|order|check|conduct|send\s+for|run)\s+(?:a\s+|an\s+|the\s+)?", "", clause, flags=re.I).strip()
+                        inv_title = inv_text[0].upper() + inv_text[1:] if inv_text else inv_match.group(0).title()
+                        items.append(Item("investigations", "labs", inv_title, [(inv_match.group(0).lower(), "investig")], line))
+                        continue
+
+                    # 2. Prescriptions / Medications ordered by the doctor
+                    doctor_meds = find_medicines(clause)
+                    if doctor_meds:
+                        for mention in doctor_meds:
+                            for drug in mention.drugs:
+                                name = display.get(drug, drug.title())
+                                items.append(Item("rx", "plan", name, [(name.lower(), mention.text.lower())], line))
+                        continue
+
+                    # Fallback check for common medication names discussed by doctor
+                    if re.search(r"\b(?:paracetamol|phenophthalene|phenolphthalein|pantocid|pan\-d|omez|azithromycin|amoxicillin|combiflam|dolo|crocin|calpol|metformin|cetirizine)\b", clause, re.I):
+                        matched_words = re.findall(r"\b(?:paracetamol|phenophthalene|phenolphthalein|pantocid|pan\-d|omez|azithromycin|amoxicillin|combiflam|dolo|crocin|calpol|metformin|cetirizine)\b", clause, re.I)
+                        for mw in matched_words:
+                            norm_name = "Phenolphthalein" if mw.lower() in ("phenophthalene", "phenolphthalein") else mw.title()
+                            items.append(Item("rx", "plan", norm_name, [(norm_name.lower(),)], line))
+                        continue
+
+                    # 3. Follow-up / Review timeline
+                    if FOLLOWUP_RE.search(clause):
+                        fu_text = clause[0].upper() + clause[1:]
+                        items.append(Item("follow_up", "plan", fu_text, [("review", "follow", "return")], line))
+                        continue
+
+                    # 4. Lifestyle / Dietary / Hydration / Precautions advice
+                    if ADVICE_RE.match(clause) and not QUESTION_RE.match(clause):
+                        words = [w for w in re.findall(r"[a-z]{4,}|\d+", clause.lower()) if w not in STOP_WORDS]
+                        keys = [tuple({w, w.rstrip("s")}) for w in words[:3]] or [(clause.lower(),)]
+                        clean_adv = re.sub(r"^(?:please\s+)?", "", clause, flags=re.I)
+                        items.append(Item("advice", "plan", f"Advised: {clean_adv[0].lower() + clean_adv[1:]}.", keys, line))
+
     # De-duplicate (same text), keeping the first occurrence.
     seen, unique = set(), []
     for it in items:

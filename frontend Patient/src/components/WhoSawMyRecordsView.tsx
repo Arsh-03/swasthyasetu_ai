@@ -24,6 +24,7 @@ import {
   SectionHeader,
   Well,
 } from './ui';
+import { useScripts, spokenDoctor } from '../speech';
 
 type ConsentStatus = ConsentHistoryItem['status'];
 
@@ -73,6 +74,7 @@ interface ConsentCardProps {
 
 export const ConsentCard: React.FC<ConsentCardProps> = ({ log, onRevoked, revokeFn = (id) => patientApi.revokeConsent(id) }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [revoking, setRevoking] = useState(false);
   const [error, setError] = useState<TranslationKey | null>(null);
 
@@ -94,6 +96,15 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({ log, onRevoked, revoke
         : '';
   const statusLine = t(STATUS_LABEL[status]);
 
+  const rowSpeech = () =>
+    scripts.records.accessRow({
+      doctor: spokenDoctor(log.doctor, lang),
+      record,
+      when: formatTimestamp(log.created_at, lang),
+      purpose,
+      active: !!active,
+    });
+
   const revoke = async () => {
     setError(null);
     setRevoking(true);
@@ -108,7 +119,10 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({ log, onRevoked, revoke
   };
 
   return (
-    <Card style={styles.logCard}>
+    <Card
+      style={styles.logCard}
+      speechText={rowSpeech}
+    >
       {/* Who */}
       <View style={styles.actorRow}>
         <Avatar initials={initialsOf(log.doctor)} size={40} />
@@ -155,18 +169,7 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({ log, onRevoked, revoke
             </AppText>
           )}
         </View>
-        <AudioListenButton
-          text={() =>
-            t('listenConsent', {
-              name: log.doctor,
-              facility,
-              status: statusLine,
-              record,
-              purpose,
-              time: timeLeft,
-            })
-          }
-        />
+        <AudioListenButton text={rowSpeech} />
       </View>
 
       {active && (
@@ -189,7 +192,14 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({ log, onRevoked, revoke
               </AppText>
             </View>
           )}
-          <CriticalButton tone="danger" icon="block" label={t('revokeAccess')} loading={revoking} onPress={revoke} />
+          <CriticalButton
+            tone="danger"
+            icon="block"
+            label={t('revokeAccess')}
+            speech={scripts.records.revoke(spokenDoctor(log.doctor, lang))}
+            loading={revoking}
+            onPress={revoke}
+          />
         </View>
       )}
     </Card>

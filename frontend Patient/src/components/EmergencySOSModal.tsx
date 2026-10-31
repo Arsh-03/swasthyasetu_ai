@@ -4,6 +4,7 @@ import { colors, spacing } from '../theme/tokens';
 import { useLanguage } from '../i18n/LanguageContext';
 import { GlassSheet } from './glass';
 import { AppText, CriticalButton, EmbossedIcon, SecondaryButton } from './ui';
+import { useScripts } from '../speech';
 
 interface EmergencySOSModalProps {
   visible: boolean;
@@ -12,6 +13,7 @@ interface EmergencySOSModalProps {
 
 export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({ visible, onClose }) => {
   const { t } = useLanguage();
+  const scripts = useScripts();
 
   const dial = (number: string) => {
     Linking.openURL(`tel:${number}`).catch(() => {
@@ -25,7 +27,7 @@ export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({ visible, o
         <EmbossedIcon icon="emergency" size={56} color={colors.dangerDeep} />
 
         <View style={styles.text}>
-          <AppText variant="title" color="dangerDeep" align="center" accessibilityRole="header">
+          <AppText variant="title" color="dangerDeep" align="center" accessibilityRole="header" speech={scripts.sos.title}>
             {t('emergencyTitle')}
           </AppText>
           <AppText variant="subhead" weight={600} align="center">
@@ -37,9 +39,9 @@ export const EmergencySOSModal: React.FC<EmergencySOSModalProps> = ({ visible, o
         </View>
 
         <View style={styles.buttons}>
-          <CriticalButton tone="danger" label={t('dial108')} icon="call" onPress={() => dial('108')} />
-          <CriticalButton tone="danger" label={t('dial112')} icon="emergency" onPress={() => dial('112')} />
-          <SecondaryButton label={t('cancel')} tone="primary" onPress={onClose} />
+          <CriticalButton tone="danger" label={t('dial108')} icon="call" onPress={() => dial('108')} speech={scripts.sos.dial108} />
+          <CriticalButton tone="danger" label={t('dial112')} icon="emergency" onPress={() => dial('112')} speech={scripts.sos.dial112} />
+          <SecondaryButton label={t('cancel')} tone="primary" onPress={onClose} speech={scripts.sos.cancel} />
         </View>
       </View>
     </GlassSheet>

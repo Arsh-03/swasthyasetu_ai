@@ -6,6 +6,8 @@ import { colors } from './src/theme/tokens';
 import { FontsProvider } from './src/theme/FontsProvider';
 import { LanguageProvider, useLanguage } from './src/i18n/LanguageContext';
 import { SpeechProvider } from './src/i18n/SpeechContext';
+import { stopSpeech } from './src/speech';
+import { DoubleTapHint } from './src/speech/DoubleTapHint';
 import {
   patientApi,
   telehealthSocketUrl,
@@ -89,6 +91,10 @@ function PatientApp() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('home');
   const screenRef = useRef<ScreenType>('home');
   screenRef.current = currentScreen;
+  // Never keep reading the previous screen after navigating
+  useEffect(() => {
+    stopSpeech();
+  }, [currentScreen]);
   // Chat with the doctor: unread badge, and a counter bumped on every live chat event
   const [chatUnread, setChatUnread] = useState(0);
   // A visit summary offered after a call with AI minutes (kept only if the patient says yes)
@@ -753,6 +759,9 @@ function PatientApp() {
       {callOverlays}
 
       <Toast message={toastMessage} />
+
+      {/* One-time "Double tap anything to hear it" hint */}
+      <DoubleTapHint />
     </View>
   );
 }

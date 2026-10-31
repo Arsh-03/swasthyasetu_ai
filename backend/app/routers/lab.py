@@ -21,7 +21,7 @@ from app.models.models import Encounter, PatientProfile, Practitioner, User
 from app.services import call_minutes as cm
 from app.services import consult_agent as agent
 from app.services.ai_client import ai
-from app.services.asr import Segment
+from app.services.asr import Segment, is_clinically_relevant
 from app.services.auth_dependencies import require_doctor
 from app.services.deidentify import deidentifier_for
 from app.services.note_format import TEMPLATE, parse_note
@@ -122,7 +122,7 @@ async def add_lines(session_id: str, req: LinesIn, current_doctor: Dict[str, Any
         st.note = req.note
     at = int((time.time() - getattr(s, "lab_started", time.time())) * 1000)
     segs = [Segment("doctor" if l.speaker == "doctor" else "patient", at, at + 3000, l.text.strip(), l.text.strip(),
-                    (l.language or "en")[:2]) for l in req.lines if l.text.strip()]
+                    (l.language or "en")[:2]) for l in req.lines if l.text.strip() and is_clinically_relevant(l.text.strip())]
     if segs:
         cm.add_segments(s, segs)
         agent.schedule(s)

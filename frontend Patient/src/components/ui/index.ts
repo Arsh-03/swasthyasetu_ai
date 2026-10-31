@@ -25,4 +25,4 @@ export { Stepper, type Step } from './Stepper';
 export { ExpandableText } from './ExpandableText';
 export { BirthdayPopperEffect, PopBurstEffect } from './PopBurstEffect';
 export { FullScreenBirthdayPopper } from './FullScreenBirthdayPopper';
-export { DoubleTapSpeakable, type DoubleTapSpeakableProps } from './DoubleTapSpeakable';
+export { Speakable, type SpeakableProps, type SpeechSource } from '../../speech/Speakable';

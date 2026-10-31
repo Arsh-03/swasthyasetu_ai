@@ -1,4 +1,4 @@
-import { speak, stopSpeaking } from '../../utils/speech';
+import { speak, stop } from '../../speech/engine';
 import type { SupportedLanguage } from '../../utils/translations';
 
 export type VoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error' | 'unsupported';
@@ -126,7 +126,7 @@ class ChibiVoiceService {
     }
 
     // Stop ongoing speech synthesis first so CHIBI doesn't hear itself
-    stopSpeaking();
+    stop();
 
     // Clean up any stale active instance
     this.cleanupRecognition();
@@ -297,7 +297,7 @@ class ChibiVoiceService {
   public setMuted(muted: boolean) {
     this.updateState({ isMuted: muted });
     if (muted) {
-      stopSpeaking();
+      stop();
     }
   }
 
@@ -312,11 +312,13 @@ class ChibiVoiceService {
       return;
     }
 
-    const spoken = speak(text, speakLang, () => {
-      this.updateState({ status: 'idle' });
+    const res = speak(text, speakLang, {
+      onDone: () => {
+        this.updateState({ status: 'idle' });
+      },
     });
 
-    if (!spoken) {
+    if (res !== 'ok') {
       this.updateState({ status: 'idle' });
     }
   }

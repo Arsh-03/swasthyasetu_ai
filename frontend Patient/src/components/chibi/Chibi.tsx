@@ -6,6 +6,7 @@ import Svg, { Circle, Ellipse, G, Line, Path, Rect } from 'react-native-svg';
 import { colors, radii, spacing, tints } from '../../theme/tokens';
 import { useLanguage } from '../../i18n/LanguageContext';
 import { AppText, Icon, type IconName } from '../ui';
+import { Speakable, useScripts } from '../../speech';
 import {
   chibiVoice,
   type ChibiAction,
@@ -88,6 +89,7 @@ export const ChibiButton: React.FC<{
   onVoiceAction?: (action: ChibiAction) => void;
 }> = ({ bottom, skills, mood = 'idle', badge, status, onVoiceAction }) => {
   const { lang, t } = useLanguage();
+  const scripts = useScripts();
   const [open, setOpen] = useState(false);
   const [, bump] = useState(0);
   const [typedInput, setTypedInput] = useState('');
@@ -328,8 +330,10 @@ export const ChibiButton: React.FC<{
           {/* Quick Skills List */}
           <View style={styles.skillsSection}>
             {allSkills.map((s) => (
-              <Pressable
+              <Speakable
                 key={s.id}
+                atomic
+                speech={() => scripts.chibi.menuItem(s.label)}
                 accessibilityRole="menuitem"
                 style={({ pressed }) => [styles.skill, pressed && styles.pressed]}
                 onPress={() => {
@@ -341,14 +345,16 @@ export const ChibiButton: React.FC<{
                 <AppText variant="body" style={styles.skillText}>
                   {s.label}
                 </AppText>
-              </Pressable>
+              </Speakable>
             ))}
           </View>
         </View>
       )}
 
       {/* Floating CHIBI button */}
-      <Pressable
+      <Speakable
+        atomic
+        speech={scripts.chibi.button}
         onPress={() => setOpen((o) => !o)}
         accessibilityRole="button"
         accessibilityLabel={`CHIBI${status ? `: ${status}` : ''}`}
@@ -364,7 +370,7 @@ export const ChibiButton: React.FC<{
             </AppText>
           </View>
         ) : null}
-      </Pressable>
+      </Speakable>
     </View>
   );
 };

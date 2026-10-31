@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { colors, elevation, radii, spacing, touch } from '../../theme/tokens';
 import { timing } from '../../theme/motion';
@@ -8,6 +8,8 @@ import { haptic } from '../../utils/haptics';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
 import { SurfaceContext } from './SurfaceContext';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
+import { useScripts } from '../../speech/scripts';
 
 export const depth = StyleSheet.create({
   layer: { zIndex: -1 },
@@ -150,6 +152,10 @@ export interface NeuPressableProps {
   accessibilityLabel?: string;
   accessibilityHint?: string;
   accessibilityState?: { selected?: boolean; checked?: boolean; disabled?: boolean; busy?: boolean };
+  /** Spoken on double tap. Without it: a card reads each text inside on its own; a control reads its label. */
+  speech?: SpeechSource;
+  /** One control (button, chip): text inside does not speak separately. Cards leave this off. */
+  atomic?: boolean;
 }
 
 /** Clean pressable surface: scale 0.98 on press, elevates from e1 to e2. */
@@ -171,12 +177,16 @@ export const NeuPressable: React.FC<NeuPressableProps> = ({
   accessibilityLabel,
   accessibilityHint,
   accessibilityState,
+  speech,
+  atomic = false,
 }) => {
   const press = usePressScale(0.98);
 
   return (
     <Animated.View style={[press.style, disabled && styles.disabled, containerStyle]}>
-      <Pressable
+      <Speakable
+        speech={speech}
+        atomic={atomic}
         onPress={() => {
           if (haptics !== 'none') haptic[haptics]();
           onPress();
@@ -207,7 +217,7 @@ export const NeuPressable: React.FC<NeuPressableProps> = ({
             {typeof children === 'function' ? children(pressed || selected) : children}
           </SurfaceContext.Provider>
         )}
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };
@@ -235,6 +245,7 @@ export const NeuButton: React.FC<NeuButtonProps> = ({
   return (
     <NeuPressable
       onPress={onPress}
+      atomic
       selected={selected}
       radius={round ? size / 2 : radii.md}
       hitSlop={round ? Math.max(0, (touch.min - size) / 2) : undefined}
@@ -265,6 +276,8 @@ interface NeuToggleProps {
   onValueChange: (next: boolean) => void;
   accessibilityLabel: string;
   disabled?: boolean;
+  /** Spoken on double tap (default: "<label>. It is on. Tap to turn it off."). */
+  speech?: SpeechSource;
 }
 
 /** Clean standard switch toggle. */
@@ -273,13 +286,17 @@ export const NeuToggle: React.FC<NeuToggleProps> = ({
   onValueChange,
   accessibilityLabel,
   disabled = false,
+  speech,
 }) => {
+  const scripts = useScripts();
   const knobStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: withTiming(value ? TRAVEL : 0, timing.transition) }],
   }));
 
   return (
-    <Pressable
+    <Speakable
+      atomic
+      speech={speech ?? (() => scripts.common.toggle(accessibilityLabel, value))}
       onPress={() => {
         haptic.selection();
         onValueChange(!value);
@@ -298,7 +315,7 @@ export const NeuToggle: React.FC<NeuToggleProps> = ({
           </View>
         </Animated.View>
       </View>
-    </Pressable>
+    </Speakable>
   );
 };
 
@@ -327,6 +344,7 @@ export const NeuTile: React.FC<NeuTileProps> = ({
       selected={selected}
       radius={radii.md}
       haptics={selected ? 'tap' : 'success'}
+      atomic
       accessibilityRole="checkbox"
       accessibilityState={{ checked: selected }}
       accessibilityLabel={accessibilityLabel ?? [label, sublabel].filter(Boolean).join(', ')}

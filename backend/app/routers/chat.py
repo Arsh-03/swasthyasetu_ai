@@ -5,6 +5,7 @@ Patient ↔ doctor chat, tied to consultations.
   GET  /api/v1/chat/threads/{other_id}         one conversation: messages + whether the patient can write
   POST /api/v1/chat/threads/{other_id}/messages
   POST /api/v1/chat/threads/{other_id}/read
+  POST /api/v1/chat/threads/{other_id}/messages/{message_id}/reaction   set or clear my emoji reaction
   GET  /api/v1/chat/unread                     unread count (badge)
 
 Rules
@@ -95,6 +96,7 @@ def message_out(m: ChatMessage) -> Dict[str, Any]:
         "urgent": bool(m.urgent),
         "created_at": as_aware(m.created_at),
         "read": m.read_at is not None,
+        "reactions": dict(m.reactions or {}),
     }
 
 
@@ -345,6 +347,32 @@ async def send_message(other_id: str, req: MessageIn, current_user: Dict[str, An
                      title=f"Urgent message from {name}",
                      body=body[:300], link={"page": "messages", "patient_id": patient_id})
     return {**message_out(msg), "emergency": urgent}
+
+
+class ReactionIn(BaseModel):
+    emoji: Optional[str] = Field(None, max_length=16)  # empty / null removes my reaction
+
+
+@router.post("/threads/{other_id}/messages/{message_id}/reaction")
+async def react_to_message(other_id: str, message_id: str, req: ReactionIn,
+                           current_user: Dict[str, Any] = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    patient_id, practitioner_id, me = _pair(current_user, other_id)
+    msg = await db.get(ChatMessage, message_id)
+    if not msg or msg.patient_id != patient_id or msg.practitioner_id != practitioner_id:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    reactions = dict(msg.reactions or {})
+    emoji = (req.emoji or "").strip()
+    if emoji:
+        reactions[me] = emoji
+    else:
+        reactions.pop(me, None)
+    msg.reactions = reactions or None  # new dict so SQLAlchemy sees the change
+    await db.commit()
+    await db.refresh(msg)
+    await ws_manager.send_to([patient_id, practitioner_id], {
+        "type": "chat_reaction", "patient_id": patient_id, "practitioner_id": practitioner_id,
+        "message_id": message_id, "reactions": reactions, "by": me})
+    return message_out(msg)
 
 
 @router.post("/threads/{other_id}/read")

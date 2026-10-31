@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { colors, elevation, radii, spacing } from '../../theme/tokens';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 export interface CardProps {
   children: React.ReactNode;
@@ -8,6 +9,13 @@ export interface CardProps {
   padded?: boolean;
   interactive?: boolean;
   elevated?: boolean;
+  /** Card-level script, spoken on a double tap on the card's empty area (children speak for themselves). */
+  speech?: SpeechSource;
+  /** @deprecated use `speech` */
+  speechText?: SpeechSource;
+  /** @deprecated cards are always speakable through their texts; pass `speech` for a summary */
+  speakable?: boolean;
+  onPress?: () => void;
 }
 
 /** Pure white card, 1px border (#DCE5EA), e1 elevation (or e2/e3). */
@@ -17,13 +25,27 @@ export const Card: React.FC<CardProps> = ({
   padded = true,
   interactive = false,
   elevated = false,
+  speech,
+  speechText,
+  onPress,
 }) => {
   const elev = elevated ? elevation.e3 : interactive ? elevation.e2 : elevation.e1;
-  return (
+  const cardBody = (
     <View style={[styles.card, elev, padded && styles.padded, style]}>
       {children}
     </View>
   );
+
+  const script = speech ?? speechText;
+  if (script || onPress) {
+    return (
+      <Speakable speech={script} onPress={onPress} radius={radii.lg}>
+        {cardBody}
+      </Speakable>
+    );
+  }
+
+  return cardBody;
 };
 
 /** Flat well container. */

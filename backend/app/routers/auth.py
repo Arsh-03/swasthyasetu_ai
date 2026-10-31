@@ -18,6 +18,7 @@ from app.schemas.schemas import (
 from app.services.auth_dependencies import create_access_token, get_current_user, require_doctor
 from app.services.connection_manager import ws_manager
 from app.services.ocr_service import process_document
+from typing import Optional, Dict, Any
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

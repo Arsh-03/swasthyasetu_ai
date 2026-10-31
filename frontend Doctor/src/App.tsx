@@ -201,6 +201,7 @@ export function App() {
             toast(tRef.current('patientWaitingToast', { name: String(msg.patient_name || '').replace(/\s*\(.*?\)/g, '') }), 'warning');
             break;
           case 'chat_read':
+          case 'chat_reaction':
             setChatEvent((v) => v + 1);
             break;
           case 'ABHA_LINK_APPROVED':

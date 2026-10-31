@@ -4,7 +4,7 @@ import { colors, spacing, type Domain, type Tone } from '../../theme/tokens';
 import { AppText } from './AppText';
 import { IconTile } from './IconTile';
 import type { IconName } from './Icon';
-import { DoubleTapSpeakable } from './DoubleTapSpeakable';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 interface ListRowProps {
   title: string;
@@ -20,8 +20,10 @@ interface ListRowProps {
   /** Selected row: ice tint + 3px primary accent bar. */
   selected?: boolean;
   accessibilityLabel?: string;
-  /** Custom speech text on double-tap; defaults to `title. subtitle.` */
-  speechText?: string;
+  /** Row-level script for a double tap on the row's empty area (title and subtitle also speak on their own). */
+  speech?: SpeechSource;
+  /** @deprecated use `speech` */
+  speechText?: SpeechSource;
 }
 
 /**
@@ -40,6 +42,7 @@ export const ListRow: React.FC<ListRowProps> = ({
   onPress,
   selected = false,
   accessibilityLabel,
+  speech,
   speechText,
 }) => {
   const content = (
@@ -60,21 +63,21 @@ export const ListRow: React.FC<ListRowProps> = ({
     </>
   );
 
-  const spoken = speechText || [title, subtitle].filter(Boolean).join('. ');
+  const spoken = speech ?? speechText ?? [title, subtitle].filter(Boolean).join('. ');
 
   if (!onPress) {
     return (
-      <DoubleTapSpeakable speechText={spoken} style={[styles.row, selected && styles.selected]}>
+      <Speakable speech={spoken} style={[styles.row, selected && styles.selected]}>
         {selected && <View style={styles.accentBar} />}
         {content}
-      </DoubleTapSpeakable>
+      </Speakable>
     );
   }
 
   return (
-    <DoubleTapSpeakable
+    <Speakable
       onPress={onPress}
-      speechText={spoken}
+      speech={spoken}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? title}
       style={({ pressed }) => [
@@ -85,7 +88,7 @@ export const ListRow: React.FC<ListRowProps> = ({
     >
       {selected && <View style={styles.accentBar} />}
       {content}
-    </DoubleTapSpeakable>
+    </Speakable>
   );
 };
 

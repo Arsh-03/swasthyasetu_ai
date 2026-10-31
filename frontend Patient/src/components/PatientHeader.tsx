@@ -6,6 +6,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGE_NAMES, LANGUAGE_SHORT, t as translate } from '../utils/translations';
 import { GlassToolbar } from './glass';
 import { AppText, Avatar, BrandMark, Icon, IconButton, NeuPressable, StableLabel } from './ui';
+import { useScripts } from '../speech';
 
 interface PatientHeaderProps {
   user: PatientUser | null;
@@ -45,6 +46,7 @@ interface HeaderBarProps extends PatientHeaderProps {
 /** Toolbar contents: brand group (flex, ellipsis) + controls (fixed). */
 export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLogout, onBrandLongPress, availableWidth }) => {
   const { lang, t, cycleLang } = useLanguage();
+  const scripts = useScripts();
   const window = useWindowDimensions();
   const layout = headerLayout(availableWidth ?? window.width, window.fontScale);
 
@@ -52,14 +54,15 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLog
     <View style={styles.bar}>
       {/* Brand: takes the remaining space and ellipsizes; never pushed under the controls */}
       <View style={styles.brand} accessible={!layout.showName} accessibilityLabel={!layout.showName ? t('appName') : undefined}>
-        <BrandMark size={36} onLongPress={onBrandLongPress} />
+        <BrandMark size={36} onLongPress={onBrandLongPress} speech={scripts.header.logo} />
         {layout.showName && (
           <View style={styles.brandText}>
-            <AppText variant="callout" compact numberOfLines={1} ellipsizeMode="tail" style={styles.brandName}>
+            <AppText variant="callout" compact numberOfLines={1} ellipsizeMode="tail" style={styles.brandName} speech={scripts.header.logo}>
               {t('appName')}
             </AppText>
             {layout.showSubtitle && (
               <StableLabel
+                speech={scripts.header.logo}
                 text={(l) => translate(l, 'patientApp')}
                 variant="caption"
                 color="inkMuted"
@@ -76,6 +79,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLog
         {/* Language pill: icon + full name, or icon + short code below 400pt */}
         <NeuPressable
           onPress={cycleLang}
+          atomic
+          speech={() => scripts.header.language(LANGUAGE_NAMES[lang])}
           radius={radii.md}
           compact
           haptics="selection"
@@ -90,6 +95,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLog
         {/* Monogram avatar → profile / symptom intake */}
         <NeuPressable
           onPress={onOpenProfile}
+          atomic
+          speech={() => scripts.header.profile(user?.full_name?.split(' ')[0] ?? '')}
           radius={21}
           compact
           hitSlop={3}
@@ -99,7 +106,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({ user, onOpenProfile, onLog
           <Avatar initials={initialsOf(user?.full_name ?? '')} size={30} />
         </NeuPressable>
 
-        {onLogout && <IconButton icon="signOut" tone="danger" size={42} accessibilityLabel={t('signOut')} onPress={onLogout} />}
+        {onLogout && (
+          <IconButton icon="signOut" tone="danger" size={42} accessibilityLabel={t('signOut')} onPress={onLogout} speech={scripts.header.logout} />
+        )}
       </View>
     </View>
   );

@@ -1,11 +1,12 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { colors, elevation, radii, spacing } from '../../theme/tokens';
 import { usePressScale } from '../../hooks/usePressScale';
 import { haptic } from '../../utils/haptics';
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
+import { Speakable, type SpeechSource } from '../../speech/Speakable';
 
 export interface ButtonProps {
   label: string;
@@ -18,6 +19,8 @@ export interface ButtonProps {
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
   accessibilityHint?: string;
+  /** Spoken on double tap (default: the label). */
+  speech?: SpeechSource;
 }
 
 /** Main solid action: solid primary, white text (5.89:1), e1 shadow, pressed darker. */
@@ -31,6 +34,7 @@ export const PrimaryButton: React.FC<ButtonProps> = ({
   style,
   accessibilityLabel,
   accessibilityHint,
+  speech,
 }) => {
   const press = usePressScale(0.98);
   const isSm = size === 'sm';
@@ -38,7 +42,9 @@ export const PrimaryButton: React.FC<ButtonProps> = ({
 
   return (
     <Animated.View style={[press.style, style]}>
-      <Pressable
+      <Speakable
+        atomic
+        speech={speech}
         onPress={() => {
           haptic.tap();
           onPress();
@@ -78,7 +84,7 @@ export const PrimaryButton: React.FC<ButtonProps> = ({
         >
           {label}
         </AppText>
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };
@@ -94,6 +100,7 @@ export const SecondaryButton: React.FC<ButtonProps & { tone?: 'neutral' | 'prima
   style,
   accessibilityLabel,
   accessibilityHint,
+  speech,
 }) => {
   const press = usePressScale(0.98);
   const isSm = size === 'sm';
@@ -101,7 +108,9 @@ export const SecondaryButton: React.FC<ButtonProps & { tone?: 'neutral' | 'prima
 
   return (
     <Animated.View style={[press.style, style]}>
-      <Pressable
+      <Speakable
+        atomic
+        speech={speech}
         onPress={() => {
           haptic.tap();
           onPress();
@@ -138,7 +147,7 @@ export const SecondaryButton: React.FC<ButtonProps & { tone?: 'neutral' | 'prima
         >
           {label}
         </AppText>
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };
@@ -154,12 +163,15 @@ export const TertiaryButton: React.FC<ButtonProps> = ({
   style,
   accessibilityLabel,
   accessibilityHint,
+  speech,
 }) => {
   const isSm = size === 'sm';
   const inactive = disabled || loading;
 
   return (
-    <Pressable
+    <Speakable
+        atomic
+        speech={speech}
       onPress={() => {
         haptic.tap();
         onPress();
@@ -193,7 +205,7 @@ export const TertiaryButton: React.FC<ButtonProps> = ({
       >
         {label}
       </AppText>
-    </Pressable>
+    </Speakable>
   );
 };
 
@@ -208,6 +220,7 @@ export const DestructiveButton: React.FC<ButtonProps> = ({
   style,
   accessibilityLabel,
   accessibilityHint,
+  speech,
 }) => {
   const press = usePressScale(0.98);
   const isSm = size === 'sm';
@@ -215,7 +228,9 @@ export const DestructiveButton: React.FC<ButtonProps> = ({
 
   return (
     <Animated.View style={[press.style, style]}>
-      <Pressable
+      <Speakable
+        atomic
+        speech={speech}
         onPress={() => {
           haptic.tap();
           onPress();
@@ -252,7 +267,7 @@ export const DestructiveButton: React.FC<ButtonProps> = ({
         >
           {label}
         </AppText>
-      </Pressable>
+      </Speakable>
     </Animated.View>
   );
 };

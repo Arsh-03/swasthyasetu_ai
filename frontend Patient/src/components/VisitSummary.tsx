@@ -7,6 +7,7 @@ import type { TranslationKey } from '../utils/translations';
 import { formatTimestamp } from '../utils/dates';
 import { GlassSheet } from './glass';
 import { AppText, Card, Icon, PrimaryButton, SecondaryButton, SectionHeader } from './ui';
+import { useScripts } from '../speech';
 
 const SECTIONS: { key: 'told' | 'advice' | 'next' | 'urgent'; title: TranslationKey }[] = [
   { key: 'told', title: 'summaryTold' },
@@ -41,6 +42,7 @@ export const SummaryBody: React.FC<{ summary: VisitSummaryData }> = ({ summary }
  */
 export const SummaryOfferSheet: React.FC<{ summaryId: string | null; onDone: (saved: VisitSummaryData | null) => void }> = ({ summaryId, onDone }) => {
   const { t } = useLanguage();
+  const scripts = useScripts();
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<VisitSummaryData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export const SummaryOfferSheet: React.FC<{ summaryId: string | null; onDone: (sa
           <>
             <AppText variant="title" accessibilityRole="header">{t('summaryTitle')}</AppText>
             <SummaryBody summary={saved} />
-            <PrimaryButton label={t('summaryDone')} onPress={() => onDone(saved)} />
+            <PrimaryButton label={t('summaryDone')} speech={scripts.summary.done} onPress={() => onDone(saved)} />
           </>
         ) : (
           <>
@@ -82,8 +84,8 @@ export const SummaryOfferSheet: React.FC<{ summaryId: string | null; onDone: (sa
             <AppText variant="title" accessibilityRole="header">{t('summaryOfferTitle')}</AppText>
             <AppText variant="body">{t('summaryOfferBody')}</AppText>
             {error && <AppText variant="footnote" color="dangerDeep">{error}</AppText>}
-            <PrimaryButton label={t('summaryYes')} icon="check" loading={busy} onPress={() => void accept()} />
-            <SecondaryButton label={t('summaryNo')} onPress={decline} />
+            <PrimaryButton label={t('summaryYes')} icon="check" speech={scripts.summary.accept} loading={busy} onPress={() => void accept()} />
+            <SecondaryButton label={t('summaryNo')} speech={scripts.summary.decline} onPress={decline} />
           </>
         )}
       </View>

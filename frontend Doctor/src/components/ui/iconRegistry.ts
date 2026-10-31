@@ -63,6 +63,7 @@ import { Microphone } from '@phosphor-icons/react/dist/csr/Microphone';
 import { MicrophoneSlash } from '@phosphor-icons/react/dist/csr/MicrophoneSlash';
 import { Notepad } from '@phosphor-icons/react/dist/csr/Notepad';
 import { PaperPlaneTilt } from '@phosphor-icons/react/dist/csr/PaperPlaneTilt';
+import { Smiley } from '@phosphor-icons/react/dist/csr/Smiley';
 import { Phone } from '@phosphor-icons/react/dist/csr/Phone';
 import { PhoneSlash } from '@phosphor-icons/react/dist/csr/PhoneSlash';
 import { PhoneX } from '@phosphor-icons/react/dist/csr/PhoneX';
@@ -114,6 +115,7 @@ export const REGISTRY = {
   swap: ArrowsLeftRight,
   sync: ArrowsClockwise,
   send: PaperPlaneTilt,
+  emoji: Smiley,
 
   // Trust & consent
   shield: Shield,
